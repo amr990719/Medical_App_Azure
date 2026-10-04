@@ -1,0 +1,76 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+backend/staticfiles/
+backend/media/
+
+# Python virtual environments
+.venv/
+venv/
+*_venv/
+.medical_venv/
+env/
+ENV/
+
+# ---- Node / frontend ----
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+coverage/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.key
+*.crt
+secrets/
+
+# ---- Docker / local data ----
+.docker-data/
+azurite-data/
+__azurite_db*__.json
+__blobstorage__/
+__queuestorage__/
+pgdata/
+
+# ---- Azure / IaC ----
+.azure/
+*.bicep.json
+infrastructure/**/*.tmp
+
+# ---- IDE / OS ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- Claude Code local state ----
+.claude/settings.local.json
+
+# ---- Reference prototype (cloned outside the repo; never inside) ----
+reference/

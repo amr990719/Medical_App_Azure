@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "skills": {
+    "azure-identity-py": {
+      "source": "microsoft/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": ".github/plugins/azure-sdk-python/skills/azure-identity-py/SKILL.md",
+      "computedHash": "808c271f975122c0c1258102b50020ce46bbf2673989ac835216523725e634d5"
+    },
+    "azure-keyvault-py": {
+      "source": "microsoft/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": ".github/plugins/azure-sdk-python/skills/azure-keyvault-py/SKILL.md",
+      "computedHash": "a1fbf0b0215a2b2db3fbf22fdfca433bd7d83efbd69e7cd90c7a0c026bf70cab"
+    },
+    "azure-monitor-opentelemetry-py": {
+      "source": "microsoft/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": ".github/plugins/azure-sdk-python/skills/azure-monitor-opentelemetry-py/SKILL.md",
+      "computedHash": "dd8433a9f48c19853eebbfa0819f0ef6a3e4a98bca74840a08f418c0fa3b42e1"
+    },
+    "azure-storage-blob-py": {
+      "source": "microsoft/skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": ".github/plugins/azure-sdk-python/skills/azure-storage-blob-py/SKILL.md",
+      "computedHash": "4b0aa23ce173c211a99caa378c2616d4386f51dc424b20371affcaab7fdb4017"
+    }
+  }
+}
