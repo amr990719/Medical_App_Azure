@@ -73,6 +73,80 @@ Built test-first (red → green for every module); no HTTP API, auth or frontend
 - **Result:** 391 tests passing on PostgreSQL 16, `ruff check` and `ruff format --check` clean,
   `manage.py check` clean, `makemigrations --check` reports no changes.
 
+### Session 3 — 2026-10-05 — Phase 3B (API, auth, documents, OCR, audit)
+Built test-first on top of the Session 2 models and services (no rewrite; services were only
+extended). Each module's tests were written and seen failing before the code; the one exception
+is the N+1 query-count guard on the application detail, added afterwards as a regression guard.
+- **Toolchain:** DRF 3.18, django-filter 26, drf-spectacular 0.30, Pillow 12, filetype 1.2,
+  azure-storage-blob 12.31, azure-identity 1.26, msal 1.39, PyJWT 2.15 (`requirements/base.txt`).
+  Node v22.11 / npm 11.7 are installed (Q-T3 resolved for the frontend).
+- **Task 3.1** — `config/api/exceptions.py`: every error is the §46 envelope with Arabic messages
+  (DRF/Django exceptions mapped, nested field errors flattened to dotted paths, submission errors
+  carry `errors` with wizard steps, unhandled → generic 500 without traceback); JSON 404/403/400/500
+  and CSRF-failure views; `StandardPagination` (25, max 100); `/api/health/` (no DB) and
+  `/api/ready/` (`SELECT 1`, 503); OpenAPI at `/api/schema/` + `/api/docs/` behind `API_DOCS_ENABLED`.
+- **Task 3.2** — Session auth with a 401 challenge, `IsAuthenticatedActive` / `IsDoctor` / `IsAdmin`,
+  `SessionOnlyBackend` (no password authentication at all), HttpOnly SameSite=Lax cookie, idle
+  (2 h) + absolute (12 h) timeouts, `/auth/me/` (CSRF bootstrap, also on 401), `/auth/logout/`
+  (+ Entra logout URL), dev login (`/auth/dev/users/`, `/auth/dev/login/`, CSRF enforced, 404 unless
+  `DEV_AUTH_ENABLED`), `User.display_name` (additive migration), `seed_dev_data` command
+  (deviation 6 closed).
+- **Task 3.3** — Entra External ID OIDC BFF: MSAL authorization code flow with PKCE/state/nonce,
+  independent ID-token validation (RS256 against the tenant JWKS, issuer, audience, expiry, nonce,
+  tenant), user mapped by `(oid, tid)` only, email/name refreshed, admin sessions refused without
+  `mfa` in `amr` (configurable), safe relative `next`, callback throttled 20/min.
+  **NOT VERIFIED — requires Azure credentials** (tested with a faked MSAL client and locally signed
+  RS256 tokens only).
+- **Task 3.4** — `/reference-data/` (all enums, 27 governorates, kinships with fee keys, THE
+  document-rules table, flags, upload limits) and `/profile/` (`doctors/services.py`: national ID
+  derives DOB/birth year/gender, conflicts rejected, the DB constraint decides duplicates incl. a
+  two-thread race, locked while submitted). Arabic digits normalized by shared serializer fields
+  (`apps/common/fields.py`).
+- **Task 3.5** — Doctor application endpoints (list, create-or-return, retrieve with nested
+  beneficiaries/documents, PATCH of the four editable fields only, `fees`, `validation`, `submit`);
+  services `get_or_create_draft`, `update_draft`. IDOR tests on every route; every protected-field
+  write attempt asserted unchanged in the database; a refused PATCH leaves no audit entry.
+- **Task 3.6** — Beneficiary endpoints (nested; `add_beneficiary`, `update_beneficiary`), lowest
+  free row, row limit, kinship change removes documents, IDOR through both ids.
+- **Task 3.7** — Documents: `storage.py` (`BlobStorage` protocol; `AzureBlobStorage` for
+  Azurite/Azure with ≤300 s read-only single-blob SAS — account key locally, user-delegation key
+  with managed identity; `InMemoryStorage` for unit tests), `naming.py` (§20 blob names),
+  `validators.py` (size, signature sniffing, executable/archive/script refusal, full Pillow decode +
+  format match, pixel cap, receipt ≥ 400×300, PDF behind flag without active content, image-only
+  personal photo, filename sanitizing), `services.py` (`store_document` replaces the slot under the
+  application lock and removes the blob if the DB write fails; receipt → PENDING_REVIEW; deleting
+  the receipt resets payment status; `document_content` audited), endpoints (upload 60/hour,
+  metadata, stream or SAS redirect with `no-store`/`nosniff`/sandbox CSP, delete), `cleanup_blobs`
+  (grace period, orphan blobs, dry run, idempotent via the new `blob_purged_at` column). A real
+  Azurite round-trip test (`@pytest.mark.azurite`) passes.
+- **Task 3.8** — OCR: `normalizers.py` (digits, first 14 digits, birth year from ID, year from any
+  date format, triple name with عبد/أبو, governorate fuzzy match, enum mapping), `schemas.py`
+  (Arabic prompts ported, JSON schemas for structured outputs), `OcrProvider` protocol,
+  `MockOcrProvider`, `AzureOpenAIProvider` stub (refuses until Session 7), `extract_document`
+  (OCR_ENABLED, ownership, capable types, PDFs skipped with a message, provider failure →
+  OCR_UNAVAILABLE, audit with field names only), `POST /documents/{id}/extract/` throttled 30/hour
+  per user. Nothing is saved.
+- **Task 3.9** — Admin: stats, application list (filters, search by name/reference/phone/full or
+  masked national ID incl. Arabic digits, ordering incl. fee total, pagination ≤ 100), detail
+  (masked IDs, audited reveal, `allowed_transitions`, duplicate warnings), transition, payment
+  (+ internal note), notes, audit history, doctors, fee-schedule versions
+  (`fees.services.create_schedule_version`). The full 6×6 status matrix is tested through the
+  admin endpoint and the doctor submit endpoint (incl. NEEDS_CORRECTION → SUBMITTED keeping the
+  reference number).
+- **Task 3.10** — `RequestIdMiddleware` (X-Request-ID; JSON access log with method, masked path
+  without query string, status, latency, user UUID); Azure SDK logging capped at WARNING; every §39
+  audit action produced by its endpoint (parametrized test) with no national ID, filename, name or
+  note text in any metadata; concurrent API submissions → exactly one reference number / unique
+  sequential numbers. Production settings also refuse the in-memory blob backend and mock OCR.
+- **Demonstration:** `tests/test_e2e_flow.py` (pytest + Azurite) and `scripts/smoke_api.py` (real
+  HTTP against `runserver`, development settings) both run dev login → profile → draft →
+  beneficiaries → uploads to Azurite → OCR → fees → validation → receipt + declaration → submit →
+  `MED-2026-000001`. The dev-server log contained no 14-digit run.
+- **Result:** 847 tests passing on PostgreSQL 16 (was 391), `ruff check` + `ruff format --check`
+  clean, `manage.py check` clean, `makemigrations --check` no changes,
+  `manage.py spectacular --file openapi.yaml --validate --fail-on-warn` succeeds (30 paths), and
+  `npx openapi-typescript` generates the TS types from it (not committed; Session 4).
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -130,6 +204,56 @@ Built test-first (red → green for every module); no HTTP API, auth or frontend
   `User` has no `PermissionsMixin`/`is_staff`.
 - **D28 — Azurite host port is configurable** (`AZURITE_BLOB_PORT`, default 10000). On this machine
   `127.0.0.1:10000` is held by another process (`kpm`), so a gitignored root `.env` sets 10100.
+- **D29 — Content sniffing with `filetype`** (pure-Python signatures) instead of python-magic
+  (needs libmagic; no maintained Windows wheel), plus an executable/script/archive signature
+  blocklist and a full Pillow decode whose format must match the sniffed type.
+- **D30 — ID token validated independently of MSAL** with PyJWT against the tenant JWKS (MSAL does
+  not verify the signature). Issuer/JWKS URI come from OIDC discovery unless `ENTRA_ISSUER` /
+  `ENTRA_JWKS_URI` are set.
+- **D31 — No account linking by email.** A new `(oid, tid)` whose email belongs to another account
+  is refused (`EMAIL_IN_USE`); emails stay unique and takeover by email is impossible.
+- **D32 — Callback failures redirect** to `/?auth_error=<CODE>` (browser navigation) instead of a
+  JSON envelope; `/auth/login/` without Entra configuration is a 503 envelope `AUTH_UNAVAILABLE`.
+- **D33 — Admin MFA:** with `ENTRA_ADMIN_REQUIRE_MFA` a missing `amr` claim counts as "no MFA".
+- **D34 — 401 for anonymous API calls** via a SessionAuthentication subclass with a
+  `WWW-Authenticate` challenge (plain DRF answers 403).
+- **D35 — Dev login enforces CSRF** (login-CSRF protection), even though it is dev-only.
+- **D36 — Admins do not see drafts** (list, detail, documents); review starts at SUBMITTED. Stats
+  still count drafts separately.
+- **D37 — Doctors never see cross-application duplicate warnings** (they would reveal that another
+  member listed the same national ID); admins see them on the application detail.
+- **D38 — `POST /applications/` returns the active application (200)** via the new
+  `get_or_create_draft`; `create_draft` keeps raising `ACTIVE_APPLICATION_EXISTS` (D20).
+- **D39 — Protected fields in a doctor payload are ignored** (every one is read-only); tests assert
+  the database row is unchanged rather than expecting a 400.
+- **D40 — Validation failures are 400 `VALIDATION_ERROR`** (also on submit), not 422.
+- **D41 — Document content defaults to `stream`** (proxied, authorized, audited, `no-store`,
+  `nosniff`, sandbox CSP); `DOCUMENT_CONTENT_DELIVERY=sas` redirects to a read-only single-blob SAS
+  expiring within 300 s (TTL capped in settings and in code).
+- **D42 — `Document.blob_purged_at`** (additive nullable column) makes `cleanup_blobs` idempotent.
+- **D43 — Deleting the receipt resets `payment_status` to NOT_UPLOADED** (`mark_receipt_removed`).
+- **D44 — PDFs (when allowed) are refused if they contain `/JavaScript`, `/JS`, `/Launch`,
+  `/EmbeddedFile(s)`, `/RichMedia` or `/XFA`;** `/OpenAction` alone is allowed (scanner output).
+- **D45 — OCR returns only non-empty suggestions;** fewer than 14 digits → no national-ID suggestion
+  (the prototype returned a partial number); the year fallback must be 1900–2099.
+- **D46 — Rate limits are DRF scoped throttles** (cache-backed): callback 20/min/IP, dev login
+  30/min, uploads 60/hour/user, OCR 30/hour/user. Shared cache across replicas: Q-T6.
+- **D47 — Draft-level phone:** separators/Arabic digits normalized, valid numbers stored as
+  `01XXXXXXXXX`, incomplete numbers kept for autosave (rule 7 reports them at submission).
+- **D48 — `User.display_name`** from the Entra `name` claim; `/auth/me/` prefers `Doctor.full_name`.
+- **D49 — The profile is locked** while the current fiscal year's application is SUBMITTED,
+  UNDER_REVIEW or APPROVED (409 `APPLICATION_NOT_EDITABLE`).
+- **D50 — Production refuses** `BLOB_BACKEND != azure` and `OCR_ENABLED` with the mock provider;
+  `API_DOCS_ENABLED` defaults to false.
+- **D51 — `backend/openapi.yaml` is generated, not committed** (gitignored); Session 4 generates
+  and commits `frontend/src/api/schema.d.ts`.
+- **D52 — Admin payment `note` becomes an internal `AdminNote`** (`review_payment`, atomic with the
+  payment change) — resolves deviation 9.
+- **D53 — `allowed_transitions` hides APPROVED until payment is CONFIRMED;** the transition service
+  still enforces it.
+- **D54 — Development settings read the repo-root `.env`** (shared with docker compose) and default
+  `BLOB_CONNECTION_STRING` to Azurite's public, documented development account on
+  `AZURITE_BLOB_PORT`.
 
 ## Deviations from PROMPT.md
 
@@ -145,6 +269,15 @@ Built test-first (red → green for every module); no HTTP API, auth or frontend
 | 8 | plan 2.5 `calculate_fees(..., fiscal_year=...)`, `get_tier(reg, ws, *, fiscal_year)` | fiscal year taken from the schedule: `calculate_fees(schedule, …)`, `get_tier(schedule, reg, ws)` | a quote can never mix a schedule with another year |
 | 9 | plan 2.9 `set_payment_status(..., note="")` | no `note` parameter | internal notes get their own audited service with the admin endpoints (Session 3) |
 | 10 | §22 lists 18 messages | 6 extra Arabic messages (SKILL.md §6) for birth-year/ID mismatch, spouse gender, SON_MINOR age, beneficiary ID = member ID, missing review notes, approve without payment | §13/§14 rules needed user-facing messages |
+| 11 | plan: commit after every task | one commit `Phase 3B: API, auth, documents, OCR` | explicit user instruction |
+| 12 | plan 3.5 `test_submit_errors_422_...` | 400 `VALIDATION_ERROR` | D40: one status for every validation failure |
+| 13 | plan 3.3 callback error "returns envelope" | 302 to `/?auth_error=<CODE>` | D32: the browser is navigating |
+| 14 | §23 / plan 3.7 python-magic | `filetype` + signature blocklist + Pillow decode | D29 |
+| 15 | plan 3.6 beneficiary response includes `warnings` | omitted for doctors, shown to admins | D37: privacy |
+| 16 | plan 3.8 throttle inside the OCR service | DRF scoped throttle on the view | standard DRF mechanism, per user |
+| 17 | plan 3.4 reference-data keys `document_types`, `member_documents`, `beneficiary_document_rules` | one `document_rules` key = `rules_as_reference_data()` | the rules table is described in exactly one place |
+| 18 | plan "curl smoke through compose" | `scripts/smoke_api.py` against `runserver` + `tests/test_e2e_flow.py` | compose has no Django service until Session 6 |
+| 19 | plan 3.7 `BlobStorage` protocol | adds `list(prefix)` | needed by the orphan-blob cleanup |
 
 ## Open questions
 
@@ -154,27 +287,37 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T1** Azure subscription, region and Entra External ID tenant are not available in this session;
   Sessions 7–8 will generate everything and mark Azure-dependent checks `NOT VERIFIED — requires Azure credentials`.
 - **Q-T2** Resolved: Docker Desktop 29.7.2 runs PostgreSQL 16 + Azurite.
-- **Q-T3** Python resolved (uv-managed 3.12.15, D10). Node 22 LTS still to be checked in Session 4.
+- **Q-T3** Resolved: Python 3.12.15 (uv, D10); Node v22.11.0 / npm 11.7 are installed.
 - **Q-T5** CI and Azure must use PostgreSQL ≥ 15 (`NULLS NOT DISTINCT`, D17); Bicep should pin 16.
 - **Q-B15** (business) Confirm the Arabic payment-status labels (D26) and whether an admin may change
   a payment decision after APPROVED (currently refused).
 - **Q-T4** The `rtl` plugin's `rtl_check.py` path must be located via the `rtl-ui` skill in Session 4.
+- **Q-T6** Throttle counters use the default cache (local memory per replica). With several Container
+  App replicas the effective limit multiplies; Session 6/7 must set `CACHE_URL` to a shared cache
+  (Azure Cache for Redis, or `dbcache://django_cache` + `createcachetable` in the migration job).
+- **Q-T7** Entra External ID is NOT VERIFIED against a real tenant. The tenant must emit the `email`
+  claim (optional claim) and, for admin MFA enforcement, `amr`; otherwise set
+  `ENTRA_ADMIN_REQUIRE_MFA=false` and rely on Conditional Access (Session 7/8 docs).
+- **Q-B16** (business) Should admins see drafts before submission? Default: no (D36).
+- **Q-B17** (business) The receipt minimum is applied as width ≥ 400 AND height ≥ 300 (prototype
+  rule), so a portrait 300×400 photo is refused. Confirm, or relax to "either orientation".
 
 ## Next session starts with
 
-**Session 3 — Backend API, auth, documents, OCR, audit** (`docs/plan.md` → Session 3, Tasks 3.1–3.10).
-1. Environment: `docker compose up -d` from the repo root (both services must report `healthy`),
-   then `cd backend`. On a fresh clone create the venv first:
-   `<any python> -m pip install uv && uv python install 3.12 && uv venv .venv --python 3.12 &&
-   uv pip install --python .venv/Scripts/python.exe -r requirements/dev.txt`.
-   Run `.venv/Scripts/pytest -q` → expect **391 passed** before changing anything.
-2. Add DRF, django-filter, drf-spectacular, Pillow, python-magic(-bin) to `requirements/base.txt`
-   as Task 3.1 needs them; wire `DomainError.as_envelope()` into the DRF exception handler.
-3. Views only call the existing services: `applications.services` (`create_draft`, `submit`,
-   `transition`, `set_payment_status`, `mark_receipt_uploaded`), `beneficiaries.services`,
-   `fees.services.quote_for_application`, `applications.validation.validate_for_submission`,
-   `reference.document_rules.rules_as_reference_data`. Doctor serializers keep every protected
-   field read-only (§16.2).
-4. Task 3.7 must call `mark_receipt_uploaded` on receipt upload and `soft_delete_documents` for
-   replacements; then implement the deferred `seed_dev_data` (deviation 6).
-5. Load `syndicate-form-rules`, `django-expert` and `test-driven-development` first.
+**Session 4 — Frontend foundation and shared components** (`docs/plan.md` → Session 4).
+1. Environment: `docker compose up -d` (repo root), then in `backend/`:
+   `.venv/Scripts/pytest -q` → expect **847 passed** (the `azurite`-marked tests need Azurite up).
+   uv is not on PATH: use `../.medical_venv/Scripts/uv.exe pip install --python .venv/Scripts/python.exe -r requirements/dev.txt`.
+   Dev database: `DJANGO_SETTINGS_MODULE=config.settings.development python manage.py migrate &&
+   python manage.py seed_dev_data && python manage.py runserver 8000`.
+2. API types: `python manage.py spectacular --file openapi.yaml`, then
+   `npx openapi-typescript backend/openapi.yaml -o frontend/src/api/schema.d.ts` (commit the .d.ts).
+3. Auth in the SPA (`docs/api.md`): call `GET /api/v1/auth/me/` first (sets `csrftoken`; 401 when
+   signed out); send `X-CSRFToken` on every POST/PATCH/DELETE; dev login = `GET /auth/dev/users/` +
+   `POST /auth/dev/login/`; production sign-in = full-page navigation to
+   `/api/v1/auth/login/?next=…`; handle `?auth_error=<CODE>` on the landing page.
+4. Every enum, label, governorate, kinship, document rule, upload limit and `ocr_enabled` comes
+   from `GET /api/v1/reference-data/`; the fee panel shows `GET /applications/{id}/fees/`.
+5. Vite proxy `/api` → `http://127.0.0.1:8000`; development `CSRF_TRUSTED_ORIGINS` already allows
+   `http://localhost:5173`.
+6. Load `rtl-ui` (locate `rtl_check.py`, Q-T4), `frontend-design` and `test-driven-development`.

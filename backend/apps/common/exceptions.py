@@ -37,7 +37,10 @@ class DomainError(Exception):
         super().__init__(self.message)
 
     def as_envelope(self) -> dict:
-        return {"error": {"code": self.code, "message": self.message, "fields": self.fields}}
+        error = {"code": self.code, "message": self.message, "fields": self.fields}
+        if self.errors:  # submission validation: every error with its wizard step and code
+            error["errors"] = [e.as_dict() for e in self.errors]
+        return {"error": error}
 
 
 class ValidationFailed(DomainError):
@@ -91,3 +94,35 @@ class RateLimited(DomainError):
     code = "RATE_LIMITED"
     default_message = "تم تجاوز الحد المسموح من الطلبات، يرجى المحاولة لاحقاً"
     status_code = 429
+
+
+class NotFoundError(DomainError):
+    code = "NOT_FOUND"
+    default_message = "العنصر المطلوب غير موجود"
+    status_code = 404
+
+
+class FileTooLarge(DomainError):
+    code = "FILE_TOO_LARGE"
+    default_message = "حجم الملف يجب أن يكون أقل من 8 ميجابايت"
+    status_code = 413
+
+
+class UnsupportedFileType(DomainError):
+    code = "UNSUPPORTED_FILE_TYPE"
+    default_message = "نوع الملف غير مدعوم — الأنواع المسموح بها: JPG, PNG, WEBP"
+    status_code = 415
+
+
+class ImageTooSmall(DomainError):
+    code = "IMAGE_TOO_SMALL"
+    default_message = (
+        "جودة الصورة منخفضة جداً — يرجى التقاط صورة بدقة أعلى (الحد الأدنى 400×300 بكسل)"
+    )
+    status_code = 400
+
+
+class OcrUnavailable(DomainError):
+    code = "OCR_UNAVAILABLE"
+    default_message = "المسح التلقائي غير متاح حالياً، يرجى إدخال البيانات يدوياً"
+    status_code = 503

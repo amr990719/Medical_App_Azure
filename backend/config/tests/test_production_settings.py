@@ -72,3 +72,28 @@ def test_production_refuses_wildcard_hosts(monkeypatch):
 def test_production_refuses_short_secret_key(monkeypatch):
     with pytest.raises(ImproperlyConfigured, match="DJANGO_SECRET_KEY"):
         load_production(monkeypatch, DJANGO_SECRET_KEY="short")
+
+
+def test_production_keeps_api_docs_off_and_content_short_lived(monkeypatch):
+    for key in (
+        "API_DOCS_ENABLED",
+        "BLOB_BACKEND",
+        "OCR_ENABLED",
+        "OCR_PROVIDER",
+        "BLOB_SAS_TTL_SECONDS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    prod = load_production(monkeypatch, BLOB_SAS_TTL_SECONDS="3600")
+    assert prod.API_DOCS_ENABLED is False
+    assert prod.BLOB_SAS_TTL_SECONDS == 300  # capped at 5 minutes whatever the environment says
+    assert prod.ENTRA_ADMIN_REQUIRE_MFA is True
+
+
+def test_production_refuses_the_in_memory_blob_backend(monkeypatch):
+    with pytest.raises(ImproperlyConfigured, match="BLOB_BACKEND"):
+        load_production(monkeypatch, BLOB_BACKEND="memory")
+
+
+def test_production_refuses_mock_ocr_when_ocr_is_enabled(monkeypatch):
+    with pytest.raises(ImproperlyConfigured, match="OCR_PROVIDER"):
+        load_production(monkeypatch, OCR_ENABLED="true", OCR_PROVIDER="mock")

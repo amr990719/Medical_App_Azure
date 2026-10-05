@@ -22,6 +22,8 @@ class User(AbstractBaseUser):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(max_length=254)
+    # From the Entra `name` claim (or the dev seed); the legal name is Doctor.full_name.
+    display_name = models.CharField(max_length=200, blank=True, default="", db_default="")
     role = models.CharField(max_length=16, choices=Role.choices, default=Role.DOCTOR)
     # Entra object id + tenant id. Null for development users (DEV_AUTH_ENABLED).
     entra_oid = models.CharField(max_length=64, null=True, blank=True)  # noqa: DJ001

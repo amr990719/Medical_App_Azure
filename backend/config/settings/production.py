@@ -41,6 +41,13 @@ if "*" in ALLOWED_HOSTS:
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 _require("DATABASE_URL")
+
+# Test/dev-only backends never serve production traffic.
+if env("BLOB_BACKEND", default="azure") != "azure":
+    raise ImproperlyConfigured("BLOB_BACKEND must be 'azure' in production.")
+if env.bool("OCR_ENABLED", default=False) and env("OCR_PROVIDER", default="mock") == "mock":
+    raise ImproperlyConfigured("OCR_PROVIDER must not be 'mock' when OCR is enabled in production.")
+API_DOCS_ENABLED = env.bool("API_DOCS_ENABLED", default=False)
 DATABASES["default"]["OPTIONS"]["sslmode"] = env("DB_SSLMODE", default="require")
 
 # --- HTTPS and cookies (TLS terminates at the Container Apps / SWA edge) -----------------------

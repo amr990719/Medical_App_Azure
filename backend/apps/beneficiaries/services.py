@@ -108,6 +108,39 @@ def upsert_beneficiary(
     return beneficiary
 
 
+MSG_ROW_TAKEN = "هذا الصف مستخدم لمستفيد آخر"
+BENEFICIARY_FIELDS = ("kinship", "full_name", "birth_year", "national_id")
+
+
+@transaction.atomic
+def add_beneficiary(
+    application: InsuranceApplication, *, actor, row_number: int | None = None, **fields
+) -> Beneficiary:
+    """New row: the requested `row_number` when free, otherwise the lowest free row."""
+    application = lock_application(application.pk)
+    ensure_editable_by_owner(application, actor)
+    taken = set(application.beneficiaries.values_list("row_number", flat=True))
+    max_rows = settings.MAX_BENEFICIARIES
+    if row_number is None:
+        row_number = next((n for n in range(1, max_rows + 1) if n not in taken), max_rows + 1)
+    elif row_number in taken:
+        raise ValidationFailed(fields={"row_number": [MSG_ROW_TAKEN]})
+    values = {name: fields.get(name) for name in BENEFICIARY_FIELDS}
+    values["full_name"] = values["full_name"] or ""
+    return upsert_beneficiary(application, row_number=row_number, actor=actor, **values)
+
+
+@transaction.atomic
+def update_beneficiary(beneficiary: Beneficiary, *, actor, changes: dict) -> Beneficiary:
+    """Partial update of one row; omitted fields keep their current value."""
+    application = lock_application(beneficiary.application_id)
+    ensure_editable_by_owner(application, actor)
+    current = Beneficiary.objects.get(pk=beneficiary.pk)
+    values = {name: changes.get(name, getattr(current, name)) for name in BENEFICIARY_FIELDS}
+    values["full_name"] = values["full_name"] or ""
+    return upsert_beneficiary(application, row_number=current.row_number, actor=actor, **values)
+
+
 @transaction.atomic
 def delete_beneficiary(beneficiary: Beneficiary, *, actor) -> None:
     application = lock_application(beneficiary.application_id)

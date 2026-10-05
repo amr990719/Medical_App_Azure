@@ -74,3 +74,6 @@ Thumbs.db
 
 # ---- Reference prototype (cloned outside the repo; never inside) ----
 reference/
+
+# Generated OpenAPI schema (regenerate with manage.py spectacular)
+backend/openapi.yaml

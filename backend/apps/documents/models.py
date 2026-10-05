@@ -59,6 +59,8 @@ class Document(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    # Set by `manage.py cleanup_blobs` once the bytes of a soft-deleted document are removed.
+    blob_purged_at = models.DateTimeField(null=True, blank=True)
 
     all_objects = models.Manager()
     objects = ActiveDocumentManager()  # default: active (not soft-deleted) documents only

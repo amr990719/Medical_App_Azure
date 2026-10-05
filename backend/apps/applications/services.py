@@ -72,6 +72,53 @@ def create_draft(
     return application
 
 
+def get_or_create_draft(
+    doctor, *, actor, application_type: str = ApplicationType.FIRST_TIME
+) -> tuple[InsuranceApplication, bool]:
+    """`POST /applications/`: the doctor's active application for the current fiscal year,
+    created on first call. Returns (application, created)."""
+    fiscal_year = settings.CURRENT_FISCAL_YEAR
+
+    def active():
+        return (
+            InsuranceApplication.objects.filter(doctor=doctor, fiscal_year=fiscal_year)
+            .exclude(status=ApplicationStatus.REJECTED)
+            .first()
+        )
+
+    existing = active()
+    if existing is not None:
+        return existing, False
+    try:
+        return create_draft(doctor, actor=actor, application_type=application_type), True
+    except ActiveApplicationExists:  # lost a race with a concurrent create
+        return active(), False
+
+
+DRAFT_FIELDS = frozenset({"application_type", "work_status", "declaration_name"})
+
+
+@transaction.atomic
+def update_draft(application: InsuranceApplication, *, actor, changes: dict):
+    """Doctor edits while DRAFT / NEEDS_CORRECTION. Only the fields in DRAFT_FIELDS plus the
+    declaration checkbox can change here; everything else is server-controlled."""
+    app = lock_application(application.pk)
+    ensure_editable_by_owner(app, actor)
+    changes = dict(changes)
+    accepted = changes.pop("declaration_accepted", None)
+    unknown = set(changes) - DRAFT_FIELDS
+    if unknown:
+        raise ValueError(f"not draft fields: {sorted(unknown)}")
+    for name, value in changes.items():
+        setattr(app, name, value)
+    if accepted is True and app.declaration_accepted_at is None:
+        app.declaration_accepted_at = timezone.now()
+    elif accepted is False:
+        app.declaration_accepted_at = None
+    app.save()
+    return app
+
+
 # --- reference numbers ------------------------------------------------------------------------
 
 
@@ -260,6 +307,18 @@ def mark_receipt_uploaded(
 
 
 @transaction.atomic
+def mark_receipt_removed(
+    application: InsuranceApplication, *, actor, request=None
+) -> InsuranceApplication:
+    """Called by the documents service when the doctor deletes the receipt while editable."""
+    app = lock_application(application.pk)
+    ensure_editable_by_owner(app, actor)
+    if app.payment_status != PaymentStatus.NOT_UPLOADED:
+        _change_payment_status(app, PaymentStatus.NOT_UPLOADED, actor, request)
+    return app
+
+
+@transaction.atomic
 def set_payment_status(
     application: InsuranceApplication, *, status: str, actor, request=None
 ) -> InsuranceApplication:
@@ -276,3 +335,60 @@ def set_payment_status(
     if app.payment_status != status:
         _change_payment_status(app, status, actor, request)
     return app
+
+
+# --- admin review -----------------------------------------------------------------------------
+
+MSG_NOTE_REQUIRED = "يرجى كتابة نص الملاحظة"
+
+
+@transaction.atomic
+def add_admin_note(application: InsuranceApplication, *, body: str, actor, request=None):
+    """Internal reviewer note (never shown to the doctor)."""
+    from .models import AdminNote
+
+    if actor is None or not actor.is_admin:
+        raise PermissionDeniedError()
+    body = (body or "").strip()
+    if not body:
+        raise ValidationFailed(fields={"body": [MSG_NOTE_REQUIRED]})
+    note = AdminNote.objects.create(application_id=application.pk, author=actor, body=body)
+    record(
+        actor=actor,
+        action=AuditAction.ADMIN_NOTE_ADDED,
+        obj=application,
+        metadata={"note_id": str(note.pk)},
+        request=request,
+    )
+    return note
+
+
+@transaction.atomic
+def review_payment(
+    application: InsuranceApplication, *, status: str, note: str = "", actor, request=None
+) -> InsuranceApplication:
+    """Admin confirms/rejects the receipt, optionally with an internal note (atomic)."""
+    app = set_payment_status(application, status=status, actor=actor, request=request)
+    if note.strip():
+        add_admin_note(app, body=note, actor=actor, request=request)
+    return app
+
+
+def record_admin_view(application, *, actor, revealed_national_id: bool, request=None) -> None:
+    record(actor=actor, action=AuditAction.ADMIN_APPLICATION_VIEWED, obj=application,
+           request=request)  # fmt: skip
+    if revealed_national_id:
+        record(actor=actor, action=AuditAction.NATIONAL_ID_REVEALED, obj=application,
+               request=request)  # fmt: skip
+
+
+def admin_allowed_transitions(application: InsuranceApplication) -> list[str]:
+    """Buttons for the admin UI: table targets whose preconditions currently hold."""
+    from apps.accounts.models import Role
+
+    from .transitions import allowed_targets
+
+    targets = allowed_targets(application.status, role=Role.ADMIN)
+    if application.payment_status != PaymentStatus.CONFIRMED:
+        targets = [t for t in targets if t != ApplicationStatus.APPROVED]
+    return targets

@@ -155,3 +155,54 @@ def quote_for_application(application, *, schedule: FeeSchedule | None = None) -
             for b in application.beneficiaries.all()
         ],
     )
+
+
+SCHEDULE_FIELDS = (
+    "tier_fees", "tier_boundaries", "admin_fee_member_only", "admin_fee_with_beneficiaries",
+    "age_cap_threshold", "age_cap_amount", "registration_year_min",
+)  # fmt: skip
+
+
+def create_schedule_version(*, fiscal_year: int, actor, request=None, **values) -> FeeSchedule:
+    """New active version for a fiscal year; the previous active version is deactivated (its
+    amounts never change — submitted applications keep their snapshot)."""
+    from django.core.exceptions import ValidationError
+    from django.db import transaction
+    from django.db.models import Max
+
+    from apps.audit.models import AuditAction
+    from apps.audit.services import record
+    from apps.common.exceptions import PermissionDeniedError, ValidationFailed
+
+    if actor is None or not actor.is_admin:
+        raise PermissionDeniedError()
+    with transaction.atomic():
+        existing = FeeSchedule.objects.select_for_update().filter(fiscal_year=fiscal_year)
+        latest = existing.aggregate(v=Max("version"))["v"] or 0
+        previous = existing.filter(is_active=True).first()
+        if previous is not None:
+            previous.is_active = False
+            previous.save(update_fields=["is_active"])
+        schedule = FeeSchedule(
+            fiscal_year=fiscal_year,
+            version=latest + 1,
+            is_active=True,
+            created_by=actor,
+            **{k: v for k, v in values.items() if k in SCHEDULE_FIELDS},
+        )
+        try:
+            schedule.save()
+        except ValidationError as exc:
+            raise ValidationFailed(fields={"tier_fees": exc.messages}) from None
+        record(
+            actor=actor,
+            action=AuditAction.FEE_SCHEDULE_CHANGED,
+            obj=schedule,
+            metadata={
+                "fiscal_year": fiscal_year,
+                "version": schedule.version,
+                "previous_id": str(previous.pk) if previous else None,
+            },
+            request=request,
+        )
+    return schedule

@@ -24,6 +24,9 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.staticfiles",
+    "rest_framework",
+    "django_filters",
+    "drf_spectacular",
     # Project apps. `accounts` first: AUTH_USER_MODEL must exist before anything references it.
     "apps.accounts",
     "apps.reference",
@@ -37,11 +40,13 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "config.middleware.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.accounts.middleware.AbsoluteSessionTimeoutMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -59,6 +64,9 @@ TEMPLATES = [
 ]
 
 AUTH_USER_MODEL = "accounts.User"
+# No password sign-in anywhere (Entra External ID / dev login only); the backend only restores
+# the session user and refuses inactive accounts.
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.SessionOnlyBackend"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"  # every project model declares a UUID pk
 
 # --- Database (PostgreSQL only — dev, test, CI and production) ---------------------------------
@@ -112,4 +120,115 @@ LOGGING = {
         }
     },
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", default="INFO")},
+    # The Azure SDK logs every HTTP request at INFO (URLs, headers): keep it to warnings.
+    "loggers": {"azure": {"level": "WARNING"}},
 }
+
+# --- Sessions and CSRF (BFF pattern, PROMPT.md §27) ---------------------------------------------
+
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+# Idle timeout: the expiry is renewed on every request. Absolute timeout: enforced by
+# AbsoluteSessionTimeoutMiddleware from the sign-in time stored in the session.
+SESSION_COOKIE_AGE = env.int("SESSION_IDLE_TIMEOUT_SECONDS", default=2 * 60 * 60)
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_ABSOLUTE_TIMEOUT_SECONDS: int = env.int(
+    "SESSION_ABSOLUTE_TIMEOUT_SECONDS", default=12 * 60 * 60
+)
+CSRF_COOKIE_HTTPONLY = False  # the SPA reads `csrftoken` and sends it as X-CSRFToken
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_USE_SESSIONS = False
+
+# --- Cache (throttling). Production overrides with a cache shared by every replica. -----------
+
+CACHES = {"default": env.cache("CACHE_URL", default="locmemcache://")}
+
+# --- Django REST Framework ----------------------------------------------------------------------
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ["config.api.authentication.SessionAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["apps.accounts.permissions.IsAuthenticatedActive"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+        "rest_framework.parsers.MultiPartParser",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "config.api.pagination.StandardPagination",
+    "PAGE_SIZE": 25,
+    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "config.api.exceptions.api_exception_handler",
+    "DEFAULT_THROTTLE_RATES": {
+        "auth_callback": env("AUTH_CALLBACK_RATE_LIMIT", default="20/min"),
+        "dev_login": "30/min",
+        "uploads": env("UPLOAD_RATE_LIMIT", default="60/hour"),
+        "ocr": env("OCR_RATE_LIMIT", default="30/hour"),
+    },
+    "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
+    "TEST_REQUEST_DEFAULT_FORMAT": "json",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Medical Syndicates Treatment Project API",
+    "DESCRIPTION": "مشروع علاج أعضاء النقابات الطبية — REST API (session cookie + CSRF).",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SCHEMA_PATH_PREFIX": r"/api/v1",
+    "COMPONENT_SPLIT_REQUEST": True,
+    "ENUM_NAME_OVERRIDES": {
+        "ApplicationStatusEnum": "apps.reference.constants.ApplicationStatus",
+        "PaymentStatusEnum": "apps.reference.constants.PaymentStatus",
+        "DocumentTypeEnum": "apps.reference.constants.DocumentType",
+        "KinshipEnum": "apps.reference.constants.Kinship",
+    },
+}
+API_DOCS_ENABLED: bool = env.bool("API_DOCS_ENABLED", default=False)
+
+# --- Documents and Blob Storage (PROMPT.md §19–20) -----------------------------------------------
+
+# "azure": Azure Blob (connection string locally/Azurite, account URL + managed identity in
+# Azure). "memory": process-local store for unit tests only.
+BLOB_BACKEND: str = env("BLOB_BACKEND", default="azure")
+BLOB_CONNECTION_STRING: str = env("BLOB_CONNECTION_STRING", default="")
+BLOB_ACCOUNT_URL: str = env("BLOB_ACCOUNT_URL", default="")
+BLOB_CONTAINER: str = env("BLOB_CONTAINER", default="medical-documents")
+BLOB_CREATE_CONTAINER: bool = env.bool("BLOB_CREATE_CONTAINER", default=False)  # Bicep creates it
+# Content delivery: "stream" (authorized proxy through Django) or "sas" (302 to a read-only SAS).
+DOCUMENT_CONTENT_DELIVERY: str = env("DOCUMENT_CONTENT_DELIVERY", default="stream")
+BLOB_SAS_TTL_SECONDS: int = min(env.int("BLOB_SAS_TTL_SECONDS", default=300), 300)
+BLOB_CLEANUP_GRACE_HOURS: int = env.int("BLOB_CLEANUP_GRACE_HOURS", default=24)
+MAX_UPLOAD_BYTES: int = env.int("MAX_UPLOAD_BYTES", default=8 * 1024 * 1024)
+RECEIPT_MIN_WIDTH: int = 400
+RECEIPT_MIN_HEIGHT: int = 300
+ALLOW_PDF_DOCUMENTS: bool = env.bool("ALLOW_PDF_DOCUMENTS", default=False)
+ALLOW_HEIC: bool = env.bool("ALLOW_HEIC", default=False)
+MALWARE_SCAN_ENABLED: bool = env.bool("MALWARE_SCAN_ENABLED", default=False)
+# Larger multipart bodies are streamed to a temporary file, never kept in memory.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+
+# --- OCR (PROMPT.md §21) --------------------------------------------------------------------------
+
+AZURE_OPENAI_ENDPOINT: str = env("AZURE_OPENAI_ENDPOINT", default="")
+AZURE_OPENAI_DEPLOYMENT: str = env("AZURE_OPENAI_DEPLOYMENT", default="")
+AZURE_OPENAI_API_VERSION: str = env("AZURE_OPENAI_API_VERSION", default="")
+
+# --- Microsoft Entra External ID (OIDC BFF, PROMPT.md §27) ----------------------------------------
+
+# Authority of the external tenant, e.g. https://<subdomain>.ciamlogin.com/<tenant-id>
+ENTRA_AUTHORITY: str = env("ENTRA_AUTHORITY", default="")
+ENTRA_TENANT_ID: str = env("ENTRA_TENANT_ID", default="")
+ENTRA_CLIENT_ID: str = env("ENTRA_CLIENT_ID", default="")
+ENTRA_CLIENT_SECRET: str = env("ENTRA_CLIENT_SECRET", default="")  # Key Vault reference in Azure
+ENTRA_REDIRECT_URI: str = env("ENTRA_REDIRECT_URI", default="")
+ENTRA_POST_LOGOUT_REDIRECT_URI: str = env("ENTRA_POST_LOGOUT_REDIRECT_URI", default="")
+ENTRA_SCOPES: list[str] = env.list("ENTRA_SCOPES", default=[])  # openid/profile added by MSAL
+ENTRA_ADMIN_REQUIRE_MFA: bool = env.bool("ENTRA_ADMIN_REQUIRE_MFA", default=True)
+ENTRA_CLOCK_SKEW_SECONDS: int = 120
+CSRF_FAILURE_VIEW = "config.api.views.csrf_failure"
+# Normally discovered from `{ENTRA_AUTHORITY}/v2.0/.well-known/openid-configuration`.
+ENTRA_ISSUER: str = env("ENTRA_ISSUER", default="")
+ENTRA_JWKS_URI: str = env("ENTRA_JWKS_URI", default="")
+# Decoded-image size cap (decompression-bomb guard), well below Pillow's own 89 MP warning.
+DOCUMENT_MAX_PIXELS: int = env.int("DOCUMENT_MAX_PIXELS", default=40_000_000)

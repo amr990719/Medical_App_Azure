@@ -29,4 +29,5 @@ python_files = ["test_*.py"]
 pythonpath = ["."]
 testpaths = ["apps", "config", "tests"]
 addopts = "-ra --strict-markers"
+markers = ["azurite: needs the docker compose Azurite emulator (skipped when it is not running)"]
 filterwarnings = ["error::RuntimeWarning"]
