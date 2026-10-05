@@ -1,0 +1,32 @@
+[project]
+name = "medical-syndicates-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DJ", "SIM", "RUF", "S"]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # Arabic text is intentional, not ambiguous Unicode
+    "RUF012",                      # Django Meta / class attributes are not ClassVar-annotated
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S105", "S106"]
+"**/migrations/**" = ["E501", "RUF"]
+"conftest.py" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config", "tests"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+pythonpath = ["."]
+testpaths = ["apps", "config", "tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = ["error::RuntimeWarning"]

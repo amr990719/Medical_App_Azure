@@ -1,2 +1,46 @@
-# Local development stack (PostgreSQL + Azurite + Django).
-# Populated in Session 2 — see docs/plan.md.
+# Local development stack (PROMPT.md §32). PostgreSQL + Azurite now; the Django service is
+# added in Session 6. Credentials below are LOCAL-ONLY defaults for a throwaway container —
+# never reuse them anywhere else. Override any value through a root `.env` file (gitignored).
+name: medical-syndicates
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-medical}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medical}
+      POSTGRES_DB: ${POSTGRES_DB:-medical}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    command: >-
+      azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data
+      --loose --skipApiVersionCheck
+    ports:
+      - "${AZURITE_BLOB_PORT:-10000}:10000"
+    volumes:
+      - azurite-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('net').connect(10000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  azurite-data:

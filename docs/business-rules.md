@@ -86,8 +86,8 @@ maps to:
 | MOTHER / FATHER | أم / أب | parent |
 | SON_MINOR | ابن (18 سنة أو أقل) | child |
 | DAUGHTER | ابنة | child |
-| SON_UNIVERSITY | ابن (طالب جامعي) | gradSon |
-| SON_GRADUATE | ابن (خريج) | gradSon |
+| SON_UNIVERSITY | ابن (طالب جامعي) | grad_son |
+| SON_GRADUATE | ابن (خريج) | grad_son |
 | HUSBAND / WIFE | زوج / زوجة | spouse |
 
 Brothers, sisters and "other" are not supported because the schedule has no fee for them.
@@ -124,7 +124,7 @@ server-side type sniffing and image decoding; one active document per slot, re-u
 
 FY 2026 schedule (whole Egyptian pounds):
 
-| Tier | member | spouse | child | gradSon | parent |
+| Tier | member | spouse | child | grad_son | parent |
 |---|---|---|---|---|---|
 | 1 (≤5 years since registration) | 600 | 800 | 500 | 1200 | 1050 |
 | 2 (≤10) | 700 | 950 | 550 | 1400 | 1200 |

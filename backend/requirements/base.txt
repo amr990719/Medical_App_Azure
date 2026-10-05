@@ -1,0 +1,5 @@
+# Runtime dependencies shared by every environment.
+# Packages needed only by later sessions (DRF, storage, OCR, auth) are added when first used.
+Django>=5.2,<5.3
+psycopg[binary]>=3.2,<4
+django-environ>=0.12,<1

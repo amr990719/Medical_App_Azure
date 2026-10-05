@@ -46,8 +46,8 @@ Never a primary key.
 | `MOTHER` | أم | parent |
 | `FATHER` | أب | parent |
 | `SON_MINOR` | ابن (18 سنة أو أقل) | child |
-| `SON_UNIVERSITY` | ابن (طالب جامعي) | gradSon |
-| `SON_GRADUATE` | ابن (خريج) | gradSon |
+| `SON_UNIVERSITY` | ابن (طالب جامعي) | grad_son |
+| `SON_GRADUATE` | ابن (خريج) | grad_son |
 | `DAUGHTER` | ابنة | child |
 | `HUSBAND` | زوج | spouse |
 | `WIFE` | زوجة | spouse |
@@ -99,7 +99,7 @@ OCR-capable types: `NATIONAL_ID_FRONT`, `NATIONAL_ID_BACK`, `SYNDICATE_ID`, `BEN
 
 FY 2026 schedule (`FeeSchedule`, DB-stored, versioned, read-only once used by a submission):
 
-| Tier | member | spouse | child | gradSon | parent |
+| Tier | member | spouse | child | grad_son | parent |
 |---|---|---|---|---|---|
 | 1 | 600 | 800 | 500 | 1200 | 1050 |
 | 2 | 700 | 950 | 550 | 1400 | 1200 |
@@ -189,6 +189,14 @@ APPROVED مقبول · REJECTED مرفوض (colours in PROMPT.md §7.3).
 | 16 | receipt uploaded (submit only) | يرجى رفع إيصال الدفع |
 | 17 | declaration accepted (submit only) | يرجى الموافقة على الإقرار |
 | 18 | national ID not used by another doctor | الرقم القومي مسجل لعضو آخر |
+
+Additional messages (not in PROMPT.md §22; added in Session 2 for the §13/§14 consistency rules):
+`سنة الميلاد لا تطابق الرقم القومي` (member birth year ≠ ID) ·
+`المستفيد {name}: درجة القرابة لا تتوافق مع نوع العضو` (spouse/gender) ·
+`المستفيد {name}: الابن القاصر يجب أن يكون 18 سنة أو أقل` (SON_MINOR age) ·
+`المستفيد {name}: الرقم القومي للمستفيد لا يمكن أن يطابق الرقم القومي للعضو` ·
+review notes required `يرجى كتابة ملاحظات المراجعة` · approve without confirmed payment
+`لا يمكن قبول الطلب قبل تأكيد الدفع`.
 
 Name normalization for rule 15: trim, collapse spaces, أ/إ/آ→ا, ة→ه, ى→ي.
 Step grouping: 1 member (rules 1–7, 14, 18) · 2 beneficiaries (11, 12, 14-related) · 3 documents (8–10, 13) ·
