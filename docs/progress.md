@@ -147,6 +147,58 @@ is the N+1 query-count guard on the application detail, added afterwards as a re
   `manage.py spectacular --file openapi.yaml --validate --fail-on-warn` succeeds (30 paths), and
   `npx openapi-typescript` generates the TS types from it (not committed; Session 4).
 
+### Session 4 — 2026-10-05 — Phase 4A (frontend foundation and shared components)
+Scope limited by the user to the foundation: no doctor form, no admin pages. Built test-first
+(every test file was run and seen failing before its implementation; ar.ts and config are data).
+- **Toolchain:** Vite 6.4, React 19.3, TypeScript 5.9 (strict, `noUncheckedIndexedAccess`), Tailwind
+  4.3 (`@tailwindcss/vite`, tokens in `src/index.css` `@theme`), React Router 7, TanStack Query 5,
+  React Hook Form 7 + Zod 4 + resolvers (installed for Session 5), Vitest 4 + Testing Library + MSW 2,
+  Playwright 1.63, ESLint 9 flat config. Dependency pins forced by this machine: see D56/D57.
+- **Theme / RTL:** `index.html` `lang="ar" dir="rtl"`, Cairo (Google Fonts) + fallback stack, every
+  §7.2 token and §7.3 status colour as Tailwind colours, paper-form tokens (`paper-line`, `ink`).
+  ESLint `no-restricted-syntax` refuses physical classes in string literals and template parts
+  (proved with a probe file: 5/5 violations flagged, `text-rightish` not). `rtl_check.py` vendored to
+  `frontend/scripts/` (Q-T4 resolved) and passes with 0 errors / 0 warnings.
+- **i18n / utils:** `src/i18n/ar.ts` holds every UI string + `t()` interpolation; enum labels come
+  from reference data, not ar.ts. `utils/digits.ts` (Eastern Arabic + Persian → Western),
+  `utils/format.ts` (`3٬025 ج.م`, `٣ أكتوبر ٢٠٢٦` in Cairo time, relative time).
+- **API layer:** `src/api/schema.d.ts` generated from `backend/openapi.yaml` (committed, D51);
+  `client.ts` (`apiFetch`: `/api/v1` prefix, JSON or multipart, `X-CSRFToken` from the cookie on
+  unsafe methods, §46 envelope → `ApiError` incl. step errors, non-JSON/network failures → Arabic
+  messages, 401 → `session:expired`; `apiUpload` via XHR for progress); `case.ts` camelCase ⇄
+  snake_case mapping at runtime and type level (data keys such as `SON_MINOR` untouched);
+  `types.ts` (generated types camelized + hand-typed reference data, fee quote, validation);
+  `keys.ts`; `endpoints/{auth,reference,profile,applications,documents}.ts`.
+- **Auth:** `useSession` (GET /auth/me/, `null` on 401), `RequireRole` guard (signed out → `/`, other
+  role → its home), `useSignOut` (POST logout → `queryClient.clear()` → Entra logout URL or
+  `/signed-out`), session-expiry listener, `DevLoginPanel` (only when `import.meta.env.DEV` and the
+  backend answers; verified absent from the production bundle).
+- **Routes / layouts / pages:** every §8 route in `src/router.tsx`; Public, Doctor and Admin
+  (charcoal bar) layouts; LandingPage (Entra sign-in / sign-up links, `?auth_error=` messages, paper
+  form header illustration, five-step explanation), SignedOutPage, NotFoundPage, DashboardPage (§43:
+  greeting, cards with StatusBadge, last save, reference number, submitted date, snapshot total,
+  NEEDS_CORRECTION notes + `تصحيح وإعادة التقديم`, disabled `تقديم طلب جديد` while an application is
+  active, empty state, error + retry), NewApplicationPage (`/application/new` → POST → open). Other
+  routes are placeholders for Sessions 5–6.
+- **Shared components (§11):** `BoxInput` core + `NidInput` (14 boxes, segment gaps 1|6|2|4|1) and
+  `BoxStringInput` (26 boxes, wraps), `DashedField`, `RadioBoxGroup` (real radios), `ProgressStepper`,
+  `ValidationErrorPanel`, `StickyActionBar`, `StatusBadge`, `FeeSummaryPanel` (+ `useFeeQuote`),
+  `SmartUpload` (upload part: pre-check from reference-data limits, upload on select with progress,
+  thumbnail via `content_url`, server messages; OCR in Session 5), `DocumentModal` shell (slots from
+  the server's `required_documents`), UI kit `Button`, `Icon` (`mirror` prop), `Modal` (focus trap,
+  Escape, focus return), `Skeleton`, `FullPageStatus`, `UnionMark`.
+- **Tests:** 137 Vitest tests in 20 files (NidInput 19, BoxStringInput 9: typing, Arabic digits,
+  paste incl. `"٢٩٥٠١٢٣ ٠١٠١٢٣٤"`, Backspace, arrows, read-only, accessible names). Playwright
+  `e2e/foundation.spec.ts` (desktop + 390×844): RTL + Cairo + no horizontal overflow, dev login →
+  dashboard through the Vite proxy, sign-out, doctor refused from `/admin/*` — 6/6 passed.
+- **Real-data check:** curl through `http://localhost:5173/api/v1` (Vite proxy → runserver): `/auth/me/`
+  401 signed out, dev login 200, `/applications/` returned the doctor's FY 2026 draft (created this
+  session with `POST /applications/` for `doctor@dev.local`), rendered by the dashboard in Chromium.
+- **Result:** `npm run lint` clean, `npx tsc --noEmit` clean (root tsconfig is the app config; a
+  planted type error is reported), `npm test` 137 passed, `npm run build` OK,
+  `python frontend/scripts/rtl_check.py frontend/src` 0 errors / 0 warnings. Backend untouched
+  (the 847-test suite was not re-run this session).
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -254,6 +306,33 @@ is the N+1 query-count guard on the application detail, added afterwards as a re
 - **D54 — Development settings read the repo-root `.env`** (shared with docker compose) and default
   `BLOB_CONNECTION_STRING` to Azurite's public, documented development account on
   `AZURITE_BLOB_PORT`.
+- **D55 — `rtl_check.py` is vendored** at `frontend/scripts/rtl_check.py` (copied from the `rtl-ui`
+  skill, v1.0.0) so CI can run it without the plugin (Q-T4, Q-T8).
+- **D56 — TypeScript 5.9**, not the current 7.x: typescript-eslint 8.71 supports `<6.1` and
+  openapi-typescript 7.13 requires `^5`.
+- **D57 — jsdom 26**, not 27: jsdom 27 needs `require(esm)`, unflagged only from Node 22.12; this
+  machine has Node 22.11 (Q-T9).
+- **D58 — Digits on screen follow PROMPT.md's examples:** money Western digits + Arabic separator
+  (`3٬025 ج.م`), dates Eastern Arabic (`٣ أكتوبر ٢٠٢٦`), relative time Western (`منذ 5 دقائق`,
+  §43). The rtl-ui skill advises one digit system per screen; the spec wins.
+- **D59 — Enum labels only from reference data** (`statuses`, `kinships`…); `StatusBadge` takes the
+  label as a prop and only owns the §7.3 colours.
+- **D60 — One guard, `RequireRole`,** handles both "signed out → `/`" and "wrong role → own home".
+- **D61 — `إنشاء حساب` and `تسجيل الدخول` both go to `/api/v1/auth/login/?next=/dashboard`:** Entra
+  External ID's combined sign-up/sign-in user flow; the BFF has no sign-up hint (Q-B18).
+- **D62 — Dashboard amounts come only from `fee_snapshot`** (submitted applications). Draft cards
+  show no amount instead of one fee request per card; the form page shows the live quote.
+- **D63 — `تقديم طلب جديد` navigates to `/application/new`,** which POSTs (idempotent server side,
+  D38; guarded against StrictMode double effects) and replaces the URL with `/application/:id`.
+- **D64 — Box inputs keep a contiguous value:** focus never lands past the first empty box,
+  Backspace on a filled box removes that character (later ones shift), on an empty box it steps back
+  and clears; a paste of ≥ length characters replaces the whole value. Boxes are always LTR.
+- **D65 — Hand-written API shapes are `type` aliases** (interfaces have no index signature, so the
+  `Camelize` mapped type cannot walk them).
+- **D66 — The admin area uses a charcoal top bar**, the doctor area a white one, so a reviewer
+  never mistakes which context they are in.
+- **D67 — CSRF token read from the `csrftoken` cookie on every unsafe request;** the `csrf_token`
+  in the `/auth/me/` body is not used.
 
 ## Deviations from PROMPT.md
 
@@ -278,6 +357,16 @@ is the N+1 query-count guard on the application detail, added afterwards as a re
 | 17 | plan 3.4 reference-data keys `document_types`, `member_documents`, `beneficiary_document_rules` | one `document_rules` key = `rules_as_reference_data()` | the rules table is described in exactly one place |
 | 18 | plan "curl smoke through compose" | `scripts/smoke_api.py` against `runserver` + `tests/test_e2e_flow.py` | compose has no Django service until Session 6 |
 | 19 | plan 3.7 `BlobStorage` protocol | adds `list(prefix)` | needed by the orphan-blob cleanup |
+| 20 | plan 4.1 `tailwind.config.ts`, `.eslintrc` | Tailwind 4 `@theme` in `src/index.css`; ESLint 9 flat `eslint.config.js` | current major versions have no JS config / legacy rc |
+| 21 | plan 4.1 `gen:api` from `../backend/schema.yml` | `../backend/openapi.yaml` | the file name chosen in Session 3 (D51) |
+| 22 | plan 4.3 `RequireAuth.tsx` + `RequireRole.tsx` | `RequireRole.tsx` only | D60 |
+| 23 | plan: commit after every task; "Session 4: frontend foundation" | one commit `Phase 4A: frontend foundation` | explicit user instruction |
+| 24 | plan 4.4 `Badge`, `Card`, `Table`, `Toast`, `ConfirmDialog` | not built yet | user scope for 4A lists §11 components; built with their first use (ConfirmDialog for kinship change in Session 5) |
+| 25 | plan 4.5 `AutosaveIndicator` | not built (strings in ar.ts) | belongs with autosave in Session 5 |
+| 26 | plan 4.6 `rtl:check` → plugin path | vendored script (D55) | runnable in CI |
+| 27 | plan "dev login works to an empty dashboard placeholder" | real dashboard with API data | user's scope for this session |
+| 28 | plan Session 5 owns SmartUpload, DocumentModal, FeeSummaryPanel | built now (upload part / shell / panel) | user's scope for this session; OCR, checklist and modal wiring stay in Session 5 |
+| 29 | plan 6.4 Playwright doctor flow | only `e2e/foundation.spec.ts` now | the doctor flow does not exist yet |
 
 ## Open questions
 
@@ -291,7 +380,16 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T5** CI and Azure must use PostgreSQL ≥ 15 (`NULLS NOT DISTINCT`, D17); Bicep should pin 16.
 - **Q-B15** (business) Confirm the Arabic payment-status labels (D26) and whether an admin may change
   a payment decision after APPROVED (currently refused).
-- **Q-T4** The `rtl` plugin's `rtl_check.py` path must be located via the `rtl-ui` skill in Session 4.
+- **Q-T4** Resolved: `rtl_check.py` vendored to `frontend/scripts/` (D55).
+- **Q-T8** The `rtl` plugin directory ships no LICENSE file. Confirm redistributing the vendored
+  `rtl_check.py` in this repository is acceptable, or replace it with a download step in CI.
+- **Q-T9** This machine runs Node 22.11. Upgrading to the current 22.x LTS (≥ 22.12) lets jsdom 27
+  be used (D57); CI (Session 8) should pin the latest 22.x.
+- **Q-T10** Cairo is loaded from Google Fonts. The Static Web Apps CSP (Session 8) must allow
+  `fonts.googleapis.com` / `fonts.gstatic.com`, or the font is self-hosted (the rtl-ui skill's
+  recommendation; also removes a third-party request).
+- **Q-B18** (business) Should `إنشاء حساب` open Entra's sign-up page directly? That needs the BFF to
+  forward a sign-up hint (`prompt=create`); today both buttons use the combined flow (D61).
 - **Q-T6** Throttle counters use the default cache (local memory per replica). With several Container
   App replicas the effective limit multiplies; Session 6/7 must set `CACHE_URL` to a shared cache
   (Azure Cache for Redis, or `dbcache://django_cache` + `createcachetable` in the migration job).
@@ -304,20 +402,24 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**Session 4 — Frontend foundation and shared components** (`docs/plan.md` → Session 4).
-1. Environment: `docker compose up -d` (repo root), then in `backend/`:
-   `.venv/Scripts/pytest -q` → expect **847 passed** (the `azurite`-marked tests need Azurite up).
-   uv is not on PATH: use `../.medical_venv/Scripts/uv.exe pip install --python .venv/Scripts/python.exe -r requirements/dev.txt`.
-   Dev database: `DJANGO_SETTINGS_MODULE=config.settings.development python manage.py migrate &&
-   python manage.py seed_dev_data && python manage.py runserver 8000`.
-2. API types: `python manage.py spectacular --file openapi.yaml`, then
-   `npx openapi-typescript backend/openapi.yaml -o frontend/src/api/schema.d.ts` (commit the .d.ts).
-3. Auth in the SPA (`docs/api.md`): call `GET /api/v1/auth/me/` first (sets `csrftoken`; 401 when
-   signed out); send `X-CSRFToken` on every POST/PATCH/DELETE; dev login = `GET /auth/dev/users/` +
-   `POST /auth/dev/login/`; production sign-in = full-page navigation to
-   `/api/v1/auth/login/?next=…`; handle `?auth_error=<CODE>` on the landing page.
-4. Every enum, label, governorate, kinship, document rule, upload limit and `ocr_enabled` comes
-   from `GET /api/v1/reference-data/`; the fee panel shows `GET /applications/{id}/fees/`.
-5. Vite proxy `/api` → `http://127.0.0.1:8000`; development `CSRF_TRUSTED_ORIGINS` already allows
-   `http://localhost:5173`.
-6. Load `rtl-ui` (locate `rtl_check.py`, Q-T4), `frontend-design` and `test-driven-development`.
+**Session 5 — Doctor flow** (`docs/plan.md` → Session 5). Phase 4A built the foundation only.
+1. Environment: `docker compose up -d`; in `backend/`:
+   `DJANGO_SETTINGS_MODULE=config.settings.development .venv/Scripts/python manage.py runserver 8000`
+   (migrate + `seed_dev_data` first on a fresh database); in `frontend/`: `npm ci && npm run dev`
+   → http://localhost:5173, dev login as `doctor@dev.local` (already has a FY 2026 draft).
+   Checks: `npm run lint`, `npx tsc --noEmit`, `npm test` (expect **137 passed**), `npm run build`,
+   `python frontend/scripts/rtl_check.py frontend/src`, `npm run test:e2e` (backend running).
+2. Reuse what exists — do not rebuild: `NidInput`/`BoxStringInput`/`DashedField`/`RadioBoxGroup`
+   (`src/components/form/`), `ProgressStepper`, `ValidationErrorPanel`, `StickyActionBar`,
+   `FeeSummaryPanel` + `useFeeQuote`, `SmartUpload` (add the `مسح تلقائي` OCR button and
+   `useExtract` there), `DocumentModal` (wire into `BeneficiaryTable`), `Modal`, `useReferenceData`,
+   `useApplications`, `queryKeys`, `toCamel`/`toSnake`, `src/test/fixtures.ts` + `renderApp` /
+   `renderWithProviders` (`src/test/render.tsx`) for tests.
+3. Replace the placeholders in `src/router.tsx` for `/profile` and `/application/:id/*`;
+   `/application/:id` must redirect to the right step (Task 5.5).
+4. Still to build for Session 5: `ConfirmDialog` (kinship change), `AutosaveIndicator` (strings
+   exist in `ar.autosave`), the form state/autosave hook, MemberSection, BeneficiaryTable/cards,
+   DocumentsChecklist, Declaration, Payment/Review/Status/Print pages.
+5. Testing notes: in jsdom the multipart filename is lost between XHR and MSW (browsers keep it) —
+   assert on file bytes/type; hold MSW responses with a promise instead of `delay()` to test
+   in-flight UI. After any backend serializer change: regenerate `openapi.yaml` and `npm run gen:api`.

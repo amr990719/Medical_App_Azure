@@ -1,0 +1,365 @@
+{
+  "fiscal_year": 2026,
+  "max_beneficiaries": 10,
+  "governorates": [
+    "القاهرة",
+    "الجيزة",
+    "الإسكندرية",
+    "الدقهلية",
+    "البحر الأحمر",
+    "البحيرة",
+    "الفيوم",
+    "الغربية",
+    "الإسماعيلية",
+    "المنوفية",
+    "المنيا",
+    "القليوبية",
+    "الوادي الجديد",
+    "السويس",
+    "أسوان",
+    "أسيوط",
+    "بني سويف",
+    "بورسعيد",
+    "دمياط",
+    "الشرقية",
+    "جنوب سيناء",
+    "كفر الشيخ",
+    "مطروح",
+    "الأقصر",
+    "قنا",
+    "شمال سيناء",
+    "سوهاج"
+  ],
+  "syndicate_types": [
+    {
+      "value": "HUMAN_MEDICINE",
+      "label": "بشري"
+    },
+    {
+      "value": "PHARMACY",
+      "label": "صيدلي"
+    },
+    {
+      "value": "DENTISTRY",
+      "label": "أسنان"
+    },
+    {
+      "value": "VETERINARY",
+      "label": "بيطري"
+    }
+  ],
+  "work_statuses": [
+    {
+      "value": "WORKING",
+      "label": "يعمل"
+    },
+    {
+      "value": "PENSIONER",
+      "label": "معاش"
+    },
+    {
+      "value": "DECEASED",
+      "label": "متوفى"
+    }
+  ],
+  "religions": [
+    {
+      "value": "MUSLIM",
+      "label": "مسلم"
+    },
+    {
+      "value": "CHRISTIAN",
+      "label": "مسيحي"
+    }
+  ],
+  "genders": [
+    {
+      "value": "MALE",
+      "label": "ذكر"
+    },
+    {
+      "value": "FEMALE",
+      "label": "أنثى"
+    }
+  ],
+  "kinships": [
+    {
+      "value": "MOTHER",
+      "label": "أم",
+      "fee_key": "parent"
+    },
+    {
+      "value": "FATHER",
+      "label": "أب",
+      "fee_key": "parent"
+    },
+    {
+      "value": "SON_MINOR",
+      "label": "ابن (18 سنة أو أقل)",
+      "fee_key": "child"
+    },
+    {
+      "value": "SON_UNIVERSITY",
+      "label": "ابن (طالب جامعي)",
+      "fee_key": "grad_son"
+    },
+    {
+      "value": "SON_GRADUATE",
+      "label": "ابن (خريج)",
+      "fee_key": "grad_son"
+    },
+    {
+      "value": "DAUGHTER",
+      "label": "ابنة",
+      "fee_key": "child"
+    },
+    {
+      "value": "HUSBAND",
+      "label": "زوج",
+      "fee_key": "spouse"
+    },
+    {
+      "value": "WIFE",
+      "label": "زوجة",
+      "fee_key": "spouse"
+    }
+  ],
+  "application_types": [
+    {
+      "value": "FIRST_TIME",
+      "label": "أول مرة"
+    },
+    {
+      "value": "ADDITION",
+      "label": "إضافة"
+    }
+  ],
+  "statuses": [
+    {
+      "value": "DRAFT",
+      "label": "مسودة"
+    },
+    {
+      "value": "SUBMITTED",
+      "label": "مقدم"
+    },
+    {
+      "value": "UNDER_REVIEW",
+      "label": "قيد المراجعة"
+    },
+    {
+      "value": "NEEDS_CORRECTION",
+      "label": "يحتاج تصحيح"
+    },
+    {
+      "value": "APPROVED",
+      "label": "مقبول"
+    },
+    {
+      "value": "REJECTED",
+      "label": "مرفوض"
+    }
+  ],
+  "payment_statuses": [
+    {
+      "value": "NOT_UPLOADED",
+      "label": "لم يتم رفع الإيصال"
+    },
+    {
+      "value": "PENDING_REVIEW",
+      "label": "بانتظار التأكيد"
+    },
+    {
+      "value": "CONFIRMED",
+      "label": "مؤكد"
+    },
+    {
+      "value": "REJECTED",
+      "label": "مرفوض"
+    }
+  ],
+  "document_rules": {
+    "document_types": [
+      {
+        "type": "NATIONAL_ID_FRONT",
+        "label": "صورة البطاقة (وجه)",
+        "ocr_capable": true
+      },
+      {
+        "type": "NATIONAL_ID_BACK",
+        "label": "صورة البطاقة (ظهر)",
+        "ocr_capable": true
+      },
+      {
+        "type": "SYNDICATE_ID",
+        "label": "كارنيه النقابة",
+        "ocr_capable": true
+      },
+      {
+        "type": "PERSONAL_PHOTO",
+        "label": "صورة العضو الأصلي",
+        "ocr_capable": false
+      },
+      {
+        "type": "PAYMENT_RECEIPT",
+        "label": "إيصال الدفع",
+        "ocr_capable": false
+      },
+      {
+        "type": "BENEFICIARY_NATIONAL_ID",
+        "label": "بطاقة الرقم القومي",
+        "ocr_capable": true
+      },
+      {
+        "type": "BIRTH_CERTIFICATE",
+        "label": "شهادة الميلاد",
+        "ocr_capable": true
+      },
+      {
+        "type": "MARRIAGE_CERTIFICATE",
+        "label": "شهادة الزواج",
+        "ocr_capable": false
+      },
+      {
+        "type": "INSURANCE_PRINT",
+        "label": "برينت تأميني",
+        "ocr_capable": false
+      },
+      {
+        "type": "UNIVERSITY_ID",
+        "label": "كارنيه الجامعة",
+        "ocr_capable": false
+      },
+      {
+        "type": "OTHER",
+        "label": "مستند آخر",
+        "ocr_capable": false
+      }
+    ],
+    "member": [
+      {
+        "type": "NATIONAL_ID_FRONT",
+        "required": true,
+        "label": "صورة البطاقة (وجه)",
+        "ocr_capable": true,
+        "stage": "form"
+      },
+      {
+        "type": "NATIONAL_ID_BACK",
+        "required": true,
+        "label": "صورة البطاقة (ظهر)",
+        "ocr_capable": true,
+        "stage": "form"
+      },
+      {
+        "type": "SYNDICATE_ID",
+        "required": true,
+        "label": "كارنيه النقابة",
+        "ocr_capable": true,
+        "stage": "form"
+      },
+      {
+        "type": "PERSONAL_PHOTO",
+        "required": false,
+        "label": "صورة العضو الأصلي",
+        "ocr_capable": false,
+        "stage": "form"
+      },
+      {
+        "type": "PAYMENT_RECEIPT",
+        "required": true,
+        "label": "إيصال الدفع",
+        "ocr_capable": false,
+        "stage": "submit"
+      }
+    ],
+    "child_national_id_age": 16,
+    "kinships": {
+      "HUSBAND": {
+        "base_rule": "spouse",
+        "extra_required": []
+      },
+      "WIFE": {
+        "base_rule": "spouse",
+        "extra_required": []
+      },
+      "MOTHER": {
+        "base_rule": "parent",
+        "extra_required": []
+      },
+      "FATHER": {
+        "base_rule": "parent",
+        "extra_required": []
+      },
+      "SON_MINOR": {
+        "base_rule": "child",
+        "extra_required": []
+      },
+      "DAUGHTER": {
+        "base_rule": "child",
+        "extra_required": []
+      },
+      "SON_UNIVERSITY": {
+        "base_rule": "child",
+        "extra_required": [
+          "UNIVERSITY_ID"
+        ]
+      },
+      "SON_GRADUATE": {
+        "base_rule": "child",
+        "extra_required": [
+          "INSURANCE_PRINT"
+        ]
+      }
+    },
+    "base_rules": {
+      "spouse": {
+        "required": [
+          "BENEFICIARY_NATIONAL_ID",
+          "MARRIAGE_CERTIFICATE",
+          "INSURANCE_PRINT"
+        ]
+      },
+      "parent": {
+        "required": [
+          "BENEFICIARY_NATIONAL_ID"
+        ]
+      },
+      "child": {
+        "below_age": {
+          "required": [
+            "BIRTH_CERTIFICATE"
+          ],
+          "optional": [
+            "BENEFICIARY_NATIONAL_ID"
+          ]
+        },
+        "at_or_above_age": {
+          "required": [
+            "BENEFICIARY_NATIONAL_ID"
+          ]
+        },
+        "female_member_always_requires": [
+          "BIRTH_CERTIFICATE"
+        ],
+        "unknown_birth_year": "below_age"
+      }
+    }
+  },
+  "ocr_enabled": true,
+  "features": {
+    "require_member_photo": false,
+    "allow_pdf": false,
+    "allow_heic": false
+  },
+  "upload": {
+    "max_bytes": 8388608,
+    "receipt_min_width": 400,
+    "receipt_min_height": 300,
+    "accepted_content_types": [
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ]
+  }
+}

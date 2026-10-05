@@ -1,0 +1,22 @@
+{
+  "id": "264687cc-ba60-4fc5-98e0-563872a2e1a1",
+  "fiscal_year": 2026,
+  "application_type": "FIRST_TIME",
+  "work_status": "",
+  "status": "DRAFT",
+  "payment_status": "NOT_UPLOADED",
+  "reference_number": null,
+  "declaration_name": "",
+  "declaration_accepted": false,
+  "declaration_accepted_at": null,
+  "fee_snapshot": null,
+  "fee_schedule": null,
+  "review_notes": "",
+  "reviewed_at": null,
+  "submitted_at": null,
+  "created_at": "2026-10-05T22:40:31.474762+03:00",
+  "updated_at": "2026-10-05T22:40:31.474762+03:00",
+  "is_editable": true,
+  "beneficiaries": [],
+  "documents": []
+}

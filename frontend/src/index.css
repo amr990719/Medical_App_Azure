@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* Design tokens — PROMPT.md §7.2 (prototype palette) and §7.3 (status colours). */
+@theme {
+  --font-sans: "Cairo", system-ui, "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
+
+  --color-banana: #f5e642;
+  --color-banana-deep: #c4b800;
+  --color-banana-light: #fdfbe8;
+  --color-teal: #0fa571;
+  --color-teal-deep: #0a7a55;
+  --color-teal-light: #e3f8f0;
+  --color-charcoal: #1a1a2e;
+  --color-slate: #4a5568;
+  --color-muted: #718096;
+  --color-smoke: #f7f8fa;
+  --color-white: #ffffff;
+  --color-border: #e8eaed;
+  --color-border-hover: #cbd5e0;
+  --color-danger: #e53e3e;
+  --color-danger-light: #fff5f5;
+  --color-success: #38a169;
+  --color-warning: #d69e2e;
+
+  /* Paper-form area: black rules, entered values in blue ink (§7.2). */
+  --color-paper: #ffffff;
+  --color-paper-line: #000000;
+  --color-ink: #1d4ed8;
+
+  /* Status badges (§7.3). */
+  --color-status-draft-bg: #f7f8fa;
+  --color-status-draft-fg: #4a5568;
+  --color-status-submitted-bg: #fdfbe8;
+  --color-status-submitted-fg: #744210;
+  --color-status-review-bg: #ebf4ff;
+  --color-status-review-fg: #2b6cb0;
+  --color-status-correction-bg: #fffbeb;
+  --color-status-correction-fg: #92400e;
+  --color-status-approved-bg: #e3f8f0;
+  --color-status-approved-fg: #0a7a55;
+  --color-status-rejected-bg: #fff5f5;
+  --color-status-rejected-fg: #742a2a;
+}
+
+@layer base {
+  :root {
+    --paper-rule: 1.5px;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* clip, not hidden: keeps position: sticky working below it (rtl-ui). */
+    overflow-x: clip;
+  }
+
+  body {
+    @apply bg-smoke text-charcoal font-sans antialiased;
+    /* Arabic needs generous leading so dots and marks do not clip. */
+    line-height: 1.75;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Form controls do not inherit the page font by default. */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-teal-deep);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* One cell of NidInput / BoxStringInput: a paper box with ink-blue content. */
+  .paper-box {
+    @apply border-paper-line bg-paper text-ink text-center font-bold outline-none;
+    border-width: var(--paper-rule);
+  }
+  .paper-box:focus {
+    @apply bg-banana-light;
+    box-shadow: inset 0 0 0 2px var(--color-banana-deep);
+  }
+}
