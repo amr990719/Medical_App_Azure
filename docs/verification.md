@@ -30,12 +30,28 @@ marked **NOT VERIFIED — requires Azure credentials**.
 | 18 | Bicep validates | ✓ build / NOT VERIFIED what-if | `az bicep build` main + 14 modules: exit 0, 0 warnings (Bicep 0.48.1, strict `bicepconfig.json`); `az bicep build-params` dev/staging/prod OK; `check-template-security.py` → 0 problems, `--self-test` 20/20; `what-if` — **NOT VERIFIED — requires Azure credentials** (subscription read-only, Q-T15) |
 | 19 | CI/CD files exist | ✓ | 7 workflows; `rhysd/actionlint` 1.7.12 (with shellcheck) → exit 0, no findings; shellcheck `entrypoint.sh` clean |
 | 20 | No secrets committed | ✓ | `gitleaks git` (13 commits) → `no leaks found`; `gitleaks dir` on the working tree: every hit is in gitignored virtualenvs (third-party code) plus one false positive in `.env.example` (two empty variable names); see §4 |
-| 21 | README contains deployment commands | ✗ **not yet** | `README.md` is still the Session 1 placeholder; writing it is Session 10 (Task 10.1). Deployment commands exist in `docs/azure-deployment.md` |
+| 21 | README contains deployment commands | ✓ (Session 10) | `README.md` §9–§14: infrastructure (two phases), Key Vault secret, Entra, PostgreSQL role, image, migrate job, frontend, OCR, admin grant — Bash and PowerShell; every block parses (`bash -n`, PowerShell parser); the commands themselves are **NOT VERIFIED — requires Azure credentials** |
 
 Dependency audits: `pip-audit -r requirements/prod.txt` and the exact 77 packages frozen in the
 production image → **No known vulnerabilities found**; `npm audit --omit=dev` and `npm audit` →
 **0 vulnerabilities**. `requirements/dev.txt` had pytest 8.4.2 (PYSEC-2026-1845, dev only) →
 raised to `pytest>=9.0.3,<10`.
+
+## 1a. Session 10 re-run (2026-10-06, after the `.env` loader fix)
+
+| Item | Result |
+|---|---|
+| 1–4 frontend | `cd frontend && npm run ci`: Vitest **281 passed (41 files)**, ESLint + `tsc` clean, `rtl_check.py` 0/0 in 126 files, build OK |
+| 6 `check --deploy` | production image with the `main.bicep` environment: no issues; `DEV_AUTH_ENABLED=true` → `ImproperlyConfigured` |
+| 7 migrations | `makemigrations --check --dry-run` → No changes detected; throwaway compose project with empty volumes (PowerShell variant) → 0 unapplied, ready |
+| 8 backend | ruff clean (235 files); `npm run test:backend` → **964 passed, 1 skipped** (new `config/tests/test_envfile.py`; its `.env.example` test needs the repository root, skipped in the container, passes on the host) |
+| 9 image | `docker build --target runtime` OK, 432 MB |
+| 16–17 e2e / print | `npx playwright test` → **11 passed, 5 skipped**; doctor and admin A4 PDFs 2 pages each |
+| 18 Bicep | `az bicep build` main + `build-params` dev/staging/prod OK; template guard 0 problems, self-test 20/20 |
+| 20 secrets | `gitleaks git` → 14 commits, no leaks; `gitleaks dir` on the changed files → no leaks |
+| 21 README | ✓ (above) |
+
+Not re-run in Session 10 (no workflow or dependency change): actionlint, `pip-audit`, `npm audit`.
 
 ## 2. PROMPT.md §2.3 — each prototype defect and the test that proves it stays fixed
 

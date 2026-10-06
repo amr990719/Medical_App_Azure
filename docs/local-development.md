@@ -32,6 +32,9 @@ docker compose ps                    # postgres, azurite, backend: (healthy)
 curl http://localhost:8000/api/ready/   # {"status": "ok", "database": "ok"}
 ```
 
+In Windows PowerShell 5.1 use `curl.exe` (plain `curl` is an alias of `Invoke-WebRequest`) and
+`;` instead of `&&`: `Set-Location frontend; npm ci; npm run dev`.
+
 ## Seeded data (`seed_dev_data`, idempotent)
 
 | User | Role | Data |
@@ -90,6 +93,14 @@ curl http://localhost:8100/api/ready/
 POSTGRES_PORT=55432 AZURITE_BLOB_PORT=10210 BACKEND_PORT=8100 docker compose -p medical-fresh down -v
 ```
 
+```powershell
+$env:POSTGRES_PORT = "55432"; $env:AZURITE_BLOB_PORT = "10210"; $env:BACKEND_PORT = "8100"
+docker compose -p medical-fresh up -d
+curl.exe http://localhost:8100/api/ready/
+docker compose -p medical-fresh down -v
+Remove-Item Env:POSTGRES_PORT, Env:AZURITE_BLOB_PORT, Env:BACKEND_PORT
+```
+
 ## Running Django on the host instead
 
 Useful with a debugger. Stop the container (`docker compose stop backend`), then:
@@ -102,8 +113,18 @@ DJANGO_SETTINGS_MODULE=config.settings.development .venv/Scripts/python manage.p
 .venv/Scripts/python -m pytest -q        # test settings come from pyproject.toml
 ```
 
-(`.venv/bin/python` on Linux/macOS.) Development settings read the root `.env`, so the host-side
-Django finds Azurite on `AZURITE_BLOB_PORT`.
+```powershell
+Set-Location backend
+uv venv .venv --python 3.12; uv pip install --python .venv -r requirements/dev.txt
+$env:DJANGO_SETTINGS_MODULE = "config.settings.development"
+.venv\Scripts\python manage.py migrate
+.venv\Scripts\python manage.py runserver 8000
+Remove-Item Env:DJANGO_SETTINGS_MODULE; .venv\Scripts\python -m pytest -q
+```
+
+(`.venv/bin/python` on Linux/macOS.) Development settings read the root `.env` (empty values are
+ignored, so a copy of `.env.example` keeps every default), so the host-side Django finds Azurite
+on `AZURITE_BLOB_PORT`.
 
 ## Frontend (`frontend/`)
 

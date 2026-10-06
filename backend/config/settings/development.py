@@ -1,12 +1,14 @@
 """Local development settings (docker compose PostgreSQL + Azurite)."""
 
 from apps.documents.azurite import azurite_connection_string
+from config.envfile import read_env_file
 
 from .base import *  # noqa: F403
 from .base import BASE_DIR, env
 
 # The repository-root `.env` (gitignored) holds local overrides shared with docker compose.
-env.read_env(BASE_DIR.parent / ".env")
+# Empty values are skipped, so a copy of `.env.example` keeps every default.
+read_env_file(BASE_DIR.parent / ".env")
 
 DEBUG = True
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="django-insecure-local-development-only")

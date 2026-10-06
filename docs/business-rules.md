@@ -168,10 +168,17 @@ with the codes listed in SKILL.md §7. The UI never shows stack traces.
 | 5 | Maximum beneficiaries: 10 (prototype) or 11 (paper rows)? | 10 | `MAX_BENEFICIARIES` |
 | 6 | Must `SON_MINOR` be ≤18, and must spouse kinship match the member's gender? | Both enforced | `ENFORCE_SON_MINOR_AGE`, `ENFORCE_SPOUSE_GENDER` |
 | 7 | Can a rejected applicant re-apply in the same fiscal year? | Yes, a new application | partial unique constraint |
-| 8 | How do members pay (bank, Fawry, office)? What instructions to show? | Configurable placeholder text | `PAYMENT_INSTRUCTIONS` setting / admin |
+| 8 | How do members pay (bank, Fawry, office)? What instructions to show? | Placeholder text on the receipt page (Q-B19); the organization must supply the real text | `frontend/src/i18n/ar.ts` → `payment.instructions` (one place; an admin-editable setting would need a new model) |
 | 9 | Is the member photo mandatory? | Optional | `REQUIRE_MEMBER_PHOTO=false` |
 | 10 | Is `(syndicate_type, registration_number)` unique? | Indexed, not unique | `doctors/models.py` |
 | 11 | Is sending ID images to Azure OpenAI for OCR legally approved, and in which region? | OCR behind `OCR_ENABLED`, off in production until approved | settings / Bicep `enableOcr` |
 | 12 | Data retention period for applications and documents? | Not auto-deleted; documented as a decision | `docs/security.md` |
 | 13 | National ID check digit algorithm — should position 14 be validated? | Not validated | `national_id.py` |
 | 14 | Governorate-of-birth codes — hard validation or warning? | Warning only | `national_id.py` |
+| 15 | Arabic payment-status labels (`لم يتم رفع الإيصال / بانتظار التأكيد / مؤكد / مرفوض`), and may an admin change a payment decision after APPROVED? (Q-B15) | Labels as listed; payment changes refused after APPROVED | `apps/reference/constants.py`, `applications/services.py::set_payment_status` |
+| 16 | Should admins see drafts before submission? (Q-B16) | No — review starts at SUBMITTED | admin querysets |
+| 17 | Receipt minimum size: width ≥ 400 **and** height ≥ 300 (a portrait 300×400 photo is refused), or either orientation? (Q-B17) | Prototype rule (landscape minimum) | `RECEIPT_MIN_WIDTH` / `RECEIPT_MIN_HEIGHT` settings, `apps/documents/validators.py` |
+| 18 | Should `إنشاء حساب` open Entra's sign-up page directly (`prompt=create`)? (Q-B18) | Both buttons use the combined sign-up/sign-in flow | `LandingPage.tsx`, `/auth/login/` |
+| 19 | Must official printouts always carry the full national ID? (Q-B20) | Admin printouts show it masked unless the reviewer reveals it (audited) | `AdminPrintPage.tsx` |
+| 20 | When a correction is requested and the doctor resubmits, does a CONFIRMED payment stay confirmed? (Q-B21) | Yes, unless the doctor replaces the receipt (→ `PENDING_REVIEW`) | `applications/services.py` |
+| 21 | Legal / organizational decisions L1–L8 (religion field, OCR by an AI service, region, retention, admin access, breach procedure, production access, malware scanning) (Q-B22) | See `docs/security.md` §6 | — |

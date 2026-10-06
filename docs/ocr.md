@@ -38,7 +38,7 @@ clear message; PDF uploads are themselves off by default, `ALLOW_PDF_DOCUMENTS=f
 - **Authentication:** the Container App's managed identity through
   `azure.identity.get_bearer_token_provider(credential, "https://cognitiveservices.azure.com/.default")`.
   The identity needs the **Cognitive Services OpenAI User** role on the resource. No API key exists
-  in configuration; disable key auth on the resource (`disableLocalAuth`, Session 8 Bicep).
+  in configuration; key auth is disabled on the resource (`disableLocalAuth: true` in `infrastructure/modules/openai.bicep`).
 - **Request:** one `chat.completions.create` call per document:
   - system message = general Arabic instructions + the document-specific Arabic prompt ported
     from the prototype (`apps/ocr/schemas.py`; §21.3 fields per document type);
@@ -67,7 +67,7 @@ clear message; PDF uploads are themselves off by default, `ALLOW_PDF_DOCUMENTS=f
 |---|---|---|
 | `OCR_ENABLED` | `false` (production), `true` (development) | Off ⇒ no button, endpoint answers `OCR_UNAVAILABLE`. |
 | `OCR_PROVIDER` | `mock` | `azure_openai` in production; `mock` is refused there. |
-| `OCR_RATE_LIMIT` | `30/hour` | DRF scoped throttle per user (shared cache needed across replicas, Q-T6). |
+| `OCR_RATE_LIMIT` | `30/hour` | DRF scoped throttle per user; counters in the shared database cache (`CACHE_URL=dbcache://django_cache` in Azure). |
 | `AZURE_OPENAI_ENDPOINT` / `_DEPLOYMENT` / `_API_VERSION` | — | All three required by production settings when OCR is enabled with `azure_openai`. |
 | `AZURE_CLIENT_ID` | — | Client id of the user-assigned managed identity. |
 

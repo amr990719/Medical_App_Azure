@@ -6,6 +6,41 @@
 > (PROMPT.md §47). Items marked **NOT VERIFIED — requires Azure credentials** are implemented
 > and unit-tested with mocks but have not run against real Azure resources.
 
+## 0. Summary: technical controls vs. decisions that need legal approval (PROMPT.md §47)
+
+The system implements the technical controls below. It is **not** declared compliant with Law
+151/2020, GDPR, HIPAA or any other regulation: compliance also depends on the organizational and
+legal decisions in the second table, which nobody has taken yet.
+
+| §47 control | Where it is implemented | Verified |
+|---|---|---|
+| Least privilege | one user-assigned identity with six data-plane roles, each on one resource (`role-assignments.bicep`); PostgreSQL app role is not an admin; deployer identities scoped to one resource group with a restricted RBAC-admin condition | Bicep build + guard; Azure NOT VERIFIED |
+| Object-level authorization | doctor querysets scoped to the requesting doctor; `IsAdmin` on admin endpoints; another doctor's id → 404 | IDOR tests per resource (§2) |
+| HTTPS | SWA HTTPS only, Container Apps ingress `allowInsecure=false`, Django HTTPS redirect + HSTS, PostgreSQL `require_secure_transport`, storage HTTPS only / TLS 1.2 | `check --deploy`, guard |
+| Private Blob containers | `allowBlobPublicAccess=false`, container `publicAccess=None`, shared keys disabled | guard + tests |
+| Short-lived document URLs | authorized stream by default; user-delegation SAS read-only, one blob, ≤ 300 s | `test_storage.py` |
+| Secure cookies | `HttpOnly`, `Secure`, `SameSite=Lax`, idle 2 h / absolute 12 h, session bound to the role | production settings tests |
+| Security headers | API CSP `default-src 'none'`, nosniff, `Referrer-Policy`, COOP, `X-Frame-Options: DENY`; SWA CSP | live checks (Session 9) |
+| Rate limiting | sign-in callback 20/min per client address, uploads 60/h, OCR 30/h per user; shared cache | throttle tests |
+| Audit logs | append-only `AuditLog` (database trigger) for every action in §39 + national-ID reveals | audit tests |
+| Environment separation | separate resource groups, identities, Key Vaults, Entra app registrations, GitHub environments | docs + scripts; Azure NOT VERIFIED |
+| Backups | PostgreSQL PITR (7/14/35 days), geo-redundant backup in prod, Blob soft delete + versioning, Key Vault soft delete + purge protection | Bicep; restore drill NOT DONE (needs Azure) |
+| Restricted production access | no shared or stored credentials; deploys only from `main` with reviewers for prod; operators named by decision L7 | NOT VERIFIED |
+| No personal data in logs | 14+ digit masking filter, no bodies/headers/query strings, OCR payloads never logged | logging + telemetry tests |
+
+| Decision that needs legal / organizational approval (§47) | Current technical default | Item |
+|---|---|---|
+| Religion field: collect it at all, who sees it, printed or not | collected (optional), visible to the doctor and admins | L1 |
+| OCR processing of identity documents by an AI service | `OCR_ENABLED=false` in production | L2 |
+| Data residency / region and cross-border transfer | region is a deployment parameter; not chosen | L3 |
+| Retention periods and deletion on request | nothing deleted automatically except orphan / soft-deleted blobs and expired sessions | L4 |
+| Admin access policy (who, MFA, reviews, unmasked printouts) | `grant_admin` by an operator; MFA required; reveals audited | L5 |
+| Breach procedure | not defined | L6 |
+| Production access (subscription, database, Key Vault, break-glass) | not defined beyond the CI/CD identities | L7 |
+| Malware scanning of uploads | off (`MALWARE_SCAN_ENABLED=false`), `scan_status` ready | L8 |
+
+Details of each decision: §6.
+
 ## 1. Data handled
 
 Sensitive personal information (PROMPT.md §47): national IDs (members and beneficiaries),
@@ -14,9 +49,9 @@ and birth years, identity-document images, personal photos and payment receipts.
 
 | Where | What | Protection |
 |---|---|---|
-| Azure Database for PostgreSQL | all structured data, document *metadata*, audit log | TLS required (`DB_SSLMODE=require`+), Entra auth with managed identity (no password), private networking (Session 8) |
-| Azure Blob Storage (private container) | document and photo files | no public access, managed identity, read SAS ≤ 5 min for one blob, soft delete + versioning (Session 8) |
-| Key Vault | Django `SECRET_KEY`, Entra client secret, DB password (fallback only) | RBAC, managed identity, soft delete + purge protection (Session 8) |
+| Azure Database for PostgreSQL | all structured data, document *metadata*, audit log | TLS required (`DB_SSLMODE=require`+), Entra auth with managed identity (no password), Azure-internal firewall or VNet integration (`enablePrivateNetworking`) |
+| Azure Blob Storage (private container) | document and photo files | no public access, no shared keys, managed identity, read SAS ≤ 5 min for one blob, soft delete + versioning |
+| Key Vault | Django `SECRET_KEY`, Entra client secret, DB password (fallback only) | RBAC, managed identity, soft delete + purge protection |
 | Application Insights / Log Analytics | requests, dependencies, exceptions, logs | national IDs masked before export (§4 below) |
 | Azure OpenAI (only if OCR is enabled) | one identity-document image per OCR request | see §5 and `docs/ocr.md` |
 
@@ -98,7 +133,7 @@ and birth years, identity-document images, personal photos and payment receipts.
   uploads/views/deletions, OCR requests (field names only), admin views, notes, fee-schedule
   changes, admin grants and every reveal of a full national ID.
 
-## 5. Azure integration controls (Session 7)
+## 5. Azure integration controls
 
 | Control | Implementation | Status |
 |---|---|---|
@@ -120,7 +155,7 @@ and birth years, identity-document images, personal photos and payment receipts.
 | Container Registry / Container Apps | no admin user, no anonymous pull, AcrPull via identity; HTTPS-only ingress; non-root image; probes; single-revision mode | NOT VERIFIED — requires Azure credentials |
 | Azure OpenAI | deployed only with `enableOcr`; `disableLocalAuth=true`; *Cognitive Services OpenAI User* on that account only | NOT VERIFIED — requires Azure credentials |
 | Static Web App | Standard + linked backend (same origin); `staticwebapp.config.json`: strict CSP (no inline/eval script, `frame-ancestors 'none'`, Google Fonts only external origin), HSTS, nosniff, `X-Frame-Options: DENY`, COOP, Permissions-Policy; PR preview environments disabled | CSP checked in Chromium against the production build (landing, doctor form with thumbnails, admin detail + viewer: no violation); SWA itself NOT VERIFIED |
-| GitHub → Azure | OIDC federated credentials, no stored passwords or SWA tokens. Two trust levels per environment: `<env>` (deploy; GitHub environment restricted to `main`, reviewers for prod) and `<env>-plan` (pull requests / what-if only; Reader + a custom validate/what-if role). Deployer roles scoped to the resource group: custom *Deployer* (Contributor minus managed-identity federated-credential writes and storage key/SAS listing), AcrPush, RBAC Administrator with an ABAC condition limited to the six app roles **and the app identity's principal id** (it cannot grant itself or any other principal data access). `setup-github-oidc` verifies with `gh` that the deploy environment accepts protected branches only (reviewers for prod) before trusting it. Actions pinned to commit SHAs; `permissions: contents: read` by default. Residual: a deployer can run code as the app identity and reconfigure resources (Azure Policy deny rules planned, Session 9) | actionlint + shellcheck clean; NOT VERIFIED on GitHub/Azure |
+| GitHub → Azure | OIDC federated credentials, no stored passwords or SWA tokens. Two trust levels per environment: `<env>` (deploy; GitHub environment restricted to `main`, reviewers for prod) and `<env>-plan` (pull requests / what-if only; Reader + a custom validate/what-if role). Deployer roles scoped to the resource group: custom *Deployer* (Contributor minus managed-identity federated-credential writes and storage key/SAS listing), AcrPush, RBAC Administrator with an ABAC condition limited to the six app roles **and the app identity's principal id** (it cannot grant itself or any other principal data access). `setup-github-oidc` verifies with `gh` that the deploy environment accepts protected branches only (reviewers for prod) before trusting it. Actions pinned to commit SHAs; `permissions: contents: read` by default. Residual: a deployer can run code as the app identity and reconfigure resources (Azure Policy deny rules not written yet, §7) | actionlint + shellcheck clean; NOT VERIFIED on GitHub/Azure |
 | Private networking (optional) | `enablePrivateNetworking`: VNet-integrated Container Apps and PostgreSQL, private endpoints + DNS for Blob, Key Vault, OpenAI, public access disabled | build verified; NOT VERIFIED — requires Azure credentials |
 
 ## 6. Decisions requiring legal / organizational approval
@@ -133,7 +168,7 @@ and birth years, identity-document images, personal photos and payment receipts.
 | L4 | **Retention periods** for applications, documents, rejected/withdrawn applications, audit logs, telemetry (Log Analytics retention) and backups; deletion on request. | Nothing is deleted automatically except orphan/soft-deleted blobs (`cleanup_blobs`) | Legal + syndicate management |
 | L5 | **Admin access policy:** who may be granted the admin role, MFA, periodic access review, who may reveal full national IDs (audited) and print unmasked forms (Q-B20). | `grant_admin` by an operator with production access; reveal is audited | Syndicate management + IT |
 | L6 | **Breach procedure:** detection (Application Insights alerts, audit review), containment (revoke sessions, rotate Key Vault secrets, disable OCR/uploads by flag), notification duties and timelines, contacts. | Not defined | Legal / DPO + IT |
-| L7 | **Production access:** who may access the Azure subscription, database and Key Vault; break-glass accounts; separation of environments (§49). | Separate resources per environment planned (Session 8) | IT |
+| L7 | **Production access:** who may access the Azure subscription, database and Key Vault; break-glass accounts; separation of environments (§49). | Separate resource groups, identities, Key Vaults and Entra app registrations per environment (Bicep parameters, `setup-github-oidc`) | IT |
 | L8 | **Malware scanning** of uploads (Microsoft Defender for Storage malware scanning). | `scan_status` field exists, scanning off (`MALWARE_SCAN_ENABLED=false`) | IT (cost decision) |
 
 ## 7. Known gaps (tracked in docs/progress.md)
@@ -142,7 +177,7 @@ and birth years, identity-document images, personal photos and payment receipts.
   table created by the migrate job).
 - Entra External ID claims (`email`, `amr`) not verified against a real tenant (Q-T7).
 - Network isolation is implemented behind `enablePrivateNetworking` (off by default, MVP per §34);
-  Defender for Storage/Cloud, alerts and the first restore drill remain (Session 9 / operations).
+  Defender for Storage/Cloud, alerts and the first restore drill remain operational tasks.
 - Container Apps ingress is public so the Static Web Apps linked backend can reach it; users could
   call the Container App FQDN directly (same Django controls apply; cookies are scoped to the SWA
   host). Restricting ingress to the SWA is NOT VERIFIED (Q-T13).
@@ -150,8 +185,8 @@ and birth years, identity-document images, personal photos and payment receipts.
   (0.0.0.0): any Azure-hosted client, of any tenant, can open a TCP connection; sign-in still
   needs an Entra token mapped to a database role (password authentication off). Recommended for
   production: `ENABLE_PRIVATE_NETWORKING=true` (§5.1). Accepted for the MVP (PROMPT.md §34).
-- Azure Policy deny rules for the deployer identity (planned in Session 8) are not written: they
-  need a subscription to test. The template guard checks the same properties at build time.
+- Azure Policy deny rules for the deployer identity are not written: they need a subscription to
+  test. The template guard checks the same properties at build time.
 - Client address: `TRUSTED_PROXY_COUNT=2` assumes the SWA linked backend and the Container Apps
   ingress each append one `X-Forwarded-For` entry (Q-T13, NOT VERIFIED). A caller that reaches
   the Container App FQDN directly (Q-T18) can choose its own throttle bucket.

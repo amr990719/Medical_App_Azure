@@ -83,7 +83,7 @@ deploy can run code as the app identity (deploying the app is exactly that), and
 can still reconfigure resources (for example make a container public or switch Key Vault to
 access policies). An
 Azure Policy *deny* on `allowSharedKeyAccess`, public blob access and Key Vault access-policy mode
-is the next hardening step (Session 9). Whether the custom what-if role covers every resource
+is the next hardening step (not written yet: it needs a subscription to test). Whether the custom what-if role covers every resource
 type in the template is **NOT VERIFIED**: if what-if reports `AuthorizationFailed`, add the
 missing read/validate action to that role, never a write action.
 

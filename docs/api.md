@@ -7,8 +7,13 @@ production). Generate the schema file with:
 ```bash
 cd backend
 python manage.py spectacular --file openapi.yaml --validate --fail-on-warn
-npx openapi-typescript openapi.yaml -o ../frontend/src/api/schema.d.ts   # Session 4
+cd ../frontend && npm run gen:api     # regenerates src/api/schema.d.ts
 ```
+
+OpenAPI schema: **http://localhost:8000/api/schema/** (YAML) and Swagger UI at
+**http://localhost:8000/api/docs/** with the compose stack running. `backend/openapi.yaml` is
+generated, not committed (CI regenerates and validates it in `backend.yml`); the typed client in
+`frontend/src/api/schema.d.ts` is generated from it.
 
 ## Authentication (BFF)
 

@@ -4,6 +4,9 @@ Exact commands to create one environment (`dev`, `staging` or `prod`) and deploy
 it (PROMPT.md §33–§37, §48, §52). Architecture: `docs/architecture.md`. CI/CD: `docs/github-setup.md`.
 Sign-in: `docs/entra-setup.md`.
 
+Commands are Bash (Git Bash or WSL on Windows). The same steps in Windows PowerShell are in
+`README.md` §9–§14.
+
 > **NOT VERIFIED — requires Azure credentials.** No Azure resource was created while writing
 > this. Every Bicep file builds and lints with zero warnings (`az bicep build`, `az bicep lint`,
 > strict `infrastructure/bicepconfig.json`) and the parameter files compile; `az deployment group
@@ -233,22 +236,140 @@ restore the database (below) to a new server and repoint `DATABASE_URL`.
 
 ## Backups and recovery (§48)
 
-| Store | Protection (template) | Restore |
-|---|---|---|
-| PostgreSQL | automated backups, PITR `postgresBackupRetentionDays` (dev 7, staging 14, prod 35 days); geo-redundant backup in prod (`postgresGeoRedundantBackup`) | `az postgres flexible-server restore -g "$RG" --name <new-server> --source-server "$PG" --restore-time "2026-10-06T08:00:00Z"`; geo: `az postgres flexible-server geo-restore -g "$RG" --name <new-server> --source-server <server-id> --location <paired-region>` |
-| Blob documents | soft delete (dev 7 / prod 14 days) for blobs and containers, versioning, previous versions expire after `blobPreviousVersionRetentionDays` | `az storage blob undelete --account-name <account> -c medical-documents -n <blob> --auth-mode login`; earlier version: `az storage blob copy start --auth-mode login --source-uri "<blob-url>?versionid=<id>" ...` |
-| Key Vault | soft delete (dev 7 / prod 90 days) + purge protection | `az keyvault secret recover --vault-name "$KV" --name <secret>`; deleted vault: `az keyvault recover --name "$KV"` |
-| Configuration | everything in Git (Bicep, workflows) | redeploy |
+> **NOT VERIFIED — requires Azure credentials.** The protection settings are in the templates
+> (checked by `check-template-security.py`); no restore has been run against Azure yet. The
+> first restore drill (below) is part of going live.
 
-After a PostgreSQL restore to a new server: run `setup-postgres-entra.sh` against it (roles are
-restored, but check the identity's grants), set `DATABASE_URL` (redeploy with the new server name
-or `az containerapp update --set-env-vars` on the app and both jobs), then switch traffic.
+### What is protected (configured by Bicep)
 
-Assumptions (to confirm with the organization): **RPO** ≤ 5 minutes for PostgreSQL (PITR; ≤ 1 h
-for geo-restore), documents ≤ soft-delete window; **RTO** ≈ 1–2 hours (restore + repoint + DNS
-unchanged). **Restore drill** — once per quarter in staging: restore PostgreSQL to a point in
-time on a new server, point a staging revision at it, verify an application with documents opens,
-record duration and data loss in `docs/progress.md`, delete the restored server.
+| Store | Protection | dev | staging | prod | Parameter |
+|---|---|---|---|---|---|
+| PostgreSQL | automated backups + point-in-time restore (PITR) | 7 days | 14 days | 35 days | `postgresBackupRetentionDays` |
+| PostgreSQL | geo-redundant backup (restore in the paired region) | off | off | **on** | `postgresGeoRedundantBackup` |
+| PostgreSQL | zone-redundant high availability | off | off | off (enable when the RTO requires it; doubles compute) | `postgresHighAvailabilityMode` |
+| Blob documents | soft delete for blobs **and** the container | 7 days | 14 days | 14 days | `blobSoftDeleteRetentionDays` |
+| Blob documents | versioning; previous versions deleted by a lifecycle rule after | 30 days | 30 days | 90 days | `blobPreviousVersionRetentionDays` |
+| Blob documents | redundancy | LRS | LRS | ZRS | `storageSkuName` |
+| Key Vault | soft delete + **purge protection** | 7 days | 30 days | 90 days | `keyVaultSoftDeleteRetentionDays` (fixed at creation) |
+| Configuration | Bicep, workflows and scripts in Git; images in ACR tagged with the commit SHA | | | | |
+
+Not backed up: Application Insights / Log Analytics data (retention only), the Entra External ID
+tenant (users live there; Microsoft operates it), and the Container App itself (stateless,
+redeployed from Git + ACR). Documents are restored in two parts: PostgreSQL holds the
+`documents_document` rows, Blob Storage the files.
+
+### RPO / RTO assumptions (to be confirmed by the organization)
+
+| Scenario | RPO (data loss) | RTO (time to service) | Procedure |
+|---|---|---|---|
+| Bad deployment, schema intact | 0 | ~10 minutes | previous image (*Rolling back*) |
+| Data damaged by a bug or an operator | ≤ 5 minutes before the damage (PITR) | 1–2 hours | A |
+| Deleted or overwritten document | 0 within the soft-delete / version window | minutes | B |
+| Deleted Key Vault secret or vault | 0 within the soft-delete window | minutes | C |
+| Region outage (prod) | ≤ 1 hour (geo-backup lag) | several hours: new environment in the paired region | D |
+
+### A. Restore PostgreSQL to a point in time
+
+PITR always creates a **new server**; the original stays untouched until you switch.
+
+```bash
+# 0. Stop writes: scale the app to zero and move the nightly cleanup job far into the future
+#    (it would purge blobs whose rows are newer than the restore point).
+az containerapp update -n "$APP" -g "$RG" --min-replicas 0 --max-replicas 0
+az containerapp job update -n "$(out cleanupJobName)" -g "$RG" --cron-expression "0 0 1 1 *"
+
+# 1. Restore to a new server (UTC timestamp just before the damage)
+az postgres flexible-server restore -g "$RG" --name "$PG-restored" \
+  --source-server "$PG" --restore-time "2026-10-06T08:00:00Z"
+
+# 2. Entra admin + the identity's role and grants on the new server
+infrastructure/scripts/setup-postgres-entra.sh --resource-group "$RG" --server "$PG-restored" \
+  --identity-name "$IDENTITY" --database medical --allow-current-ip
+
+# 3. Point the app and both jobs at the new server
+NEW_URL="postgres://$IDENTITY@$PG-restored.postgres.database.azure.com:5432/medical"
+az containerapp update -n "$APP" -g "$RG" --set-env-vars "DATABASE_URL=$NEW_URL"
+for job in "$(out migrateJobName)" "$(out cleanupJobName)"; do
+  az containerapp job update -n "$job" -g "$RG" --set-env-vars "DATABASE_URL=$NEW_URL"
+done
+
+# 4. Reopen with the environment's replica values, check, restore the cleanup schedule
+az containerapp update -n "$APP" -g "$RG" --min-replicas 1 --max-replicas 5
+curl -fsS "https://$(out containerAppFqdn)/api/ready/"
+az containerapp job update -n "$(out cleanupJobName)" -g "$RG" --cron-expression "30 1 * * *"
+```
+
+Then make the switch permanent: the next `az deployment group create` sets `DATABASE_URL` from
+the template's server name again, so either keep deploying with the original server (restore its
+data from the restored one with `pg_dump`/`pg_restore` during a maintenance window) or change
+the server name in `main.bicep`. Delete the damaged server only after the restored data is
+accepted. Documents uploaded after the restore point have blobs without rows; the cleanup job
+removes them after `BLOB_CLEANUP_GRACE_HOURS` (still recoverable as soft-deleted blobs).
+
+Geo-restore (prod, region loss) — new server in the paired region, then procedure D:
+
+```bash
+az postgres flexible-server geo-restore -g <rg-in-paired-region> --name "$PG-geo" \
+  --source-server "$(az postgres flexible-server show -g "$RG" -n "$PG" --query id -o tsv)" \
+  --location <paired-region>
+```
+
+### B. Restore a document (Blob Storage)
+
+Shared-key access is disabled, so every command uses `--auth-mode login`; the operator needs
+*Storage Blob Data Contributor* on the account for the duration of the restore (grant it, then
+remove it). The blob name is `documents_document.blob_name`.
+
+```bash
+ACCOUNT=$(out storageAccountName)
+# deleted blob (within the soft-delete window)
+az storage blob undelete --account-name "$ACCOUNT" -c medical-documents -n "<blob_name>" --auth-mode login
+# overwritten blob: list the versions, then put the wanted version back as the current one
+az storage blob list --account-name "$ACCOUNT" -c medical-documents --prefix "<blob_name>" \
+  --include v --auth-mode login -o table
+az storage blob download --account-name "$ACCOUNT" -c medical-documents -n "<blob_name>" \
+  --version-id "<version-id>" -f restored.bin --auth-mode login
+az storage blob upload --account-name "$ACCOUNT" -c medical-documents -n "<blob_name>" \
+  -f restored.bin --overwrite --auth-mode login && rm -f restored.bin
+# deleted container (within the container soft-delete window)
+az storage container list --account-name "$ACCOUNT" --include-deleted --auth-mode login -o table
+az storage container restore --account-name "$ACCOUNT" -n medical-documents \
+  --deleted-version "<deleted-version>" --auth-mode login
+```
+
+The downloaded file is personal data: use an encrypted operator machine and delete it right after
+the upload.
+
+### C. Recover Key Vault secrets
+
+```bash
+az keyvault secret list-deleted --vault-name "$KV" -o table
+az keyvault secret recover --vault-name "$KV" --name django-secret-key
+az keyvault recover --name "$KV"                       # a deleted vault
+```
+
+Purge protection means nobody, not even an Owner, can purge a deleted vault or secret before its
+retention ends. Restart the active revision so Container Apps re-reads a recovered secret
+(`docs/entra-setup.md` §5).
+
+### D. Rebuild an environment
+
+Everything except data is in Git: create a resource group (another region if needed) and follow
+steps 1–9 above, with the geo-restored or PITR server as the database (adjust `DATABASE_URL` as
+in procedure A). Re-run `create-entra-app` with the new public URL. Blob data has no cross-region
+copy with LRS/ZRS; if the organization requires one, switch prod to `Standard_GZRS` (cost
+decision, not configured).
+
+### Restore drill (once per quarter, in staging)
+
+1. Note the time `T`; create a test application with two documents in staging and submit it.
+2. Delete one beneficiary in the database copy you will discard (or through the UI on a draft)
+   and delete one document through the UI.
+3. Run procedure A to `T + 1 minute` and procedure B for the deleted blob.
+4. Verify: the application opens in the admin UI with both documents, the fee snapshot and the
+   audit history; `/api/ready/` is green; the migrate job reports `No migrations to apply`.
+5. Record the measured RPO/RTO and every problem in `docs/progress.md` and update the table above.
+6. Delete the restored server, or keep it as the new staging server and redeploy accordingly.
 
 ## Production upgrade path (§34)
 
@@ -285,7 +406,31 @@ Retail list prices, USD, `westeurope`, read from the Azure Retail Prices API on 
 
 **Cheapest reasonable dev:** the `dev.bicepparam` defaults — scale-to-zero app, B1ms, Basic ACR,
 LRS, 1 GB/day log cap, no OCR, no private networking. Static Web Apps Standard is kept because the
-linked backend (same-origin cookies, §4.1) requires it.
+linked backend (same-origin cookies, §4.1) requires it; the Free plan has no linked backend.
+
+**Initial production configuration** (`prod.bicepparam`): Container App 1 vCPU / 2 GiB, 1–5
+replicas, 3 Gunicorn workers; PostgreSQL General Purpose D2ds_v5, 64 GB, 35-day PITR,
+geo-redundant backup, HA off; Storage ZRS; ACR Standard; Log Analytics 90 days without a daily
+cap; Application Insights with Entra-only ingestion; OCR off; private networking decided before
+the first deployment (recommended on). Order of magnitude at the list prices above: PostgreSQL
+≈ $155 + storage/backup, Container Apps ≈ $31–110, ACR ≈ $20, SWA $9, Log Analytics a few dollars
+per GB ingested, plus the environment meter if it applies (Q-T16) — roughly **$250–350 per
+month** before private networking and OCR. This is an estimate, not a quote.
+
+### Cost drivers (PROMPT.md §52)
+
+| Driver | What makes it grow | How to control it |
+|---|---|---|
+| **PostgreSQL compute** | the SKU runs 24/7 whatever the traffic; HA doubles it | Burstable for dev/staging, General Purpose only in prod; stop an unused dev server (`az postgres flexible-server stop`); HA only when the RTO requires it |
+| **PostgreSQL storage and backups** | provisioned GB (not used GB); backup storage above 100 % of the provisioned size; geo-redundant backup stores a second copy | start at 32/64 GB (storage can only grow); keep retention at what the RPO needs (7/14/35 days) |
+| **Container Apps vCPU-seconds and min replicas** | `minReplicas ≥ 1` bills idle time all month; active time per vCPU-second and GiB-second; jobs per execution second | dev scales to zero (`minReplicas = 0`; the first request after idle is slow); raise `maxReplicas` for peaks rather than the minimum |
+| **Static Web Apps Standard** | flat per app per month + bandwidth above 100 GB | one app per environment; Standard only because the linked backend needs it |
+| **Blob storage and transactions** | stored GB (documents + previous versions + soft-deleted blobs), read/write operations; ZRS costs more than LRS | 8 MB upload cap and per-user upload limit; lifecycle rule deletes old versions; the cleanup job purges orphans |
+| **Log Analytics ingestion** | GB ingested per day (requests, dependencies, logs) and retention beyond the included period | `LOG_LEVEL=INFO`, no bodies, Gunicorn access log off; daily cap in dev/staging (`logAnalyticsDailyQuotaGb`); Application Insights sampling if traffic grows |
+| **Azure OpenAI tokens per OCR call** | one image per call (image tokens dominate) + up to 1 000 output tokens; cost = calls × tokens × model price | off by default; only on the doctor's click, one call per document, 30 calls per user per hour; pick the smallest vision model that reads Arabic IDs reliably |
+| **Private networking** | private endpoints (per hour + per GB), private DNS zones, VNet-integrated PostgreSQL; ACR Premium if the registry must be private too | off in dev/staging; a security decision for prod (`ENABLE_PRIVATE_NETWORKING`) |
+| **Container Apps environment** | possible *Environment Management Hour* meter (Q-T16) | check the first month's bill |
+| **Key Vault** | operations (negligible: Container Apps caches the references) | — |
 
 **Increase as traffic grows:** `maxReplicas` and `httpConcurrency` first (seasonal peaks), then
 `containerCpu/Memory` + `gunicornWorkers`; PostgreSQL `postgresSkuName` (D4ds_v5) and
