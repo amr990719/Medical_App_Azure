@@ -3,6 +3,9 @@
 #   dev → staging → prod (prod waits for the environment's required reviewers; every deploy job
 #   prints its own what-if before `az deployment group create`).
 # Manual runs: choose an environment and whether to stop after what-if.
+# Trust: pull-request code (including edited workflow files) only reaches the `<env>-plan`
+# GitHub environments, whose identities can read and preview but not write. The deploying
+# environments `dev`/`staging`/`prod` accept only the protected main branch (docs/github-setup.md).
 name: infrastructure
 
 on:
@@ -68,7 +71,7 @@ jobs:
           shellcheck infrastructure/scripts/*.sh backend/entrypoint.sh
 
   what-if:
-    name: what-if (dev)
+    name: what-if (dev-plan)
     needs: validate
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:

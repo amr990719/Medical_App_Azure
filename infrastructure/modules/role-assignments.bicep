@@ -12,7 +12,7 @@ param appInsightsName string
 @description('Empty when OCR is disabled.')
 param openAiAccountName string = ''
 
-@description('Optional operator (user or group) who sets the Key Vault secrets: Key Vault Secrets Officer on this vault only.')
+@description('Optional operator (user or group) who sets the Key Vault secrets: Key Vault Secrets Officer on this vault only. Human deployments only: the GitHub deploy identity may grant roles to the app identity alone (setup-github-oidc.sh).')
 param operatorPrincipalId string = ''
 
 @allowed([

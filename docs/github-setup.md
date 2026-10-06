@@ -15,7 +15,7 @@ Web Apps deployment token is stored in GitHub.
 |---|---|---|
 | `.github/workflows/frontend.yml` | PR / push to `main` touching `frontend/**` | `npm ci` → lint → type check → Vitest → `rtl_check.py` → build; on `main`: deploy the same build to dev → staging → prod (Static Web Apps) |
 | `.github/workflows/backend.yml` | PR / push touching `backend/**` | ruff → `manage.py check` → migrations check → OpenAPI validation → pytest on a `postgres:16` service → build the runtime image once; on `main`: push to each environment's ACR → **run the migrate job** → update the cleanup job → new Container App revision → smoke test |
-| `.github/workflows/infrastructure.yml` | PR / push touching `infrastructure/**`, manual | `bicep build` + lint of every file, `build-params`, script checks; PR: **what-if** against dev; `main`: what-if + deploy dev → staging → prod; manual: one environment, optionally what-if only |
+| `.github/workflows/infrastructure.yml` | PR / push touching `infrastructure/**`, manual | `bicep build` + lint of every file, `build-params`, script checks; PR: **what-if** against dev with the read-only `dev-plan` identity; `main`: what-if + deploy dev → staging → prod; manual: one environment, what-if only (`<env>-plan`) or deploy (`<env>`, `main` only) |
 | `.github/workflows/e2e.yml` | PR to `main`, manual | fresh docker compose stack (PostgreSQL, Azurite, Django, dev auth, mock OCR) + Azurite pytest + Playwright (desktop and mobile) |
 | `reusable-*.yml` | called by the above | per-environment deploy jobs (frontend, backend, infrastructure) |
 
@@ -31,12 +31,25 @@ git push -u origin main                                              # first pus
 
 ## 2. Environments and protection rules
 
-Create `dev`, `staging` and `prod` (Settings → Environments, or):
+Two GitHub environments per Azure environment, with different trust:
+
+| GitHub environment | Used by | Branch rule | Azure identity can |
+|---|---|---|---|
+| `dev`, `staging`, `prod` | deployments (push to `main`, manual deploy) | **protected branches only** (`main`); `prod` also requires reviewers | deploy (Contributor, AcrPush, condition-restricted RBAC admin) |
+| `dev-plan`, `staging-plan`, `prod-plan` | pull-request what-if, manual what-if-only runs | none (pull requests run here) | read + validate/what-if only |
+
+On `pull_request` events the workflow files come from the PR branch, so anything a PR can reach
+must be harmless: PR code can only obtain the `-plan` identities. The deploy environments refuse
+every ref except `main`, so an edited workflow on a branch (or a manual dispatch from a branch)
+cannot get a deploy token.
 
 ```bash
-gh api -X PUT "repos/<owner>/<repo>/environments/dev"
-gh api -X PUT "repos/<owner>/<repo>/environments/staging"
-# prod: required reviewers, no self-review, deployments from main only
+for env in dev staging; do
+  gh api -X PUT "repos/<owner>/<repo>/environments/$env" --input - <<'JSON'
+{"deployment_branch_policy": {"protected_branches": true, "custom_branch_policies": false}}
+JSON
+done
+# prod: required reviewers, no self-review, main only
 gh api -X PUT "repos/<owner>/<repo>/environments/prod" --input - <<'JSON'
 {
   "reviewers": [{"type": "Team", "id": <team-id>}],
@@ -44,23 +57,29 @@ gh api -X PUT "repos/<owner>/<repo>/environments/prod" --input - <<'JSON'
   "deployment_branch_policy": {"protected_branches": true, "custom_branch_policies": false}
 }
 JSON
+for env in dev-plan staging-plan prod-plan; do gh api -X PUT "repos/<owner>/<repo>/environments/$env"; done
 ```
 
 (`gh api orgs/<org>/teams/<team-slug> --jq .id` gives the team id; use `{"type": "User", "id": <user-id>}`
-for individual reviewers.) Restrict `staging` to protected branches the same way. `dev` stays
-unprotected so pull-request what-if can run, but it only ever touches the dev resource group.
+for individual reviewers.) "Protected branches" relies on the branch protection of section 5.
 
 ## 3. Azure side: OIDC identities (once per environment)
 
-Create the environment's resource group, then run the script (bash or PowerShell). It creates a
-user-assigned identity `id-github-medsyn-<env>`, a federated credential for
-`repo:<owner>/<repo>:environment:<env>`, and roles on that resource group only:
+Create the environment's resource group, then run the script (bash or PowerShell). It creates,
+in that resource group only:
 
-| Role | Why |
-|---|---|
-| Contributor | deploy Bicep, update the Container App and jobs, start the migrate job, read the Static Web App deployment token at run time |
-| AcrPush | push the backend image to the environment's registry |
-| Role Based Access Control Administrator, **condition-restricted** | create/delete only the role assignments `main.bicep` declares (Storage Blob Data Contributor, Storage Blob Delegator, Key Vault Secrets User/Officer, AcrPull, Cognitive Services OpenAI User, Monitoring Metrics Publisher) — it cannot grant Owner or Contributor |
+| Identity | Federated to | Roles (resource-group scope) |
+|---|---|---|
+| `id-medsyn-<env-short>` (the **app** identity, also declared by `main.bicep`) | — | none here; Bicep grants its data-plane roles |
+| `id-github-medsyn-<env>` (deploy) | `repo:<owner>/<repo>:environment:<env>` | **Contributor** (deploy Bicep, update the app and jobs, start the migrate job, read the SWA token); **AcrPush**; **Role Based Access Control Administrator** with an ABAC condition: create/delete only the six data-plane roles `main.bicep` grants (Blob Data Contributor, Blob Delegator, Key Vault Secrets User, AcrPull, OpenAI User, Monitoring Metrics Publisher) **and only for the app identity's principal id** — it cannot grant anything to itself or to any other identity |
+| `id-github-medsyn-<env>-plan` (preview) | `repo:<owner>/<repo>:environment:<env>-plan` | **Reader** + custom role *Deployment What-If Operator (&lt;rg&gt;)* (`deployments/read`, `validate/action`, `whatIf/action`, `operationstatuses/read`) |
+
+Residual risk, accepted and mitigated by the `main`-only environments and reviews: Contributor
+can still reconfigure resources (for example re-enable shared keys on the storage account). An
+Azure Policy *deny* on `allowSharedKeyAccess`, public blob access and Key Vault access-policy mode
+is the next hardening step (Session 9). Whether the custom what-if role covers every resource
+type in the template is **NOT VERIFIED**: if what-if reports `AuthorizationFailed`, add the
+missing read/validate action to that role, never a write action.
 
 ```bash
 az login
@@ -79,11 +98,15 @@ prod, §49). Jobs that do not run in the matching GitHub environment cannot obta
 ## 4. Environment variables
 
 Settings → Environments → `<env>` → **Environment variables** (none of these is a secret; no
-GitHub *secret* is needed at all):
+GitHub *secret* is needed at all). The `<env>-plan` environment needs the same variables except
+`AZURE_CLIENT_ID`, which is the plan identity's (only the infrastructure workflow uses it).
+`KEY_VAULT_OPERATOR_*` is never set in GitHub: the deploy identity may not grant roles to people;
+the operator's *Key Vault Secrets Officer* comes from the first-phase deployment run by a human
+(`docs/azure-deployment.md` step 2) or from `az role assignment create`.
 
 | Variable | Source | Used by |
 |---|---|---|
-| `AZURE_CLIENT_ID` | printed by `setup-github-oidc` | all deploy jobs (`azure/login`) |
+| `AZURE_CLIENT_ID` | printed by `setup-github-oidc`: the **deploy** identity in `<env>`, the **plan** identity in `<env>-plan` | every job that signs in (`azure/login`) |
 | `AZURE_TENANT_ID` | printed by `setup-github-oidc` | all deploy jobs |
 | `AZURE_SUBSCRIPTION_ID` | printed by `setup-github-oidc` | all deploy jobs |
 | `AZURE_RESOURCE_GROUP` | your resource group | all deploy jobs |
@@ -97,7 +120,6 @@ GitHub *secret* is needed at all):
 | `STATIC_WEB_APP_LOCATION` *(optional)* | default `westeurope` | infrastructure |
 | `ENABLE_OCR` *(optional)* | `true` only after legal decisions L2/L3 | infrastructure |
 | `ENABLE_PRIVATE_NETWORKING` *(optional, prod)* | decide before the first prod deployment | infrastructure |
-| `KEY_VAULT_OPERATOR_OBJECT_ID` / `KEY_VAULT_OPERATOR_TYPE` *(optional)* | object id of the person/group who sets Key Vault secrets | infrastructure |
 | `POSTGRES_ENTRA_ADMIN_OBJECT_ID` / `_NAME` / `_TYPE` *(optional)* | Entra admin group of the PostgreSQL server | infrastructure |
 
 ```bash
@@ -150,6 +172,7 @@ repository contents*; Settings → Code security → secret scanning and push pr
 | Symptom | Fix |
 |---|---|
 | `AADSTS70021: No matching federated identity record` | The job is not running in the environment named in the federated credential (subject `repo:<owner>/<repo>:environment:<env>`), or the repository was renamed — re-run `setup-github-oidc`. |
-| `AuthorizationFailed … roleAssignments/write` in Bicep | The identity lacks the condition-restricted RBAC Administrator role, or the template asks for a role outside the allowed list. |
+| `AuthorizationFailed … roleAssignments/write` in Bicep | The identity lacks the condition-restricted RBAC Administrator role, the template asks for a role outside the allowed list, the target principal is not the app identity (re-run `setup-github-oidc` if the app identity was recreated), or `KEY_VAULT_OPERATOR_*` was set in GitHub. |
+| `AADSTS70021` on a branch run or manual dispatch | Expected: `<env>` accepts `main` only. Use `what_if_only=true` (runs in `<env>-plan`). |
 | `unauthorized: authentication required` on `docker push` | AcrPush missing on the resource group, or `ACR_NAME` points at another environment's registry. |
 | Deploy job waits forever | `prod` requires a reviewer: approve it under the run's *Review deployments*. |

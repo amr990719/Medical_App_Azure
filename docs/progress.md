@@ -483,6 +483,14 @@ static role review), Azure MCP Bicep schemas / best practices / retail prices.
   - Backend **942 passed** (compose), ruff check + format clean; frontend `npm run ci` green
     (**276 passed**, was 269); `docker build --target runtime` OK; production image `migrate` mode
     with production settings over TLS: migrations + cache table, idempotent.
+- **Fixed after the post-commit security review (2 findings, both accepted):** (1) CI/CD trust — the
+  pull-request what-if ran in the unprotected `dev` environment with the deploy identity, so a PR
+  branch could edit the workflow and deploy; now PRs and what-if-only runs use `<env>-plan`
+  (read + what-if only) and `dev`/`staging`/`prod` accept `main` only (D126). (2) Over-broad grant —
+  the RBAC-admin condition limited the roles but not the principal, so the deployer could grant
+  itself Blob/Key Vault data access; the condition now also pins the app identity's principal id
+  and Key Vault Secrets Officer left the list (D118). Scripts, workflows and docs updated;
+  re-verified with bash -n, shellcheck, the PowerShell parser, actionlint and gitleaks.
 
 ## Decisions
 
@@ -762,8 +770,14 @@ static role review), Azure MCP Bicep schemas / best practices / retail prices.
 - **D117 — Actions pinned to commit SHAs** (tag in a comment), resolved with `git ls-remote` because
   the GitHub MCP server failed to connect; inputs checked against each `action.yml` at that SHA.
 - **D118 — Deployer least privilege:** Contributor + AcrPush on the environment's resource group
-  and *Role Based Access Control Administrator* with an ABAC condition limited to the seven role
-  definitions the template assigns (no Owner / User Access Administrator).
+  and *Role Based Access Control Administrator* with an ABAC condition limited to the six app role
+  definitions **and to the app identity's principal id** (pre-created by `setup-github-oidc`), so
+  the deployer cannot grant itself or another principal data access (no Owner / User Access
+  Administrator). `KEY_VAULT_OPERATOR_*` is therefore only used by human deployments.
+- **D126 — Two GitHub trust levels per environment** (post-commit security review): `<env>` is
+  restricted to the protected `main` branch (reviewers for prod) and holds the deploy identity;
+  `<env>-plan` holds a Reader + custom what-if identity and is the only one pull requests and
+  what-if-only runs reach (on `pull_request` the PR branch controls the workflow files).
 - **D119 — PostgreSQL database created by the Entra admin (script), not Bicep,** so it is owned by
   an Entra principal that can grant on schema `public`; the app identity is a non-admin role with
   `CONNECT/CREATE/TEMP` + `USAGE/CREATE` on `public` (the migrate job owns the tables).
@@ -773,9 +787,9 @@ static role review), Azure MCP Bicep schemas / best practices / retail prices.
   VNet integration with a /27+ subnet and the current default; scale-to-zero in dev only.
 - **D122 — Image built once per commit and promoted** as a workflow artifact (`docker save`) to
   each environment's own registry, keeping registries/identities separate (§49) without rebuilds.
-- **D123 — Infrastructure what-if on pull requests runs against dev only;** staging/prod print
-  their what-if inside the deploy job (prod after the required approval); a manual dispatch with
-  `what_if_only=true` previews any environment.
+- **D123 — Infrastructure what-if on pull requests runs against dev only** (with the `dev-plan`
+  identity, D126); staging/prod print their what-if inside the deploy job (prod after the required
+  approval); a manual dispatch with `what_if_only=true` previews any environment via `<env>-plan`.
 - **D124 — Static Web App headers** (`staticwebapp.config.json`): CSP `default-src 'self'`, no inline
   or eval script, Google Fonts as the only external origin (Q-T10), `frame-ancestors 'none'`;
   PR preview environments disabled because they would share the linked backend.

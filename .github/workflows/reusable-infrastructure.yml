@@ -6,11 +6,12 @@
 # the Container App is passed as CONTAINER_IMAGE. When no Container App exists yet, the
 # deployment runs the first phase only (no app, jobs or SWA link; docs/azure-deployment.md).
 #
-# GitHub environment variables used: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
-# AZURE_RESOURCE_GROUP, CONTAINER_APP_NAME (after phase 1), ENTRA_AUTHORITY, ENTRA_TENANT_ID,
-# ENTRA_CLIENT_ID, and optionally PUBLIC_HOSTNAME, STATIC_WEB_APP_LOCATION, ENABLE_OCR,
-# ENABLE_PRIVATE_NETWORKING, KEY_VAULT_OPERATOR_OBJECT_ID, KEY_VAULT_OPERATOR_TYPE,
-# POSTGRES_ENTRA_ADMIN_OBJECT_ID, POSTGRES_ENTRA_ADMIN_NAME, POSTGRES_ENTRA_ADMIN_TYPE.
+# GitHub environment variables used (in `<env>` and `<env>-plan`): AZURE_CLIENT_ID, AZURE_TENANT_ID,
+# AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, CONTAINER_APP_NAME (after phase 1), ENTRA_AUTHORITY,
+# ENTRA_TENANT_ID, ENTRA_CLIENT_ID, and optionally PUBLIC_HOSTNAME, STATIC_WEB_APP_LOCATION,
+# ENABLE_OCR, ENABLE_PRIVATE_NETWORKING, POSTGRES_ENTRA_ADMIN_OBJECT_ID / _NAME / _TYPE.
+# KEY_VAULT_OPERATOR_* is deliberately not passed: the deployer may only grant roles to the app
+# identity (setup-github-oidc.sh); the operator's Key Vault role is set by a human deployment.
 name: infrastructure deployment
 
 on:
@@ -34,8 +35,10 @@ jobs:
     name: ${{ inputs.what_if_only && 'what-if' || 'deploy' }} ${{ inputs.environment }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # what-if-only runs (pull requests, previews) use the `<env>-plan` GitHub environment, whose
+    # identity can only read and preview; deployments use `<env>`, restricted to main.
     environment:
-      name: ${{ inputs.environment }}
+      name: ${{ inputs.what_if_only && format('{0}-plan', inputs.environment) || inputs.environment }}
     concurrency:
       group: deploy-infrastructure-${{ inputs.environment }}
       cancel-in-progress: false
@@ -54,7 +57,7 @@ jobs:
             echo "::error::GitHub environment '${ENVIRONMENT}' has no AZURE_RESOURCE_GROUP variable (docs/github-setup.md)"
             exit 1
           fi
-          keys='["CONTAINER_APP_NAME","ENTRA_AUTHORITY","ENTRA_TENANT_ID","ENTRA_CLIENT_ID","PUBLIC_HOSTNAME","STATIC_WEB_APP_LOCATION","ENABLE_OCR","ENABLE_PRIVATE_NETWORKING","KEY_VAULT_OPERATOR_OBJECT_ID","KEY_VAULT_OPERATOR_TYPE","POSTGRES_ENTRA_ADMIN_OBJECT_ID","POSTGRES_ENTRA_ADMIN_NAME","POSTGRES_ENTRA_ADMIN_TYPE"]'
+          keys='["CONTAINER_APP_NAME","ENTRA_AUTHORITY","ENTRA_TENANT_ID","ENTRA_CLIENT_ID","PUBLIC_HOSTNAME","STATIC_WEB_APP_LOCATION","ENABLE_OCR","ENABLE_PRIVATE_NETWORKING","POSTGRES_ENTRA_ADMIN_OBJECT_ID","POSTGRES_ENTRA_ADMIN_NAME","POSTGRES_ENTRA_ADMIN_TYPE"]'
           echo "$VARS_JSON" | jq -r --argjson keys "$keys" \
             'to_entries[] | select(.key as $k | $keys | index($k)) | select(.value != "") | "\(.key)=\(.value)"' \
             >> "$GITHUB_ENV"
