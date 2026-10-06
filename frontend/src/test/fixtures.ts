@@ -190,3 +190,45 @@ export const draftHandlers = {
   validation: (id: string = APP_ID, result: object = cleanValidation) =>
     http.get(`${API}/applications/${id}/validation/`, () => HttpResponse.json(result)),
 };
+
+// ---- Session 6: admin fixtures (captured from the compose backend after seed_dev_data) ------
+
+import adminApplicationsPage from "./fixtures/admin-applications.json";
+import adminAuditPage from "./fixtures/admin-audit.json";
+import adminDetail from "./fixtures/admin-application-submitted.json";
+import adminDoctorDetail from "./fixtures/admin-doctor.json";
+import adminDoctorsPage from "./fixtures/admin-doctors.json";
+import adminFeeSchedulesPage from "./fixtures/admin-fee-schedules.json";
+import adminStatsJson from "./fixtures/admin-stats.json";
+import type { ApiAdminApplicationDetail } from "@/api/types";
+
+export type ApiAdminRow = Schemas["AdminApplicationRow"];
+export type ApiAdminDetail = ApiAdminApplicationDetail;
+export type ApiFeeSchedule = Schemas["FeeSchedule"];
+
+export const adminStats = adminStatsJson as Schemas["AdminStats"];
+export const adminApplications = adminApplicationsPage as ApiPage<ApiAdminRow>;
+export const adminAudit = adminAuditPage as ApiPage<Schemas["AuditEntry"]>;
+export const adminDoctors = adminDoctorsPage as ApiPage<Schemas["AdminDoctorRow"]>;
+export const adminDoctor = adminDoctorDetail as Schemas["AdminDoctorDetail"];
+export const adminFeeSchedules = adminFeeSchedulesPage as ApiPage<ApiFeeSchedule>;
+
+export const ADMIN_APP_ID = adminDetail.id;
+
+export function apiAdminDetail(overrides: Partial<ApiAdminDetail> = {}): ApiAdminDetail {
+  return { ...(adminDetail as unknown as ApiAdminDetail), ...overrides };
+}
+
+export function apiAdminRow(overrides: Partial<ApiAdminRow> = {}): ApiAdminRow {
+  return { ...(adminApplications.results[0] as ApiAdminRow), ...overrides };
+}
+
+export const adminHandlers = {
+  stats: (stats: Schemas["AdminStats"] = adminStats) => http.get(`${API}/admin/stats/`, () => HttpResponse.json(stats)),
+  detail: (detail: ApiAdminDetail = apiAdminDetail()) =>
+    http.get(`${API}/admin/applications/${detail.id}/`, () => HttpResponse.json(detail)),
+  notes: (id: string = ADMIN_APP_ID, notes: Schemas["AdminNote"][] = []) =>
+    http.get(`${API}/admin/applications/${id}/notes/`, () => HttpResponse.json(notes)),
+  audit: (id: string = ADMIN_APP_ID, audit: ApiPage<Schemas["AuditEntry"]> = adminAudit) =>
+    http.get(`${API}/admin/applications/${id}/audit/`, () => HttpResponse.json(audit)),
+};

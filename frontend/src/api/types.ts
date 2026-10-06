@@ -102,3 +102,51 @@ export type ApiValidationResult = {
 };
 
 export type ValidationResult = Camelize<ApiValidationResult>;
+
+// ---- Admin (GET /admin/...) -----------------------------------------------------------------
+
+export type AuditAction = Schemas["ActionEnum"];
+export type AdminStats = Camelize<Schemas["AdminStats"]>;
+export type AdminApplicationRow = Camelize<Schemas["AdminApplicationRow"]>;
+export type AdminDoctorRow = Camelize<Schemas["AdminDoctorRow"]>;
+export type AdminDoctorDetail = Camelize<Schemas["AdminDoctorDetail"]>;
+export type AdminNote = Camelize<Schemas["AdminNote"]>;
+export type AuditEntry = Camelize<Omit<Schemas["AuditEntry"], "metadata"> & { metadata: Record<string, unknown> }>;
+
+type ApiAdminBeneficiary = Omit<Schemas["AdminBeneficiary"], "required_documents"> & {
+  required_documents: ApiDocumentRequirement[];
+};
+
+/** `fee_snapshot` is the fee quote stored at submission (null before the first submission). */
+export type ApiAdminApplicationDetail = Omit<
+  Schemas["AdminApplicationDetail"],
+  "fee_snapshot" | "beneficiaries" | "allowed_transitions" | "reviewed_by_email"
+> & {
+  fee_snapshot: ApiFeeQuote | null;
+  beneficiaries: ApiAdminBeneficiary[];
+  allowed_transitions: ApplicationStatus[];
+  reviewed_by_email: string | null;
+};
+
+export type AdminApplicationDetail = Camelize<ApiAdminApplicationDetail>;
+export type AdminBeneficiary = AdminApplicationDetail["beneficiaries"][number];
+
+export type FeeKey = "member" | "spouse" | "child" | "grad_son" | "parent";
+export type TierFees = Record<"1" | "2" | "3" | "4", Record<FeeKey, number>>;
+
+/** Tier keys ("1".."4") and fee keys stay as data; only the outer fields are camelized. */
+export type FeeSchedule = Camelize<Omit<Schemas["FeeSchedule"], "tier_fees" | "tier_boundaries">> & {
+  tierFees: TierFees;
+  tierBoundaries: [number, number, number];
+};
+
+export type NewFeeSchedule = {
+  fiscalYear: number;
+  tierFees: TierFees;
+  tierBoundaries: [number, number, number];
+  adminFeeMemberOnly: number;
+  adminFeeWithBeneficiaries: number;
+  ageCapThreshold: number;
+  ageCapAmount: number;
+  registrationYearMin: number;
+};

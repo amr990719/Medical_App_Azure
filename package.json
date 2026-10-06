@@ -1,0 +1,22 @@
+{
+  "name": "medical-syndicates-platform",
+  "private": true,
+  "description": "Root scripts for local development (PROMPT.md §32). Mirrors the Makefile.",
+  "scripts": {
+    "up": "docker compose up -d --build",
+    "down": "docker compose down",
+    "logs": "docker compose logs -f backend",
+    "migrate": "docker compose exec backend python manage.py migrate",
+    "makemigrations": "docker compose exec backend python manage.py makemigrations",
+    "seed": "docker compose exec backend python manage.py seed_dev_data",
+    "test:backend": "docker compose exec backend pytest -q --ds=config.settings.test",
+    "test:frontend": "npm --prefix frontend test",
+    "test": "npm run test:backend && npm run test:frontend",
+    "lint:backend": "docker compose exec backend ruff check . && docker compose exec backend ruff format --check .",
+    "lint:frontend": "npm --prefix frontend run lint && npm --prefix frontend run typecheck && npm --prefix frontend run rtl:check",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "dev": "npm --prefix frontend run dev",
+    "e2e": "npm --prefix frontend run test:e2e",
+    "ci": "npm run lint && npm run test && npm --prefix frontend run build"
+  }
+}

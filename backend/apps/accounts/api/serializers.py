@@ -1,3 +1,4 @@
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from apps.accounts.models import Role, User
@@ -51,7 +52,13 @@ class DevLoginSerializer(serializers.Serializer):
         email = attrs["email"].strip().lower()
         user = User.objects.filter(email=email).first()
         if user is None and attrs["create"]:
-            user = User.objects.create_user(email, display_name="", role=Role.DOCTOR)
+            try:
+                with transaction.atomic():
+                    user = User.objects.create_user(email, display_name="", role=Role.DOCTOR)
+            except IntegrityError:
+                # A concurrent dev login created this e-mail first: the unique constraint
+                # decides, and this request signs in as that user.
+                user = User.objects.filter(email=email).first()
         if user is None or not user.is_active:
             raise serializers.ValidationError({"email": ["لا يوجد مستخدم تجريبي بهذا البريد"]})
         attrs["email"] = user

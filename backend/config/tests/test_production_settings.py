@@ -15,7 +15,12 @@ VALID_ENV = {
 
 
 def load_production(monkeypatch, **overrides):
-    for key in ("DJANGO_SECRET_KEY", "ALLOWED_HOSTS", "DATABASE_URL", "DEV_AUTH_ENABLED", "DEBUG"):
+    # The surrounding environment (e.g. the docker compose dev container) must not leak in.
+    inherited = (
+        "DJANGO_SECRET_KEY", "ALLOWED_HOSTS", "DATABASE_URL", "DEV_AUTH_ENABLED", "DEBUG",
+        "OCR_ENABLED", "OCR_PROVIDER", "BLOB_BACKEND", "BLOB_CONNECTION_STRING",
+    )  # fmt: skip
+    for key in inherited:
         monkeypatch.delenv(key, raising=False)
     for key, value in {**VALID_ENV, **overrides}.items():
         if value is None:

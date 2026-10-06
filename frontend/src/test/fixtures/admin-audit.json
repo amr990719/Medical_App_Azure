@@ -1,0 +1,221 @@
+{
+  "count": 15,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": "c2a4eef6-3b33-4720-ba35-969b46ae88ec",
+      "action": "ADMIN_APPLICATION_VIEWED",
+      "timestamp": "2026-10-06T05:46:21.276422+03:00",
+      "user_id": "d876d404-7fb2-425f-890a-381f1346853c",
+      "user_email": "admin@dev.local",
+      "object_type": "InsuranceApplication",
+      "object_id": "58914047-70bb-4f54-aada-169dbabc58eb",
+      "metadata": {}
+    },
+    {
+      "id": "1ba275b1-bfd8-4811-80f2-4c45ef01511b",
+      "action": "FEE_SNAPSHOT_CREATED",
+      "timestamp": "2026-10-05T13:34:57.753961+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "InsuranceApplication",
+      "object_id": "58914047-70bb-4f54-aada-169dbabc58eb",
+      "metadata": {
+        "tier": 3,
+        "total": 2475,
+        "schedule_id": "5ed606f5-aa47-4703-8b6c-83ab2469c007"
+      }
+    },
+    {
+      "id": "251449b8-958c-4dbd-a25f-fbfb7ba43b8b",
+      "action": "APPLICATION_SUBMITTED",
+      "timestamp": "2026-10-05T13:34:57.753961+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "InsuranceApplication",
+      "object_id": "58914047-70bb-4f54-aada-169dbabc58eb",
+      "metadata": {
+        "from": "DRAFT",
+        "reference_number": "MED-2026-000001"
+      }
+    },
+    {
+      "id": "3e1fc33f-87a0-471f-b877-08b290466784",
+      "action": "PAYMENT_STATUS_CHANGED",
+      "timestamp": "2026-10-05T13:34:57.665470+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "InsuranceApplication",
+      "object_id": "58914047-70bb-4f54-aada-169dbabc58eb",
+      "metadata": {
+        "to": "PENDING_REVIEW",
+        "from": "NOT_UPLOADED"
+      }
+    },
+    {
+      "id": "db09204d-34b4-4194-aee5-c6bb15bd2bb0",
+      "action": "DOCUMENT_UPLOADED",
+      "timestamp": "2026-10-05T13:34:57.661628+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "992bdd2b-7495-448a-9d94-4f147ab98d0c",
+      "metadata": {
+        "file_size": 2787,
+        "content_type": "image/png",
+        "document_type": "PAYMENT_RECEIPT",
+        "beneficiary_id": null
+      }
+    },
+    {
+      "id": "06f8c4ba-095b-4103-858d-c18ec5c3c2d6",
+      "action": "OCR_REQUESTED",
+      "timestamp": "2026-10-05T13:34:57.543793+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "41c3fb1b-3ec1-48e7-9dd6-b52c980c862f",
+      "metadata": {
+        "fields": [
+          "address",
+          "birth_year",
+          "governorate",
+          "member_name",
+          "national_id",
+          "neighborhood"
+        ],
+        "provider": "mock",
+        "document_type": "NATIONAL_ID_FRONT"
+      }
+    },
+    {
+      "id": "1428901d-5aa4-441d-b1bd-f14c587041fa",
+      "action": "DOCUMENT_VIEWED",
+      "timestamp": "2026-10-05T13:34:57.510388+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "41c3fb1b-3ec1-48e7-9dd6-b52c980c862f",
+      "metadata": {
+        "delivery": "stream",
+        "document_type": "NATIONAL_ID_FRONT"
+      }
+    },
+    {
+      "id": "cbaec705-47ac-4649-974d-bff13376cdc7",
+      "action": "DOCUMENT_UPLOADED",
+      "timestamp": "2026-10-05T13:34:57.476413+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "81748864-8f95-4290-9eea-d9f531f039bd",
+      "metadata": {
+        "file_size": 2787,
+        "content_type": "image/png",
+        "document_type": "BIRTH_CERTIFICATE",
+        "beneficiary_id": "324b255f-0a79-4a1b-91a3-e3826350bf96"
+      }
+    },
+    {
+      "id": "cb9a33a3-72e0-487b-be77-87b2abf3937a",
+      "action": "DOCUMENT_UPLOADED",
+      "timestamp": "2026-10-05T13:34:57.414492+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "5c578455-a1e2-46df-95d3-1ed9e6310fb3",
+      "metadata": {
+        "file_size": 2787,
+        "content_type": "image/png",
+        "document_type": "INSURANCE_PRINT",
+        "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634"
+      }
+    },
+    {
+      "id": "9d418c90-f634-4081-a714-8136e5ec5fd2",
+      "action": "DOCUMENT_UPLOADED",
+      "timestamp": "2026-10-05T13:34:57.347901+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "c4451994-63e6-4e25-a5ca-b19aae0c9b13",
+      "metadata": {
+        "file_size": 2787,
+        "content_type": "image/png",
+        "document_type": "MARRIAGE_CERTIFICATE",
+        "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634"
+      }
+    },
+    {
+      "id": "dce65a9d-f361-469e-9471-6c67128b3c7e",
+      "action": "DOCUMENT_UPLOADED",
+      "timestamp": "2026-10-05T13:34:57.289415+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "c7281ba4-133b-4be4-8ddb-8199ee298a21",
+      "metadata": {
+        "file_size": 2787,
+        "content_type": "image/png",
+        "document_type": "BENEFICIARY_NATIONAL_ID",
+        "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634"
+      }
+    },
+    {
+      "id": "f90b25fd-c55e-49fb-99d1-41b8380a9646",
+      "action": "DOCUMENT_UPLOADED",
+      "timestamp": "2026-10-05T13:34:57.223403+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "91defb60-ec34-46a7-87d1-b4d1ba4984c1",
+      "metadata": {
+        "file_size": 2787,
+        "content_type": "image/png",
+        "document_type": "SYNDICATE_ID",
+        "beneficiary_id": null
+      }
+    },
+    {
+      "id": "a3b6aeba-32a5-4568-b5af-fb24ecc61d71",
+      "action": "DOCUMENT_UPLOADED",
+      "timestamp": "2026-10-05T13:34:57.181800+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "49fb72eb-5a1b-45cd-8777-df89bc8bb34e",
+      "metadata": {
+        "file_size": 2787,
+        "content_type": "image/png",
+        "document_type": "NATIONAL_ID_BACK",
+        "beneficiary_id": null
+      }
+    },
+    {
+      "id": "929d1eb6-032a-4bac-9825-d76ec72e6d32",
+      "action": "DOCUMENT_UPLOADED",
+      "timestamp": "2026-10-05T13:34:57.125945+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "Document",
+      "object_id": "41c3fb1b-3ec1-48e7-9dd6-b52c980c862f",
+      "metadata": {
+        "file_size": 2787,
+        "content_type": "image/png",
+        "document_type": "NATIONAL_ID_FRONT",
+        "beneficiary_id": null
+      }
+    },
+    {
+      "id": "f7e68595-3a4a-4524-ae21-8c182cbca784",
+      "action": "APPLICATION_CREATED",
+      "timestamp": "2026-10-05T13:34:56.311506+03:00",
+      "user_id": "91c7ea1b-4506-40a1-a63e-2b716f42a3b5",
+      "user_email": "new.doctor@dev.local",
+      "object_type": "InsuranceApplication",
+      "object_id": "58914047-70bb-4f54-aada-169dbabc58eb",
+      "metadata": {}
+    }
+  ]
+}

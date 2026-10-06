@@ -2,6 +2,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { pageDevLogin, uniqueEmail, uniqueMaleNationalId } from "./helpers";
 
 /**
  * Session 5 doctor journey against the real backend (development settings: DEV_AUTH_ENABLED,
@@ -15,26 +16,6 @@ const fixture = (name: string) => join(here, "fixtures", name);
 const ARTEFACTS = resolve(here, "../../docs/screenshots/session-5");
 
 test.setTimeout(180_000);
-
-/** A fresh doctor for every run (dev-only `create` flag), so the flow always starts from no application. */
-async function signInAsFreshDoctor(page: Page) {
-  await page.goto("/");
-  await page.request.get("/api/v1/auth/me/"); // sets the csrftoken cookie
-  const csrf = (await page.context().cookies()).find((cookie) => cookie.name === "csrftoken")?.value ?? "";
-  const email = `e2e-${Date.now()}@dev.local`;
-  const response = await page.request.post("/api/v1/auth/dev/login/", {
-    data: { email, create: true },
-    headers: { "X-CSRFToken": csrf },
-  });
-  expect(response.ok()).toBeTruthy();
-}
-
-/** A valid, unused national ID for a man born 1985-06-15 (position 13 odd), unique per run. */
-function uniqueMaleNationalId(): string {
-  const serial = String(Math.floor(Math.random() * 1000)).padStart(3, "0");
-  const odd = [1, 3, 5, 7, 9][Math.floor(Math.random() * 5)];
-  return `2850615` + `01` + serial + String(odd) + String(Math.floor(Math.random() * 10));
-}
 
 async function uploadInSlot(scope: Page | Locator, label: string, file: string) {
   const slot = scope.getByRole("group", { name: label, exact: true });
@@ -61,7 +42,8 @@ test("doctor fills the paper form with OCR, adds family, pays, submits and gets 
   test.skip(test.info().project.name !== "desktop", "desktop project only");
   mkdirSync(ARTEFACTS, { recursive: true });
   await page.setViewportSize({ width: 1280, height: 900 });
-  await signInAsFreshDoctor(page);
+  // A fresh doctor for every run (dev-only `create` flag): the flow always starts from nothing.
+  await pageDevLogin(page, uniqueEmail("e2e"), true);
 
   // /application/new creates the draft and opens the first step.
   await page.goto("/application/new");

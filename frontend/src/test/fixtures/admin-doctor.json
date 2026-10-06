@@ -1,0 +1,37 @@
+{
+  "id": "b691c5d1-17ac-4749-91a1-6164c335a99b",
+  "email": "doctor@dev.local",
+  "full_name": "أحمد محمد علي حسن",
+  "masked_national_id": "28•••••••••991",
+  "date_of_birth": "1985-06-15",
+  "birth_year": 1985,
+  "gender": "MALE",
+  "religion": "MUSLIM",
+  "phone_number": "01012345678",
+  "syndicate_type": "HUMAN_MEDICINE",
+  "sub_syndicate": "القاهرة",
+  "syndicate_registration_number": "99001",
+  "syndicate_registration_year": 2014,
+  "treatment_card_number": "",
+  "governorate": "القاهرة",
+  "neighborhood": "مدينة نصر",
+  "address": "شارع عباس العقاد",
+  "created_at": "2026-10-05T13:34:38.244959+03:00",
+  "applications": [
+    {
+      "id": "264687cc-ba60-4fc5-98e0-563872a2e1a1",
+      "reference_number": "MED-2026-000007",
+      "fiscal_year": 2026,
+      "application_type": "FIRST_TIME",
+      "doctor_name": "أحمد محمد علي حسن",
+      "masked_national_id": "28•••••••••991",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "governorate": "القاهرة",
+      "status": "SUBMITTED",
+      "payment_status": "PENDING_REVIEW",
+      "submitted_at": "2026-10-06T05:45:29.626079+03:00",
+      "total": 3025
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# Keep the build context small and free of local state (venv, caches, generated files).
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+openapi.yaml
+staticfiles/
+*.pyc
+.env
+.env.*

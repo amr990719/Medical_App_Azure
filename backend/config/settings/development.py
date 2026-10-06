@@ -19,10 +19,14 @@ CSRF_TRUSTED_ORIGINS = env.list(
 DEV_AUTH_ENABLED = env.bool("DEV_AUTH_ENABLED", default=True)
 API_DOCS_ENABLED = env.bool("API_DOCS_ENABLED", default=True)
 
-# Local Azurite (public emulator credentials, see apps/documents/azurite.py).
+# Local Azurite (public emulator credentials, see apps/documents/azurite.py). Inside docker
+# compose the emulator is reached by its service name (AZURITE_BLOB_HOST=azurite).
 BLOB_CONNECTION_STRING = env(
     "BLOB_CONNECTION_STRING",
-    default=azurite_connection_string(env.int("AZURITE_BLOB_PORT", default=10000)),
+    default=azurite_connection_string(
+        env.int("AZURITE_BLOB_PORT", default=10000),
+        host=env("AZURITE_BLOB_HOST", default="127.0.0.1"),
+    ),
 )
 BLOB_CREATE_CONTAINER = env.bool("BLOB_CREATE_CONTAINER", default=True)
 

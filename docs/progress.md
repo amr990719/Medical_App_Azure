@@ -259,6 +259,65 @@ check (added to the e2e spec after the print view existed).
   (the doctor spec runs on the desktop project only and resizes itself to 390 px). Backend
   `pytest` 851 passed, `ruff check` + `ruff format --check` clean.
 
+### Session 6 — 2026-10-06 — Phase 4C (admin UI) + Phase 5 (local environment)
+Scope set by the user: admin pages (§8, §44), Django in docker compose with seed and §32 scripts,
+frontend ⇄ backend verified end to end. Built test-first: every new test file was run red before
+its implementation (admin pages: 33 failing tests first; seed: 5 failing; dev-login race: 1).
+- **Admin API layer:** `src/api/endpoints/admin.ts` (stats, list with every §24 filter, detail with
+  `reveal_national_id`, transition, payment, notes, audit, doctors, fee schedules — tier/fee keys
+  such as `grad_son` are never camelized), admin types in `types.ts`, `queryKeys.admin`,
+  `features/admin/queries.ts` (one action refreshes detail, revealed variant, audit, lists, stats).
+- **Pages (§8, §44):** `AdminDashboardPage` (seven §44 tiles, each a link to the filtered list),
+  `AdminApplicationsPage` (URL-driven search/filters/ordering/pagination, sortable headers with
+  `aria-sort`, cards below 768 px), `AdminApplicationDetailPage` (member data, masked national ID +
+  audited "show full", application data, member documents, beneficiaries with required/missing
+  documents, `DocumentViewer` modal via `content_url`, fee SNAPSHOT, duplicate warnings,
+  `TransitionButtons` from the server's `allowed_transitions`, `ActionDialog` with required notes for
+  correction/rejection and the server's Arabic refusal in place, `PaymentPanel` confirm/reject with
+  optional internal note, doctor-visible review notes, `NotesPanel`, `AuditList` with Arabic action
+  names and status/payment arrows, print link), `AdminPrintPage` (same A4 `PaperForm` fed from the
+  admin endpoint via `DraftPreset`, masked unless revealed), `AdminDoctorsPage` / `AdminDoctorDetailPage`,
+  `AdminFeeSchedulesPage` (versions, read-only tier table with ranges from the schedule's boundaries,
+  settings, new-version form prefilled from the shown version, Arabic digits accepted, confirmation
+  dialog, success message). Admin routes are lazy chunks (main bundle 530 → 483 kB, no Vite warning).
+- **Local environment (§32):** `backend/Dockerfile` (`dev` stage: python 3.12-slim, uid 1000,
+  healthcheck on `/api/ready/`), `backend/entrypoint.sh` (waits for the database, migrates when
+  `RUN_MIGRATIONS_ON_START`, seeds when `SEED_ON_START`), `backend/.dockerignore`, compose `backend`
+  service (development settings, dev auth, mock OCR, Azurite by service name, source bind-mounted,
+  `depends_on` healthy). `seed_dev_data` rewritten: FY 2026 schedule ensured, admin, `doctor@`
+  (worked example 2, SUBMITTED, receipt pending, 3025), `doctor2@` (female + MOTHER, UNDER_REVIEW →
+  NEEDS_CORRECTION by the admin with notes, 2075), `new.doctor@` (empty) — all through the domain
+  services with real actors and real Azurite blobs; idempotent. Root `package.json` scripts and a
+  `Makefile` (up, down, logs, migrate, makemigrations, seed, test, lint, dev, e2e, ci).
+  `docs/local-development.md` rewritten.
+- **Bugs found and fixed:** (1) `.gitignore` `reference/` also ignored `backend/apps/reference/` and
+  `frontend/src/features/reference/` — 17 core files (national ID, document rules, constants,
+  reference-data API, `useReferenceData`) had **never been committed**; anchored to `/reference/`
+  and committed now (found because ruff in the container, without `.git`, linted files the host
+  skipped). (2) Dev login `create` raced on the unique e-mail under parallel Playwright workers →
+  500; now handles `IntegrityError` (regression test). (3) The e2e dev-login helper raced the SPA's
+  own `/auth/me/` for the `csrftoken` cookie → intermittent CSRF 403; it now waits for that request.
+  (4) The production-settings test inherited the container's `OCR_*` environment; isolated.
+  (5) Two lint findings in the previously hidden files (unused `noqa`, yoda comparison) + format.
+- **Verification (outputs in the session transcript):** fresh stack on empty volumes
+  (`docker compose -p medical-fresh up -d`, alternate ports): postgres, azurite, backend healthy,
+  all migrations applied, seed printed `MED-2026-000001 SUBMITTED` / `MED-2026-000002
+  NEEDS_CORRECTION`, `/api/ready/` 200, a seeded document streamed as PNG from Azurite; then
+  `down -v`. `npm run dev` (port 5174, because a Vite server started before this session holds
+  5173) served `<html lang="ar" dir="rtl">` and proxied `/api/ready/` 200 and `/api/v1/auth/me/` 401
+  to the container.
+- **Tests:** backend **855 passed** on the host and inside the container (`npm run test:backend`,
+  Azurite tests included; was 851), ruff check + format clean in both. Frontend `npm run ci` green:
+  ESLint, `tsc` (app + node/e2e), Vitest **260 passed in 38 files** (was 222), `rtl_check` 0/0,
+  build. Playwright **9 passed, 3 skipped** (mobile duplicates of the self-resizing specs), green
+  three runs in a row: `admin-approve.spec.ts` (dashboard tiles → filtered list → sort → search →
+  detail → receipt viewer → approve hidden until payment confirmed → confirm payment → start
+  review → approve → audit shows both arrows → 390 px no overflow on list and detail → doctor sees
+  `تم قبول الطلب` and the note), `correction-loop.spec.ts` (notes required → correction → doctor
+  sees the note on the dashboard → fixes the neighbourhood → payment → review → resubmit → same
+  reference number → admin sees مقدم + `إعادة تقديم الطلب` in the audit), plus the Session 4/5 specs.
+  Screenshots in `docs/screenshots/session-6/`.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -437,6 +496,50 @@ check (added to the e2e spec after the print view existed).
 - **D83 — Session evidence (screenshots + A4 PDF) is committed** under `docs/screenshots/session-5/`;
   it contains only synthetic data and `e2e-*@dev.local` addresses.
 
+- **D84 — Transition buttons come from the server's `allowed_transitions`;** the SPA keeps no copy
+  of the transition table (plan 6.1 suggested a UI mirror). The only UI rule is the hint "confirm
+  the payment before approving" while UNDER_REVIEW without a confirmed payment.
+- **D85 — The admin list state lives in the URL** (`status`, `payment_status`, `fiscal_year`,
+  `governorate`, `syndicate_type`, `sub_syndicate`, `submitted_from/to`, `search`, `ordering`,
+  `page`); any change other than the page returns to page 1; search runs on submit (Enter/button),
+  Arabic digits normalized first. Dashboard tiles link to these URLs.
+- **D86 — "Show full national ID" is a separate query variant** (`masked` / `revealed` cache keys);
+  each reveal is one audited `reveal_national_id=1` request, hiding switches back to the masked
+  cache. The admin print page is masked by default with the same audited toggle.
+- **D87 — The admin print view reuses `PaperForm`** through `DraftPreset` (admin detail mapped to
+  the doctor `Application` + `DoctorProfile` shapes, always read-only, provider keyed by the reveal
+  state) instead of a second print layout.
+- **D88 — Payment buttons** appear only while SUBMITTED / UNDER_REVIEW / NEEDS_CORRECTION and a
+  receipt exists (mirror of D23 for UX; the server decides); the button matching the current
+  payment status is hidden. A note typed in the dialog becomes an internal note (D52).
+- **D89 — Audit action names are UI strings in `ar.ts`** (`admin.audit.actions`); the audit enum is
+  admin-only display text and is not part of `/reference-data/`.
+- **D90 — Fee schedule versions are never editable in the UI** (immutable, D14); "new version" is a
+  form prefilled from the version on screen, integers only (Arabic digits accepted), confirmed in a
+  dialog, then audited by the server (`FEE_SCHEDULE_CHANGED`).
+- **D91 — Admin routes are lazy-loaded** (React Router `lazy`): doctors never download the review UI.
+- **D92 — Compose reaches Azurite by service name** (`AZURITE_BLOB_HOST=azurite`, port 10000, new
+  development setting) instead of `UseDevelopmentStorage=true`, which the SDK hard-wires to
+  `127.0.0.1:10000` (unreachable from a container).
+- **D93 — The compose backend migrates and seeds on start** (`RUN_MIGRATIONS_ON_START`,
+  `SEED_ON_START`, both `true` only in the `dev` image/compose). The production stage (Session 7)
+  must default both to false (§37).
+- **D94 — `seed_dev_data` drives the domain services with real actors** (doctor uploads and
+  submits, admin transitions), so seeded applications have real blobs, snapshots, reference
+  numbers and a realistic audit trail. The FY 2026 amounts are read from the fees seed migration
+  (one definition).
+- **D95 — Both a root `package.json` and a `Makefile`** expose the §32 commands; this machine has no
+  `make`, so the npm scripts are the verified path. `test:backend` forces `--ds=config.settings.test`
+  (pytest-django lets `DJANGO_SETTINGS_MODULE` override the ini).
+- **D96 — Admin e2e specs create their submitted application through the doctor API**
+  (`e2e/helpers.ts::createSubmittedApplication`) — repeatable and independent of the seed; the doctor
+  UI path is covered by `doctor-submit.spec.ts`. E-mails carry a random suffix (parallel workers can
+  share a millisecond).
+- **D97 — Dev login `create` is race-safe:** an `IntegrityError` on the unique e-mail signs in as the
+  user the concurrent request created.
+- **D98 — `.gitignore` ignores `/reference/` (root only);** the unanchored rule hid two source
+  directories since Session 1.
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -478,6 +581,15 @@ check (added to the e2e spec after the print view existed).
 | 35 | §18 instructions "configurable by admins" | static placeholder text | D81, Q-B19 |
 | 36 | plan "commit `Session 5: doctor flow`" | one commit `Phase 4B: doctor flow` | explicit user instruction |
 | 37 | plan Session 5 "manual run through compose" | Playwright run against `runserver` + Vite + compose (PostgreSQL, Azurite) | compose has no Django service until Session 6 |
+| 38 | plan 6.1 `allowedTransitions(status, paymentStatus)` UI helper mirroring the table | server `allowed_transitions` only | D84: server authoritative, no duplicated table |
+| 39 | plan 6.1 files `useAdminStats/…/RevealNationalId.tsx`, `TransitionButtons` tests | hooks in `features/admin/queries.ts`; reveal inside the detail page; extra `ActionDialog`, `PaymentBadge`, `Pagination`, `SearchBox`, `toDraftPreset` | fewer files, same behaviour; all tested through the pages |
+| 40 | plan 6.3 `BLOB_CONNECTION_STRING=UseDevelopmentStorage=true` | `AZURITE_BLOB_HOST=azurite` + port | D92 |
+| 41 | plan 6.2 test "locked versions are read-only" | no version is editable at all; locked versions carry a badge | D90 / D14: versions are immutable |
+| 42 | user: "two doctors with applications" | two doctors with applications **plus** `new.doctor@` without one | keeps the first-sign-in experience (Session 3 seed) |
+| 43 | D59 "enum labels only from reference data" | audit action labels in `ar.ts` | D89 |
+| 44 | §8 every page responsive | applications list switches to cards below 768 px; doctors, beneficiaries and fee tables scroll horizontally inside their own container | wide tabular data; the page itself never scrolls sideways (checked at 390 px for list and detail) |
+| 45 | plan: commit per task, "Session 6: admin ui and local e2e" | one commit `Phase 4C-5: admin UI and local environment` | explicit user instruction |
+| 46 | plan Session 6 "Task 6.4 Playwright doctor flow" | already done in Session 5; this session adds the §42 admin and correction-loop specs (plan 9.1) | user scope for this session |
 
 ## Open questions
 
@@ -516,23 +628,28 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T11** The e-mail row of the paper form has 26 boxes; longer Entra e-mails are shown with as
   many boxes as needed (wrapping), never truncated. Confirm this is acceptable on the printed form.
 
+- **Q-B20** (business) Printed admin copies show the national ID masked unless the reviewer
+  reveals it (audited). Confirm whether official printouts must always carry the full ID.
+- **Q-B21** (business) A payment decision stays as it was when a correction is requested and the
+  doctor resubmits (a CONFIRMED payment stays confirmed unless the doctor replaces the receipt,
+  which resets it to PENDING_REVIEW). Confirm this is the intended policy.
+- **Q-T12** The dev database accumulates `e2e-*@dev.local` doctors and applications with every
+  Playwright run (reference numbers keep increasing). `docker compose down -v` resets it; CI
+  (Session 8) should run e2e against a fresh stack.
+
 ## Next session starts with
 
-**Session 6 — Admin UI + local end-to-end environment** (`docs/plan.md` → Session 6). The doctor
-journey is complete; Task 6.4 (doctor Playwright spec) is already done (deviation 33).
-1. Environment: Docker Desktop must be running → `docker compose up -d`; in `backend/`:
-   `DJANGO_SETTINGS_MODULE=config.settings.development .venv/Scripts/python manage.py runserver 8000`;
-   in `frontend/`: `npm ci && npm run dev`. Checks: `npm run lint`, `npm run typecheck`, `npm test`
-   (expect **222 passed**), `npm run build`, `python scripts/rtl_check.py src`,
-   `npx playwright test` (expect 7 passed, 1 skipped; each doctor run creates one `e2e-*@dev.local`
-   doctor and one submitted application with a new reference number). Backend: 851 passed.
-2. Reuse for the admin pages: `PaperForm` (wrap in `ApplicationFormProvider readOnly`) for the
-   admin detail/print views needs an admin data source — the draft hook reads the doctor
-   endpoints (`/applications/{id}/`, `/profile/`), so the admin print page should get its own
-   read-only provider fed from `GET /admin/applications/{id}/` (or `submitted_snapshot`).
-   `StatusBadge`, `StatusTimeline`, `FeeSummaryPanel`, `ConfirmDialog`, `useMediaQuery`,
-   `formatFileSize`, `DocumentModal` (read-only) are ready.
-3. Carry-over: `/profile` page (deviation 32), admin print route, Q-B19 payment instructions.
-4. Testing notes: `src/test/renderForm.tsx` renders inside a live provider; `draftDefaults` shortens
-   autosave timings in page tests; `vi.mock("@/features/documents/imageSize")` for receipt sizes;
-   `e2e/make-fixtures.py` regenerates the synthetic upload images.
+**Session 7 — Azure integration + production Docker image** (`docs/plan.md` → Session 7).
+1. Environment: Docker Desktop running → `npm run up` (or `docker compose up -d --build`): postgres,
+   azurite and Django (development settings, migrated and seeded). `cd frontend && npm ci && npm run dev`.
+   Checks: `npm run test:backend` (expect **855 passed**), `npm run lint`, `cd frontend && npm run ci`
+   (expect **260 passed**), `npx playwright test` (expect 9 passed, 3 skipped).
+2. `backend/Dockerfile` has only `base` + `dev` stages: add `builder` and `runtime` (non-root,
+   Gunicorn, collectstatic, healthcheck) and keep `dev` for compose. The `dev` stage sets
+   `RUN_MIGRATIONS_ON_START=true` / `SEED_ON_START=true`; the runtime must not (D93, §37).
+   `entrypoint.sh` already waits for the database; add the `migrate` / `cleanup` job modes.
+3. Carry-over: `/profile` page (deviation 32), Q-B19 payment instructions, Q-B20/Q-B21.
+4. Testing notes: admin page tests use fixtures captured from the compose backend
+   (`src/test/fixtures/admin-*.json`, `adminHandlers`); MSW answers with the FIRST matching
+   handler, so per-test overrides go before the defaults in `server.use(...)`. e2e helpers live in
+   `frontend/e2e/helpers.ts` (`pageDevLogin`, `createSubmittedApplication`, `reviewAction`).

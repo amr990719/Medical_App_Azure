@@ -1,0 +1,127 @@
+{
+  "count": 10,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": "5bfb26dd-8ad6-4867-a127-21e549d57023",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "e2e-1791252116311@dev.local",
+      "masked_national_id": "28•••••••••691",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "12345",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "e3d5c910-f7ba-4406-86e9-a11a49c144b6",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "e2e-1791251963036@dev.local",
+      "masked_national_id": "28•••••••••371",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "12345",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "52163461-c6b3-4025-a755-12c5ce434d59",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "new.doctor@dev.local",
+      "masked_national_id": "28•••••••••234",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "12345",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "0ddcec05-63b6-49c3-af08-7a04b5f14228",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "e2e-1791251781094@dev.local",
+      "masked_national_id": "28•••••••••037",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "12345",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "2bdeec9d-9f88-4726-92b5-bcce756c2d20",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "e2e-1791252018093@dev.local",
+      "masked_national_id": "28•••••••••318",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "12345",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "3021dbf1-b431-42f2-94fe-b6d592afe8fb",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "e2e-1791251661093@dev.local",
+      "masked_national_id": "",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "12345",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "b691c5d1-17ac-4749-91a1-6164c335a99b",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "doctor@dev.local",
+      "masked_national_id": "28•••••••••991",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "99001",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "227c1563-d68b-4981-83b6-5e1b4befe8dd",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "e2e-1791251921329@dev.local",
+      "masked_national_id": "28•••••••••870",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "12345",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "d3f30743-a470-4145-8b3e-c4089daf3154",
+      "full_name": "أحمد محمد علي حسن",
+      "email": "e2e-1791251824607@dev.local",
+      "masked_national_id": "28•••••••••932",
+      "syndicate_type": "HUMAN_MEDICINE",
+      "sub_syndicate": "القاهرة",
+      "syndicate_registration_number": "12345",
+      "governorate": "القاهرة",
+      "phone_number": "01012345678",
+      "applications_count": 1
+    },
+    {
+      "id": "60980539-6d49-4961-bfa4-0efe3aead7ff",
+      "full_name": "منى حسن إبراهيم سالم",
+      "email": "doctor2@dev.local",
+      "masked_national_id": "29•••••••••982",
+      "syndicate_type": "PHARMACY",
+      "sub_syndicate": "الجيزة",
+      "syndicate_registration_number": "99002",
+      "governorate": "الجيزة",
+      "phone_number": "01112345678",
+      "applications_count": 1
+    }
+  ]
+}

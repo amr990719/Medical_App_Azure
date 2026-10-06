@@ -195,6 +195,32 @@ def test_dev_login_create_refuses_inactive_user():
     assert _dev_login_create(csrf_client(), "gone@example.test").status_code == 400
 
 
+def test_dev_login_create_survives_a_concurrent_create(monkeypatch):
+    """Two parallel e2e workers signing in with the same new e-mail: the one that loses the
+    INSERT race must sign in as the user the other created, not answer 500."""
+    from apps.accounts.models import User
+
+    client = csrf_client()
+    token = bootstrap_csrf(client)
+    UserFactory(email="race@dev.local")  # the concurrent request's INSERT committed first
+    real_filter = User.objects.filter
+    calls = {"n": 0}
+
+    def stale_first_lookup(*args, **kwargs):
+        calls["n"] += 1
+        queryset = real_filter(*args, **kwargs)
+        return queryset.none() if calls["n"] == 1 else queryset
+
+    monkeypatch.setattr(User.objects, "filter", stale_first_lookup)
+    response = client.post(
+        DEV_LOGIN, {"email": "race@dev.local", "create": True}, format="json",
+        HTTP_X_CSRFTOKEN=token,
+    )  # fmt: skip
+    assert response.status_code == 200, response.json()
+    assert response.json()["user"]["email"] == "race@dev.local"
+    assert real_filter(email="race@dev.local").count() == 1
+
+
 @override_settings(DEV_AUTH_ENABLED=False)
 def test_dev_login_create_disabled_returns_404():
     from apps.accounts.models import User

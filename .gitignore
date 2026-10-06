@@ -73,7 +73,9 @@ Thumbs.db
 .claude/settings.local.json
 
 # ---- Reference prototype (cloned outside the repo; never inside) ----
-reference/
+# Anchored to the repository root: an unanchored `reference/` also hid backend/apps/reference/
+# and frontend/src/features/reference/ (found and fixed in Session 6).
+/reference/
 
 # Generated OpenAPI schema (regenerate with manage.py spectacular)
 backend/openapi.yaml

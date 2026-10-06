@@ -12,16 +12,23 @@ from django.core.cache import cache
 environ.Env.read_env(Path(__file__).resolve().parent.parent / ".env")
 
 
+# On the host Azurite is 127.0.0.1:<published port>; inside the compose backend container it is
+# the `azurite` service on 10000 (AZURITE_BLOB_HOST / AZURITE_BLOB_PORT set by docker-compose.yml).
+def _azurite_address() -> tuple[str, int]:
+    host = os.environ.get("AZURITE_BLOB_HOST", "127.0.0.1")
+    return host, int(os.environ.get("AZURITE_BLOB_PORT", "10000"))
+
+
 def local_azurite_connection_string() -> str:
     from apps.documents.azurite import azurite_connection_string
 
-    return azurite_connection_string(int(os.environ.get("AZURITE_BLOB_PORT", "10000")))
+    host, port = _azurite_address()
+    return azurite_connection_string(port, host=host)
 
 
 def azurite_reachable() -> bool:
-    port = int(os.environ.get("AZURITE_BLOB_PORT", "10000"))
     try:
-        with socket.create_connection(("127.0.0.1", port), timeout=1):
+        with socket.create_connection(_azurite_address(), timeout=1):
             return True
     except OSError:
         return False

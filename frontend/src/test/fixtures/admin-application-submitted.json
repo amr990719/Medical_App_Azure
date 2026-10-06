@@ -1,0 +1,275 @@
+{
+  "id": "58914047-70bb-4f54-aada-169dbabc58eb",
+  "fiscal_year": 2026,
+  "application_type": "FIRST_TIME",
+  "work_status": "WORKING",
+  "status": "SUBMITTED",
+  "payment_status": "PENDING_REVIEW",
+  "reference_number": "MED-2026-000001",
+  "declaration_name": "أحمد محمد علي حسن",
+  "declaration_accepted_at": "2026-10-05T13:34:57.685781+03:00",
+  "fee_snapshot": {
+    "tier": 3,
+    "total": 2475,
+    "is_valid": true,
+    "admin_fee": 175,
+    "breakdown": [
+      {
+        "fee": 750,
+        "note": "",
+        "label": "العضو الأصلي"
+      },
+      {
+        "fee": 1000,
+        "note": "",
+        "label": "سارة محمود علي"
+      },
+      {
+        "fee": 550,
+        "note": "",
+        "label": "عمر أحمد محمد"
+      },
+      {
+        "fee": 175,
+        "note": "",
+        "label": "رسوم إدارية"
+      }
+    ],
+    "fiscal_year": 2026,
+    "schedule_id": "5ed606f5-aa47-4703-8b6c-83ab2469c007",
+    "error_message": ""
+  },
+  "fee_schedule": "5ed606f5-aa47-4703-8b6c-83ab2469c007",
+  "review_notes": "",
+  "reviewed_by_email": null,
+  "reviewed_at": null,
+  "submitted_at": "2026-10-05T13:34:57.751780+03:00",
+  "created_at": "2026-10-05T13:34:56.311506+03:00",
+  "updated_at": "2026-10-05T13:34:57.753961+03:00",
+  "doctor": {
+    "id": "52163461-c6b3-4025-a755-12c5ce434d59",
+    "email": "new.doctor@dev.local",
+    "full_name": "أحمد محمد علي حسن",
+    "masked_national_id": "28•••••••••234",
+    "date_of_birth": "1985-06-15",
+    "birth_year": 1985,
+    "gender": "MALE",
+    "religion": "MUSLIM",
+    "phone_number": "01012345678",
+    "syndicate_type": "HUMAN_MEDICINE",
+    "sub_syndicate": "القاهرة",
+    "syndicate_registration_number": "12345",
+    "syndicate_registration_year": 2014,
+    "treatment_card_number": "",
+    "governorate": "القاهرة",
+    "neighborhood": "مدينة نصر",
+    "address": "شارع عباس العقاد",
+    "created_at": "2026-10-05T13:34:38.255165+03:00",
+    "national_id": null
+  },
+  "beneficiaries": [
+    {
+      "id": "7a77491e-b37e-44b0-bf0d-f95b3f974634",
+      "row_number": 1,
+      "kinship": "WIFE",
+      "full_name": "سارة محمود علي",
+      "birth_year": 1988,
+      "masked_national_id": "28•••••••••242",
+      "national_id": null,
+      "is_active": true,
+      "required_documents": [
+        {
+          "type": "BENEFICIARY_NATIONAL_ID",
+          "required": true,
+          "label": "بطاقة الرقم القومي",
+          "ocr_capable": true,
+          "stage": "form"
+        },
+        {
+          "type": "MARRIAGE_CERTIFICATE",
+          "required": true,
+          "label": "شهادة الزواج",
+          "ocr_capable": false,
+          "stage": "form"
+        },
+        {
+          "type": "INSURANCE_PRINT",
+          "required": true,
+          "label": "برينت تأميني",
+          "ocr_capable": false,
+          "stage": "form"
+        }
+      ],
+      "documents": [
+        {
+          "id": "c7281ba4-133b-4be4-8ddb-8199ee298a21",
+          "document_type": "BENEFICIARY_NATIONAL_ID",
+          "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634",
+          "original_filename": "beneficiary_national_id.png",
+          "content_type": "image/png",
+          "file_size": 2787,
+          "scan_status": "SKIPPED",
+          "created_at": "2026-10-05T13:34:57.287730+03:00",
+          "content_url": "/api/v1/documents/c7281ba4-133b-4be4-8ddb-8199ee298a21/content/"
+        },
+        {
+          "id": "c4451994-63e6-4e25-a5ca-b19aae0c9b13",
+          "document_type": "MARRIAGE_CERTIFICATE",
+          "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634",
+          "original_filename": "marriage_certificate.png",
+          "content_type": "image/png",
+          "file_size": 2787,
+          "scan_status": "SKIPPED",
+          "created_at": "2026-10-05T13:34:57.341243+03:00",
+          "content_url": "/api/v1/documents/c4451994-63e6-4e25-a5ca-b19aae0c9b13/content/"
+        },
+        {
+          "id": "5c578455-a1e2-46df-95d3-1ed9e6310fb3",
+          "document_type": "INSURANCE_PRINT",
+          "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634",
+          "original_filename": "insurance_print.png",
+          "content_type": "image/png",
+          "file_size": 2787,
+          "scan_status": "SKIPPED",
+          "created_at": "2026-10-05T13:34:57.413333+03:00",
+          "content_url": "/api/v1/documents/5c578455-a1e2-46df-95d3-1ed9e6310fb3/content/"
+        }
+      ]
+    },
+    {
+      "id": "324b255f-0a79-4a1b-91a3-e3826350bf96",
+      "row_number": 2,
+      "kinship": "SON_MINOR",
+      "full_name": "عمر أحمد محمد",
+      "birth_year": 2015,
+      "masked_national_id": "",
+      "national_id": null,
+      "is_active": true,
+      "required_documents": [
+        {
+          "type": "BENEFICIARY_NATIONAL_ID",
+          "required": false,
+          "label": "بطاقة الرقم القومي",
+          "ocr_capable": true,
+          "stage": "form"
+        },
+        {
+          "type": "BIRTH_CERTIFICATE",
+          "required": true,
+          "label": "شهادة الميلاد",
+          "ocr_capable": true,
+          "stage": "form"
+        }
+      ],
+      "documents": [
+        {
+          "id": "81748864-8f95-4290-9eea-d9f531f039bd",
+          "document_type": "BIRTH_CERTIFICATE",
+          "beneficiary_id": "324b255f-0a79-4a1b-91a3-e3826350bf96",
+          "original_filename": "birth_certificate.png",
+          "content_type": "image/png",
+          "file_size": 2787,
+          "scan_status": "SKIPPED",
+          "created_at": "2026-10-05T13:34:57.476413+03:00",
+          "content_url": "/api/v1/documents/81748864-8f95-4290-9eea-d9f531f039bd/content/"
+        }
+      ]
+    }
+  ],
+  "documents": [
+    {
+      "id": "41c3fb1b-3ec1-48e7-9dd6-b52c980c862f",
+      "document_type": "NATIONAL_ID_FRONT",
+      "beneficiary_id": null,
+      "original_filename": "national_id_front.png",
+      "content_type": "image/png",
+      "file_size": 2787,
+      "scan_status": "SKIPPED",
+      "created_at": "2026-10-05T13:34:57.123789+03:00",
+      "content_url": "/api/v1/documents/41c3fb1b-3ec1-48e7-9dd6-b52c980c862f/content/"
+    },
+    {
+      "id": "49fb72eb-5a1b-45cd-8777-df89bc8bb34e",
+      "document_type": "NATIONAL_ID_BACK",
+      "beneficiary_id": null,
+      "original_filename": "national_id_back.png",
+      "content_type": "image/png",
+      "file_size": 2787,
+      "scan_status": "SKIPPED",
+      "created_at": "2026-10-05T13:34:57.180801+03:00",
+      "content_url": "/api/v1/documents/49fb72eb-5a1b-45cd-8777-df89bc8bb34e/content/"
+    },
+    {
+      "id": "91defb60-ec34-46a7-87d1-b4d1ba4984c1",
+      "document_type": "SYNDICATE_ID",
+      "beneficiary_id": null,
+      "original_filename": "syndicate_id.png",
+      "content_type": "image/png",
+      "file_size": 2787,
+      "scan_status": "SKIPPED",
+      "created_at": "2026-10-05T13:34:57.223403+03:00",
+      "content_url": "/api/v1/documents/91defb60-ec34-46a7-87d1-b4d1ba4984c1/content/"
+    },
+    {
+      "id": "c7281ba4-133b-4be4-8ddb-8199ee298a21",
+      "document_type": "BENEFICIARY_NATIONAL_ID",
+      "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634",
+      "original_filename": "beneficiary_national_id.png",
+      "content_type": "image/png",
+      "file_size": 2787,
+      "scan_status": "SKIPPED",
+      "created_at": "2026-10-05T13:34:57.287730+03:00",
+      "content_url": "/api/v1/documents/c7281ba4-133b-4be4-8ddb-8199ee298a21/content/"
+    },
+    {
+      "id": "c4451994-63e6-4e25-a5ca-b19aae0c9b13",
+      "document_type": "MARRIAGE_CERTIFICATE",
+      "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634",
+      "original_filename": "marriage_certificate.png",
+      "content_type": "image/png",
+      "file_size": 2787,
+      "scan_status": "SKIPPED",
+      "created_at": "2026-10-05T13:34:57.341243+03:00",
+      "content_url": "/api/v1/documents/c4451994-63e6-4e25-a5ca-b19aae0c9b13/content/"
+    },
+    {
+      "id": "5c578455-a1e2-46df-95d3-1ed9e6310fb3",
+      "document_type": "INSURANCE_PRINT",
+      "beneficiary_id": "7a77491e-b37e-44b0-bf0d-f95b3f974634",
+      "original_filename": "insurance_print.png",
+      "content_type": "image/png",
+      "file_size": 2787,
+      "scan_status": "SKIPPED",
+      "created_at": "2026-10-05T13:34:57.413333+03:00",
+      "content_url": "/api/v1/documents/5c578455-a1e2-46df-95d3-1ed9e6310fb3/content/"
+    },
+    {
+      "id": "81748864-8f95-4290-9eea-d9f531f039bd",
+      "document_type": "BIRTH_CERTIFICATE",
+      "beneficiary_id": "324b255f-0a79-4a1b-91a3-e3826350bf96",
+      "original_filename": "birth_certificate.png",
+      "content_type": "image/png",
+      "file_size": 2787,
+      "scan_status": "SKIPPED",
+      "created_at": "2026-10-05T13:34:57.476413+03:00",
+      "content_url": "/api/v1/documents/81748864-8f95-4290-9eea-d9f531f039bd/content/"
+    },
+    {
+      "id": "992bdd2b-7495-448a-9d94-4f147ab98d0c",
+      "document_type": "PAYMENT_RECEIPT",
+      "beneficiary_id": null,
+      "original_filename": "payment_receipt.png",
+      "content_type": "image/png",
+      "file_size": 2787,
+      "scan_status": "SKIPPED",
+      "created_at": "2026-10-05T13:34:57.660490+03:00",
+      "content_url": "/api/v1/documents/992bdd2b-7495-448a-9d94-4f147ab98d0c/content/"
+    }
+  ],
+  "allowed_transitions": [
+    "UNDER_REVIEW",
+    "NEEDS_CORRECTION",
+    "REJECTED"
+  ],
+  "beneficiary_warnings": []
+}

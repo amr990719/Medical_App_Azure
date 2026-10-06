@@ -1,6 +1,8 @@
-# Local development stack (PROMPT.md §32). PostgreSQL + Azurite now; the Django service is
-# added in Session 6. Credentials below are LOCAL-ONLY defaults for a throwaway container —
-# never reuse them anywhere else. Override any value through a root `.env` file (gitignored).
+# Local development stack (PROMPT.md §32): PostgreSQL, Azurite (Blob emulator) and Django with
+# development settings, dev sign-in and the mock OCR provider. The frontend runs on the host
+# (`cd frontend && npm run dev`) and Vite proxies /api to Django on :8000.
+# Credentials below are LOCAL-ONLY defaults for a throwaway container — never reuse them
+# anywhere else. Override any value through a root `.env` file (gitignored).
 name: medical-syndicates
 
 services:
@@ -39,6 +41,37 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    image: medical-syndicates-backend:dev
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+      DATABASE_URL: postgres://${POSTGRES_USER:-medical}:${POSTGRES_PASSWORD:-medical}@postgres:5432/${POSTGRES_DB:-medical}
+      DEV_AUTH_ENABLED: "true"
+      OCR_ENABLED: "true"
+      OCR_PROVIDER: mock
+      # Azurite by service name and container port (the host port may differ, see D28).
+      AZURITE_BLOB_HOST: azurite
+      AZURITE_BLOB_PORT: "10000"
+      BLOB_BACKEND: azure
+      BLOB_CREATE_CONTAINER: "true"
+      ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      RUN_MIGRATIONS_ON_START: ${RUN_MIGRATIONS_ON_START:-true}
+      SEED_ON_START: ${SEED_ON_START:-true}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # Source bind-mounted so runserver reloads on edits.
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

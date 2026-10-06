@@ -1,0 +1,19 @@
+{
+  "fiscal_year": 2026,
+  "total": 8,
+  "by_status": {
+    "DRAFT": 2,
+    "SUBMITTED": 7,
+    "UNDER_REVIEW": 0,
+    "NEEDS_CORRECTION": 1,
+    "APPROVED": 0,
+    "REJECTED": 0
+  },
+  "by_payment_status": {
+    "NOT_UPLOADED": 0,
+    "PENDING_REVIEW": 8,
+    "CONFIRMED": 0,
+    "REJECTED": 0
+  },
+  "receipts_pending": 8
+}
