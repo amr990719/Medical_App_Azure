@@ -128,8 +128,8 @@ def test_span_processor_masks_attributes_and_exception_events():
         span.set_attribute("http.status_code", 200)
         span.record_exception(ValueError(f"Key (national_id)=({NID}) already exists."))
     (finished,) = exporter.get_finished_spans()
-    assert finished.attributes["url.query"] == f"search={MASKED}"
-    assert finished.attributes["http.target"].endswith(MASKED)
+    assert "url.query" not in finished.attributes  # query strings are never exported
+    assert finished.attributes["http.target"] == "/api/v1/admin/applications/"
     assert finished.attributes["http.status_code"] == 200
     (event,) = finished.events
     for value in event.attributes.values():
@@ -159,3 +159,46 @@ def test_wsgi_configures_telemetry_before_loading_django():
 
     source = (Path(telemetry.__file__).parent / "wsgi.py").read_text(encoding="utf-8")
     assert source.index("configure_telemetry()") < source.index("get_wsgi_application()")
+
+
+def test_span_processor_drops_query_strings_from_urls():
+    """Query strings carry search terms (names, phone numbers, e-mails) and OIDC codes; like the
+    access log, telemetry keeps the path only."""
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(telemetry.MaskingSpanProcessor())
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    query = "search=%D8%A3%D8%AD%D9%85%D8%AF&phone=01012345678&code=0.AUoA-secret&state=s1"
+    with provider.get_tracer("test").start_as_current_span("GET") as span:
+        span.set_attribute("url.full", f"https://app.example.test/api/v1/auth/callback/?{query}#x")
+        span.set_attribute(
+            "http.url", f"https://app.example.test/api/v1/admin/applications/?{query}"
+        )
+        span.set_attribute("http.target", f"/api/v1/admin/applications/?{query}")
+        span.set_attribute("url.query", query)
+        span.set_attribute("url.path", "/api/v1/admin/applications/")
+    (finished,) = exporter.get_finished_spans()
+    attributes = dict(finished.attributes)
+    assert attributes["url.full"] == "https://app.example.test/api/v1/auth/callback/"
+    assert attributes["http.url"] == "https://app.example.test/api/v1/admin/applications/"
+    assert attributes["http.target"] == "/api/v1/admin/applications/"
+    assert "url.query" not in attributes
+    assert attributes["url.path"] == "/api/v1/admin/applications/"
+    for value in attributes.values():
+        assert "01012345678" not in str(value)
+        assert "secret" not in str(value)
+
+
+def test_span_processor_drops_credential_headers_even_if_capture_is_enabled():
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(telemetry.MaskingSpanProcessor())
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    with provider.get_tracer("test").start_as_current_span("GET") as span:
+        span.set_attribute("http.request.header.cookie", ("sessionid=abc",))
+        span.set_attribute("http.request.header.authorization", ("Bearer abc",))
+        span.set_attribute("http.request.header.x_csrftoken", ("abc",))
+        span.set_attribute("http.response.header.set_cookie", ("sessionid=abc",))
+        span.set_attribute("http.request.header.accept", ("application/json",))
+    (finished,) = exporter.get_finished_spans()
+    assert set(finished.attributes) == {"http.request.header.accept"}

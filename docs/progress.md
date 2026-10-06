@@ -400,6 +400,12 @@ resource was created and nothing was deployed. Built test-first: every new test 
   - Backend **940 passed** in the compose container (`npm run test:backend`, Azurite tests
     included; was 855), 939 on the host + the Gunicorn test; ruff check + format clean.
     Frontend `npm run ci` green (**269 passed**, unchanged code). Playwright **9 passed, 3 skipped** against the rebuilt stack (PostgreSQL with TLS on).
+  - **Fixed after the post-commit security review:** the span processor only masked 14+ digit
+    runs, so full request URLs (`url.full`/`http.url`/`http.target`/`url.query`) would have sent
+    admin search terms (names, 11-digit phones, e-mails) and the Entra callback's `code`/`state`
+    to Application Insights. URL attributes now keep scheme/host/path only, `url.query` is
+    dropped, and credential headers (cookie, set-cookie, authorization, CSRF) are dropped if
+    header capture is ever enabled (D112). Backend 942 passed.
   - **NOT VERIFIED — requires Azure credentials:** managed-identity tokens; Blob access and
     user-delegation keys on a real account (roles Storage Blob Data Contributor + Storage Blob
     Delegator); Key Vault reads (Key Vault Secrets User); Entra login to Azure Database for
@@ -667,6 +673,9 @@ resource was created and nothing was deployed. Built test-first: every new test 
 - **D111 — `collectstatic` at build time uses `config.settings.base`** with a throwaway build-only
   key; no secret enters the image. Static files are not served (JSON API only).
 
+- **D112 — Telemetry never exports query strings or credential headers,** matching the access
+  log; only the path of a URL leaves the process.
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -785,7 +794,7 @@ confirmed by the organization). Technical/environment questions for the user:
 **Session 8 — Bicep, Entra scripts, GitHub Actions, GitHub setup docs** (`docs/plan.md` → Session 8).
 1. Environment: Docker Desktop running → `npm run up`. The compose PostgreSQL now has TLS on
    (Session 7 script; a fresh volume needs `python backend/scripts/local_postgres_tls.py` again
-   before running the production image locally). Checks: `npm run test:backend` (expect **940
+   before running the production image locally). Checks: `npm run test:backend` (expect **942
    passed**), `npm run lint`, `cd frontend && npm run ci` (expect **269 passed**).
 2. Production image: `docker build --target runtime -t medical-backend backend/`; container command
    `web` (default), job commands `migrate` (once per deployment, before traffic shifts) and

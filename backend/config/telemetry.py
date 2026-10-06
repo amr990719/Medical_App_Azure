@@ -12,8 +12,10 @@ National IDs must never reach Application Insights, so masking happens at three 
   dictConfig would remove it from the root logger anyway);
 - `MaskingLogRecordProcessor` re-masks the body and every string attribute (exception messages
   and stack traces are attributes) before the exporter sees the record;
-- `MaskingSpanProcessor` masks span names, string attributes (`url.query`, `http.target`, …)
-  and exception events before the batch exporter receives the span.
+- `MaskingSpanProcessor` drops query strings and fragments from URL attributes (`url.query`,
+  `url.full`, `http.url`, `http.target`: search terms, phone numbers, e-mails, OIDC `code`/`state`
+  — the access log never records them either) and masks span names, string attributes and
+  exception events before the batch exporter receives the span.
 Ingestion uses the connection string; `APPLICATIONINSIGHTS_AUTHENTICATION=entra` adds the managed
 identity (`Monitoring Metrics Publisher` role) for Entra-authenticated ingestion.
 NOT VERIFIED against a real Application Insights resource — requires Azure credentials.
@@ -28,6 +30,12 @@ from opentelemetry.sdk.trace import Event, ReadableSpan, SpanProcessor
 from config.logging import mask_digit_runs
 
 DISTRO_LOGGER_NAME = "config.telemetry.distro"
+# Span attributes holding a URL (old and new HTTP semantic conventions) and the query itself.
+URL_ATTRIBUTES = frozenset({"url.full", "http.url", "http.target"})
+DROPPED_ATTRIBUTES = frozenset({"url.query", "url.fragment"})
+# Header capture is off by default (OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_*); if someone turns
+# it on, credentials still never leave the process.
+CREDENTIAL_HEADERS = ("cookie", "set_cookie", "set-cookie", "authorization", "csrftoken", "api_key")
 SERVICE_NAME = "medical-syndicates-backend"
 
 _configured = False
@@ -39,6 +47,23 @@ def _mask_value(value):
     if isinstance(value, tuple | list):
         return type(value)(_mask_value(v) for v in value)
     return value
+
+
+def _without_query(url: str) -> str:
+    return url.split("?", 1)[0].split("#", 1)[0]
+
+
+def _span_attributes(attributes) -> dict:
+    cleaned = {}
+    for key, value in (attributes or {}).items():
+        if key in DROPPED_ATTRIBUTES or (
+            ".header." in key and any(h in key.lower() for h in CREDENTIAL_HEADERS)
+        ):
+            continue
+        if key in URL_ATTRIBUTES and isinstance(value, str):
+            value = _without_query(value)
+        cleaned[key] = _mask_value(value)
+    return cleaned
 
 
 def _mask_mapping(attributes) -> dict:
@@ -67,8 +92,8 @@ class MaskingSpanProcessor(SpanProcessor):
     first) and rewrites the finished span it is handed, which is the object exported next."""
 
     def on_end(self, span: ReadableSpan) -> None:
-        span._name = mask_digit_runs(span._name)
-        span._attributes = _mask_mapping(span._attributes)
+        span._name = mask_digit_runs(_without_query(span._name))
+        span._attributes = _span_attributes(span._attributes)
         span._events = tuple(
             Event(event.name, _mask_mapping(event.attributes), event.timestamp)
             for event in span._events

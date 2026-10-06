@@ -72,8 +72,11 @@ and birth years, identity-document images, personal photos and payment receipts.
   `29•••••••••123` in messages and `extra` fields; the JSON formatter masks again (tracebacks).
 - Application Insights (`config/telemetry.py`, Azure Monitor OpenTelemetry distro): the log
   handler carries the same filter; a log-record processor masks bodies and attributes
-  (exception messages and stack traces); a span processor masks span names, attributes
-  (`url.query`, `http.target`, …) and exception events before export. Ingestion can be
+  (exception messages and stack traces); a span processor drops query strings and fragments
+  from URL attributes (`url.query`, `url.full`, `http.url`, `http.target` — search terms, phone
+  numbers, e-mails, OIDC `code`/`state`), drops cookie/authorization/CSRF header attributes if
+  header capture is ever enabled, and masks span names, attributes and exception events before
+  export. Free text in exception messages is only masked for 14+ digit runs. Ingestion can be
   authenticated with the managed identity (`APPLICATIONINSIGHTS_AUTHENTICATION=entra`).
   **NOT VERIFIED — requires Azure credentials.**
 - Audit log (append-only table) for submissions, status and payment changes, document
