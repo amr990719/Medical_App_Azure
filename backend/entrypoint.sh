@@ -2,8 +2,8 @@
 # Container entrypoint (PROMPT.md §31, §32, §37). The first argument selects the mode:
 #   web       Gunicorn (production image default). Never migrates: RUN_MIGRATIONS_ON_START=true
 #             is refused, because replicas must not race to migrate.
-#   migrate   `manage.py migrate` exactly once per deployment (Container Apps job, run before
-#             traffic shifts to the new revision).
+#   migrate   `manage.py migrate` + `createcachetable`, exactly once per deployment (Container
+#             Apps job, run before traffic shifts to the new revision).
 #   cleanup   `manage.py cleanup_blobs` (scheduled Container Apps job); extra args are passed on.
 #   anything else is executed as given (docker compose dev: runserver). In that case only:
 #     RUN_MIGRATIONS_ON_START=true  apply migrations first (local development only)
@@ -35,7 +35,10 @@ case "$mode" in
         ;;
     migrate)
         wait_for_database
-        exec python manage.py migrate --noinput
+        python manage.py migrate --noinput
+        # Table of the shared throttle cache (CACHE_URL=dbcache://django_cache in Azure, Q-T6);
+        # idempotent, and a no-op when no database cache is configured.
+        exec python manage.py createcachetable
         ;;
     cleanup)
         shift

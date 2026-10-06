@@ -93,6 +93,20 @@ and birth years, identity-document images, personal photos and payment receipts.
 | PostgreSQL Entra auth | `config/db/entra_postgres` — fresh token per new connection (cached until 5 min before expiry), TLS enforced, `CONN_MAX_AGE` ≤ 1800 s; `DB_AUTH_MODE=password` fallback | NOT VERIFIED — requires Azure credentials |
 | Azure OpenAI OCR | managed identity bearer tokens, no API key, structured outputs, no payload logging | NOT VERIFIED — requires Azure credentials |
 
+### 5.1 Infrastructure controls (Session 8, Bicep + CI/CD)
+
+| Control | Implementation | Status |
+|---|---|---|
+| No secrets in templates or Git | Key Vault secrets set out of band (`az keyvault secret set --file`, `create-entra-app` writes `entra-client-secret` without printing it); parameter files read tenant/principal ids from environment variables; no template output contains a secret or deployment token | build/lint verified |
+| Key Vault | RBAC mode, soft delete, purge protection, audit logs to Log Analytics; app identity has *Key Vault Secrets User* on that vault only | NOT VERIFIED — requires Azure credentials |
+| Blob Storage | `allowBlobPublicAccess=false`, **`allowSharedKeyAccess=false`**, OAuth default, TLS 1.2, HTTPS only, private container, soft delete + versioning, audit logs; *Blob Data Contributor* on the container only, *Blob Delegator* on the account (user-delegation SAS) | NOT VERIFIED — requires Azure credentials |
+| PostgreSQL | Entra authentication, password authentication disabled, `require_secure_transport=on`, `ssl_min_protocol_version=TLSv1.2`, firewall = Azure services only (MVP) or VNet integration without public access; app role created with `pgaadauth_create_principal_with_oid`, not an admin, `CONNECT/CREATE/TEMP` + schema `public` only | SQL verified on local PostgreSQL 16; Azure NOT VERIFIED |
+| Container Registry / Container Apps | no admin user, no anonymous pull, AcrPull via identity; HTTPS-only ingress; non-root image; probes; single-revision mode | NOT VERIFIED — requires Azure credentials |
+| Azure OpenAI | deployed only with `enableOcr`; `disableLocalAuth=true`; *Cognitive Services OpenAI User* on that account only | NOT VERIFIED — requires Azure credentials |
+| Static Web App | Standard + linked backend (same origin); `staticwebapp.config.json`: strict CSP (no inline/eval script, `frame-ancestors 'none'`, Google Fonts only external origin), HSTS, nosniff, `X-Frame-Options: DENY`, COOP, Permissions-Policy; PR preview environments disabled | CSP checked in Chromium against the production build (landing, doctor form with thumbnails, admin detail + viewer: no violation); SWA itself NOT VERIFIED |
+| GitHub → Azure | OIDC federated credential per GitHub environment (`repo:<owner>/<repo>:environment:<env>`), no stored passwords or SWA tokens; deployer roles scoped to the resource group (Contributor, AcrPush, RBAC Administrator restricted by an ABAC condition to the seven roles the template assigns); prod requires reviewers; actions pinned to commit SHAs; `permissions: contents: read` by default | actionlint + shellcheck clean; NOT VERIFIED on GitHub |
+| Private networking (optional) | `enablePrivateNetworking`: VNet-integrated Container Apps and PostgreSQL, private endpoints + DNS for Blob, Key Vault, OpenAI, public access disabled | build verified; NOT VERIFIED — requires Azure credentials |
+
 ## 6. Decisions requiring legal / organizational approval
 
 | # | Decision | Current default | Owner |
@@ -108,7 +122,13 @@ and birth years, identity-document images, personal photos and payment receipts.
 
 ## 7. Known gaps (tracked in docs/progress.md)
 
-- Shared cache for rate limits across replicas (Q-T6).
+- Shared cache for rate limits across replicas: resolved in Session 8 (`CACHE_URL=dbcache://django_cache`,
+  table created by the migrate job).
 - Entra External ID claims (`email`, `amr`) not verified against a real tenant (Q-T7).
-- Network isolation (private endpoints, VNet integration), Defender, alerts and backup/restore
-  drills belong to Session 8 (Bicep) and Session 9 (security review).
+- Network isolation is implemented behind `enablePrivateNetworking` (off by default, MVP per §34);
+  Defender for Storage/Cloud, alerts and the first restore drill remain (Session 9 / operations).
+- Container Apps ingress is public so the Static Web Apps linked backend can reach it; users could
+  call the Container App FQDN directly (same Django controls apply; cookies are scoped to the SWA
+  host). Restricting ingress to the SWA is NOT VERIFIED (Q-T13).
+- Production `X_FRAME_OPTIONS=DENY` and the document content CSP `sandbox` may block the admin PDF
+  viewer iframe (only when `ALLOW_PDF_DOCUMENTS=true`) — Session 9.

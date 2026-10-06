@@ -79,3 +79,9 @@ Thumbs.db
 
 # Generated OpenAPI schema (regenerate with manage.py spectacular)
 backend/openapi.yaml
+
+# Playwright MCP browser artifacts
+.playwright-mcp/
+# Compiled ARM templates (az bicep build / what-if output)
+infrastructure/main.json
+infrastructure/modules/*.json

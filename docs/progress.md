@@ -414,6 +414,76 @@ resource was created and nothing was deployed. Built test-first: every new test 
     ingestion (Monitoring Metrics Publisher); probe/Host/`X-Forwarded-Proto` behaviour behind
     Container Apps ingress and the SWA linked backend.
 
+### Session 8 — 2026-10-06 — Phase 7 (infrastructure) + Phase 8 (CI/CD)
+Scope set by the user: modular Bicep (§33), Entra / PostgreSQL / GitHub OIDC scripts, GitHub
+Actions (§36), `docs/entra-setup.md`, `docs/github-setup.md`. Nothing was deployed to Azure, no
+repository was created, nothing was pushed. Skills: `azure-prepare` (design + plan in the
+gitignored `.azure/deployment-plan.md`), `entra-app-registration`, `azure-validate` (core checks,
+static role review), Azure MCP Bicep schemas / best practices / retail prices.
+- **Bicep** `infrastructure/main.bicep` (resource-group scope) + 14 modules: `identity`,
+  `monitoring`, `key-vault` (RBAC, soft delete, purge protection, audit logs), `storage` (private
+  `medical-documents`, no public access, **shared keys disabled**, TLS 1.2, soft delete, versioning,
+  lifecycle for previous versions), `postgres` (Flexible Server 16, Entra auth, password auth off by
+  default, TLS >= 1.2 enforced, PITR/geo-backup/HA parameters, Azure-services-only firewall or VNet
+  integration, optional Entra admin), `container-registry`, `container-apps-env` (workload
+  profiles, Log Analytics), `container-app` (app + manual `migrate` job + scheduled `cleanup` job,
+  Key Vault references through the user-assigned identity, startup/liveness `/api/health/`,
+  readiness `/api/ready/`, HTTP-concurrency scaling, single-revision mode), `static-web-app`
+  (Standard, PR previews disabled), `static-web-app-link` (linked backend, D115), `openai`
+  (conditional, keys disabled, vision deployment), `role-assignments` (7 roles, each on one
+  resource), `network` + `private-endpoints` (behind `enablePrivateNetworking`). Names from
+  `uniqueString(resourceGroup().id, environment, baseName)`, tags on everything, all sizes are
+  parameters; `parameters/{dev,staging,prod}.bicepparam` read tenant/principal ids and the image
+  from environment variables (nothing environment-specific committed). Two-phase first deployment
+  (D113). Strict `infrastructure/bicepconfig.json` (secret/unused-param rules as errors, recent API
+  versions as warnings); API versions refreshed to current GA from the linter's list.
+- **Scripts** `infrastructure/scripts/`: `create-entra-app.sh/.ps1` (web platform, implicit flow
+  off, openid/profile/email, `email` optional claim, callback + `/signed-out` redirect URIs,
+  user-flow link, client secret straight into Key Vault with an expiry, never printed, rotation
+  with `--append`), `setup-postgres-entra.sh` (Entra admin, database owned by it, identity role via
+  `pgaadauth_create_principal_with_oid`, least-privilege grants, temporary firewall rule removed
+  on exit), `setup-github-oidc.sh/.ps1` (deployer identity per environment, federated credential
+  `repo:<owner>/<repo>:environment:<env>`, Contributor + AcrPush + RBAC Administrator restricted by
+  an ABAC condition to the template's roles, D118). All idempotent; nothing embeds an ID.
+- **Workflows** `.github/workflows/`: `frontend.yml` (§36 chain, one build promoted dev -> staging ->
+  prod), `backend.yml` (ruff, `check`, migrations check, OpenAPI validation, pytest on `postgres:16`,
+  runtime image built once + non-root / refusal checks, promoted per environment),
+  `infrastructure.yml` (build + lint + script checks, what-if on PR, what-if + deploy on main, manual
+  dispatch), `e2e.yml` (fresh compose stack, Azurite pytest, Playwright), three `reusable-*.yml`
+  deploy workflows. Backend deploy = push -> migrate job update + start + wait -> cleanup job image ->
+  new revision -> wait Healthy -> smoke test. OIDC only; the SWA deployment token is read at run time
+  and masked (D116); every action pinned to a commit SHA resolved with `git ls-remote` (D117).
+- **Application changes:** `backend/entrypoint.sh` `migrate` mode also runs `createcachetable` so
+  `CACHE_URL=dbcache://django_cache` gives every replica one throttle store (Q-T6, D114; red -> green
+  shown in the compose container, then in the production image over TLS).
+  `frontend/public/staticwebapp.config.json` (SPA fallback excluding `/api/*`, strict CSP allowing
+  only Google Fonts, HSTS, nosniff, DENY, COOP, Permissions-Policy, caching) +
+  `src/staticWebAppConfig.test.ts` (7 tests, red first).
+- **Docs:** `docs/entra-setup.md`, `docs/github-setup.md`, `docs/azure-deployment.md` (two-phase
+  commands, migrations + rollback, backups/restore + RPO/RTO + drill, private-networking upgrade,
+  cost table from the Azure Retail Prices API, troubleshooting), `docs/security.md` §5.1.
+- **Verification (outputs in the session transcript):**
+  - `az bicep build` main + 14 modules: all exit 0, **0 warnings** under the strict config;
+    `az bicep lint` all clean; `az bicep build-params` dev/staging/prod OK; parameter behaviour
+    checked (no `CONTAINER_IMAGE` -> `deployApplication=false`; with it -> `true`).
+  - `az deployment group what-if` / `validate`: **NOT VERIFIED — requires Azure credentials.** The
+    signed-in "Azure for Students" subscription answers `ReadOnlyDisabledSubscription`
+    (azure-validate `validate-deployment.sh`: CLI PASS, auth PASS, compile PASS, validate/what-if
+    FAIL for that reason only). Its policy allows only five regions without Static Web Apps (Q-T15).
+  - **actionlint 1.7.12** (Docker, with shellcheck 0.11 on every `run:` block): 0 errors in 7 files.
+    **shellcheck** on the three scripts + `entrypoint.sh`: clean; `bash -n` OK; PowerShell 5.1 parser:
+    0 errors in both `.ps1`. `setup-postgres-entra.sh` SQL run against the compose PostgreSQL 16
+    (database/role names with spaces and dashes, idempotent re-run, grants checked).
+  - **gitleaks 8.30.1**: full history (10 commits) **no leaks**; staged changes: 2 findings, both
+    public built-in role GUIDs (Key Vault Secrets User/Officer) -> annotated `gitleaks:allow`,
+    re-scan **no leaks**.
+  - CSP: production build served with the exact `globalHeaders` + `/api` proxy, Chromium
+    (Playwright MCP): landing, doctor form with three thumbnails, admin detail, admin image viewer —
+    no CSP violation; Cairo loaded from Google Fonts.
+  - Backend **942 passed** (compose), ruff check + format clean; frontend `npm run ci` green
+    (**276 passed**, was 269); `docker build --target runtime` OK; production image `migrate` mode
+    with production settings over TLS: migrations + cache table, idempotent.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -676,6 +746,42 @@ resource was created and nothing was deployed. Built test-first: every new test 
 - **D112 — Telemetry never exports query strings or credential headers,** matching the access
   log; only the path of a URL leaves the process.
 
+- **D113 — Two-phase first deployment:** Container Apps resolve Key Vault references when the app
+  is created, so `deployApplication=false` (derived from an empty `CONTAINER_IMAGE`) creates
+  everything else first; secrets, Entra app and PostgreSQL role are set; the second phase creates
+  the app, jobs and SWA link. Infrastructure redeploys pass the running image so they never roll
+  the application back.
+- **D114 — Shared throttle cache = PostgreSQL `DatabaseCache`** (`dbcache://django_cache`, table
+  created by the migrate job) instead of Azure Cache for Redis: no extra resource or cost; the
+  throttle write rate (auth callback, uploads, OCR) is low.
+- **D115 — SWA linked backend in its own module** (`static-web-app-link.bicep`): the Container App
+  needs the Static Web App hostname (CSRF origin, redirect URI) and the link needs the app id, so
+  one module would be circular.
+- **D116 — No GitHub secrets at all:** every Azure value is a GitHub environment *variable*; the
+  Static Web Apps deployment token is read with OIDC at run time and masked.
+- **D117 — Actions pinned to commit SHAs** (tag in a comment), resolved with `git ls-remote` because
+  the GitHub MCP server failed to connect; inputs checked against each `action.yml` at that SHA.
+- **D118 — Deployer least privilege:** Contributor + AcrPush on the environment's resource group
+  and *Role Based Access Control Administrator* with an ABAC condition limited to the seven role
+  definitions the template assigns (no Owner / User Access Administrator).
+- **D119 — PostgreSQL database created by the Entra admin (script), not Bicep,** so it is owned by
+  an Entra principal that can grant on schema `public`; the app identity is a non-admin role with
+  `CONNECT/CREATE/TEMP` + `USAGE/CREATE` on `public` (the migrate job owns the tables).
+- **D120 — Storage shared-key access disabled** (`allowSharedKeyAccess=false`): the app only uses
+  the managed identity and user-delegation SAS (D106), so account keys are unusable even if leaked.
+- **D121 — Container Apps workload-profiles environment (Consumption profile):** required for
+  VNet integration with a /27+ subnet and the current default; scale-to-zero in dev only.
+- **D122 — Image built once per commit and promoted** as a workflow artifact (`docker save`) to
+  each environment's own registry, keeping registries/identities separate (§49) without rebuilds.
+- **D123 — Infrastructure what-if on pull requests runs against dev only;** staging/prod print
+  their what-if inside the deploy job (prod after the required approval); a manual dispatch with
+  `what_if_only=true` previews any environment.
+- **D124 — Static Web App headers** (`staticwebapp.config.json`): CSP `default-src 'self'`, no inline
+  or eval script, Google Fonts as the only external origin (Q-T10), `frame-ancestors 'none'`;
+  PR preview environments disabled because they would share the linked backend.
+- **D125 — Application Insights Entra-only ingestion** (`DisableLocalAuth`) in staging/prod; the
+  connection string is still provided (it identifies the resource); dev keeps local auth (Q-T14).
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -733,6 +839,13 @@ resource was created and nothing was deployed. Built test-first: every new test 
 | 51 | plan 7.3 path `backend/config/db/entra_postgres/base.py` with the token in the backend only | same path; `CONN_MAX_AGE` cap and TLS rule also in `production.py` | misconfiguration fails at startup, not on the first connection |
 | 52 | plan: commit `Session 7: azure integration and production image` | `Phase 6: Azure integration` | explicit user instruction |
 | 53 | plan 7.6 verify `docker run … manage.py check` | full run: container healthy against compose PostgreSQL (TLS) + Azurite, job modes, refusals | user's done-when |
+| 54 | plan 8.2 `grant-github-oidc.sh` | `setup-github-oidc.sh` + `.ps1` | explicit user instruction ("section 36.1" — PROMPT.md has no §36.1; §36 + plan 8.4 used) |
+| 55 | §33 module list | extra modules `static-web-app-link.bicep` (D115), `network.bicep` + `private-endpoints.bicep` (`enablePrivateNetworking`) | circular dependency; §34 upgrade path |
+| 56 | plan 8.1 PostgreSQL database in Bicep (implied) | database + identity role created by `setup-postgres-entra.sh` | D119 |
+| 57 | plan 8.3 secret `SWA_DEPLOYMENT_TOKEN` | not used; token read over OIDC at run time | D116 |
+| 58 | plan 8.3 what-if on PR | dev only on PR | D123 |
+| 59 | plan: commits per task, `Session 8: infrastructure and ci/cd` | one commit `Phase 7-8: infrastructure and CI/CD` | explicit user instruction |
+| 60 | plan 8.1 roles list | + Storage Blob Delegator (account) + Monitoring Metrics Publisher | user-delegation SAS (D101) and Entra telemetry ingestion need them |
 
 ## Open questions
 
@@ -750,15 +863,14 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T8** The `rtl` plugin directory ships no LICENSE file. Confirm redistributing the vendored
   `rtl_check.py` in this repository is acceptable, or replace it with a download step in CI.
 - **Q-T9** This machine runs Node 22.11. Upgrading to the current 22.x LTS (≥ 22.12) lets jsdom 27
-  be used (D57); CI (Session 8) should pin the latest 22.x.
-- **Q-T10** Cairo is loaded from Google Fonts. The Static Web Apps CSP (Session 8) must allow
-  `fonts.googleapis.com` / `fonts.gstatic.com`, or the font is self-hosted (the rtl-ui skill's
-  recommendation; also removes a third-party request).
+  be used (D57). CI uses `node-version: "22"` (latest 22.x).
+- **Q-T10** Resolved for now: the Static Web Apps CSP allows `fonts.googleapis.com` /
+  `fonts.gstatic.com` (checked in Chromium). Self-hosting Cairo would remove the third-party request
+  (rtl-ui skill recommendation) — optional.
 - **Q-B18** (business) Should `إنشاء حساب` open Entra's sign-up page directly? That needs the BFF to
   forward a sign-up hint (`prompt=create`); today both buttons use the combined flow (D61).
-- **Q-T6** Throttle counters use the default cache (local memory per replica). With several Container
-  App replicas the effective limit multiplies; Session 6/7 must set `CACHE_URL` to a shared cache
-  (Azure Cache for Redis, or `dbcache://django_cache` + `createcachetable` in the migration job).
+- **Q-T6** Resolved (Session 8, D114): `CACHE_URL=dbcache://django_cache`, table created by the
+  migrate job.
 - **Q-T7** Entra External ID is NOT VERIFIED against a real tenant. The tenant must emit the `email`
   claim (optional claim) and, for admin MFA enforcement, `amr`; otherwise set
   `ENTRA_ADMIN_REQUIRE_MFA=false` and rely on Conditional Access (Session 7/8 docs).
@@ -776,9 +888,8 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B21** (business) A payment decision stays as it was when a correction is requested and the
   doctor resubmits (a CONFIRMED payment stays confirmed unless the doctor replaces the receipt,
   which resets it to PENDING_REVIEW). Confirm this is the intended policy.
-- **Q-T12** The dev database accumulates `e2e-*@dev.local` doctors and applications with every
-  Playwright run (reference numbers keep increasing). `docker compose down -v` resets it; CI
-  (Session 8) should run e2e against a fresh stack.
+- **Q-T12** Locally the dev database still accumulates `e2e-*@dev.local` data (`docker compose down
+  -v` resets it); `e2e.yml` runs on a fresh stack every time.
 - **Q-T13** Container Apps ingress / SWA linked backend: confirm the `Host` header Django sees and
   that `X-Forwarded-Proto: https` is set (ALLOWED_HOSTS, HTTPS redirect, CSRF origin). NOT
   VERIFIED — requires Azure credentials (Session 8 deployment docs).
@@ -788,23 +899,30 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B22** (business/legal) Decisions L1–L8 in `docs/security.md` §6 (religion field, OCR by an AI
   service, region / cross-border transfer, retention, admin access, breach procedure, production
   access, malware scanning).
+- **Q-T15** The available "Azure for Students" subscription is disabled (read-only) and its policy
+  allows only `switzerlandnorth`, `germanywestcentral`, `francecentral`, `polandcentral`,
+  `italynorth` — Static Web Apps is offered in none of them. Production needs a subscription whose
+  policy allows the chosen data region **and** a Static Web Apps region (or an exemption for the
+  SWA resource, which only serves static files). Re-run azure-validate (what-if) there.
+- **Q-T16** The Azure retail price list shows a Container Apps *Environment Management Hour* meter
+  ($0.143/h, effective 2026-09-01). Confirm whether it applies to Consumption-only environments
+  before relying on dev scale-to-zero savings (docs/azure-deployment.md cost table).
+- **Q-T17** Production `X_FRAME_OPTIONS=DENY` and the content endpoint's `sandbox` CSP may stop the
+  admin PDF viewer iframe from rendering (only with `ALLOW_PDF_DOCUMENTS=true`). Session 9 to test.
+- **Q-T18** Container Apps ingress must stay public for the SWA linked backend; whether the link
+  restricts direct calls to the Container App FQDN is NOT VERIFIED (also Q-T13).
 
 ## Next session starts with
 
-**Session 8 — Bicep, Entra scripts, GitHub Actions, GitHub setup docs** (`docs/plan.md` → Session 8).
-1. Environment: Docker Desktop running → `npm run up`. The compose PostgreSQL now has TLS on
-   (Session 7 script; a fresh volume needs `python backend/scripts/local_postgres_tls.py` again
-   before running the production image locally). Checks: `npm run test:backend` (expect **942
-   passed**), `npm run lint`, `cd frontend && npm run ci` (expect **269 passed**).
-2. Production image: `docker build --target runtime -t medical-backend backend/`; container command
-   `web` (default), job commands `migrate` (once per deployment, before traffic shifts) and
-   `cleanup` (scheduled). Health probes: liveness `/api/health/`, readiness `/api/ready/`.
-3. What Bicep must provide (from Session 7 code): user-assigned identity with `AZURE_CLIENT_ID`;
-   `AZURE_TOKEN_CREDENTIALS=prod`; roles Storage Blob Data Contributor + Storage Blob Delegator,
-   Key Vault Secrets User, Cognitive Services OpenAI User, Monitoring Metrics Publisher, AcrPull;
-   PostgreSQL Entra admin + a role for the identity (`DATABASE_URL=postgres://<identity-name>@…`,
-   `DB_AUTH_MODE=entra`, `DB_SSLMODE=require`); `BLOB_ACCOUNT_URL`; Key Vault references for
-   `DJANGO_SECRET_KEY` and `ENTRA_CLIENT_SECRET`; `APPLICATIONINSIGHTS_CONNECTION_STRING`;
-   `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `ENTRA_*`; `OCR_ENABLED=false` until L2 is approved;
-   a shared cache for throttles (Q-T6); Azure OpenAI with local auth disabled.
-4. Carry-over: `/profile` page (deviation 32), Q-B19 payment instructions, Q-B20/Q-B21, Q-T13/Q-T14.
+**Session 9 — Full testing + security review** (`docs/plan.md` -> Session 9).
+1. Environment: Docker Desktop running -> `npm run up`. Checks: `npm run test:backend` (expect **942
+   passed**), `npm run lint`, `cd frontend && npm run ci` (expect **276 passed**). Bicep:
+   `az bicep build --file infrastructure/main.bicep` (and each module) — 0 warnings; workflows:
+   `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`; secrets:
+   `docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest git /repo`.
+2. Carried into Session 9: Q-T17 (admin PDF iframe vs `X-Frame-Options`), Q-T18/Q-T13 (direct
+   access to the Container App FQDN), the security review of the Bicep (plan 9.3), and
+   `manage.py check --deploy` with exactly the settings `main.bicep` produces.
+3. Azure: when an enabled subscription is available (Q-T1, Q-T15), follow `docs/azure-deployment.md`
+   and re-run azure-validate (what-if) first — still `NOT VERIFIED — requires Azure credentials`.
+4. Carry-over: `/profile` page (deviation 32), Q-B19 payment instructions, Q-B20/Q-B21, Q-T14, Q-T16.

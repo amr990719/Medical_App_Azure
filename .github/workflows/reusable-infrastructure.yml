@@ -1,0 +1,107 @@
+# what-if, then (unless what_if_only) `az deployment group create`, for one environment.
+#
+# The parameter files read environment-specific values from environment variables, filled here
+# from the GitHub environment's variables (only non-empty ones, so file defaults still apply).
+# Redeploying infrastructure never rolls the application back: the image currently running in
+# the Container App is passed as CONTAINER_IMAGE. When no Container App exists yet, the
+# deployment runs the first phase only (no app, jobs or SWA link; docs/azure-deployment.md).
+#
+# GitHub environment variables used: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+# AZURE_RESOURCE_GROUP, CONTAINER_APP_NAME (after phase 1), ENTRA_AUTHORITY, ENTRA_TENANT_ID,
+# ENTRA_CLIENT_ID, and optionally PUBLIC_HOSTNAME, STATIC_WEB_APP_LOCATION, ENABLE_OCR,
+# ENABLE_PRIVATE_NETWORKING, KEY_VAULT_OPERATOR_OBJECT_ID, KEY_VAULT_OPERATOR_TYPE,
+# POSTGRES_ENTRA_ADMIN_OBJECT_ID, POSTGRES_ENTRA_ADMIN_NAME, POSTGRES_ENTRA_ADMIN_TYPE.
+name: infrastructure deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: dev, staging or prod
+        required: true
+        type: string
+      what_if_only:
+        description: Stop after what-if
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: ${{ inputs.what_if_only && 'what-if' || 'deploy' }} ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-infrastructure-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Export the parameter-file variables
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+        run: |
+          if [ -z "$RESOURCE_GROUP" ]; then
+            echo "::error::GitHub environment '${ENVIRONMENT}' has no AZURE_RESOURCE_GROUP variable (docs/github-setup.md)"
+            exit 1
+          fi
+          keys='["CONTAINER_APP_NAME","ENTRA_AUTHORITY","ENTRA_TENANT_ID","ENTRA_CLIENT_ID","PUBLIC_HOSTNAME","STATIC_WEB_APP_LOCATION","ENABLE_OCR","ENABLE_PRIVATE_NETWORKING","KEY_VAULT_OPERATOR_OBJECT_ID","KEY_VAULT_OPERATOR_TYPE","POSTGRES_ENTRA_ADMIN_OBJECT_ID","POSTGRES_ENTRA_ADMIN_NAME","POSTGRES_ENTRA_ADMIN_TYPE"]'
+          echo "$VARS_JSON" | jq -r --argjson keys "$keys" \
+            'to_entries[] | select(.key as $k | $keys | index($k)) | select(.value != "") | "\(.key)=\(.value)"' \
+            >> "$GITHUB_ENV"
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Keep the running image
+        run: |
+          image=""
+          if [ -n "${CONTAINER_APP_NAME:-}" ]; then
+            image="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+              --query "properties.template.containers[0].image" -o tsv 2>/dev/null || true)"
+          fi
+          if [ -z "$image" ]; then
+            echo "No Container App yet: first phase only (deployApplication=false)."
+          else
+            echo "Keeping image ${image}"
+            for name in ENTRA_AUTHORITY ENTRA_TENANT_ID ENTRA_CLIENT_ID; do
+              if [ -z "${!name:-}" ]; then
+                echo "::error::${name} is required once the application is deployed (production settings refuse to start without it)"
+                exit 1
+              fi
+            done
+            echo "CONTAINER_IMAGE=${image}" >> "$GITHUB_ENV"
+          fi
+      - name: what-if
+        run: |
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "main-${ENVIRONMENT}" \
+            --template-file infrastructure/main.bicep \
+            --parameters "infrastructure/parameters/${ENVIRONMENT}.bicepparam" \
+            --exclude-change-types Ignore NoChange
+      - name: Deploy
+        if: ${{ !inputs.what_if_only }}
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "main-${ENVIRONMENT}" \
+            --template-file infrastructure/main.bicep \
+            --parameters "infrastructure/parameters/${ENVIRONMENT}.bicepparam" \
+            --query "properties.outputs" -o json > "${RUNNER_TEMP}/outputs.json"
+          {
+            echo "### ${ENVIRONMENT} deployment outputs"
+            echo '```json'
+            cat "${RUNNER_TEMP}/outputs.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

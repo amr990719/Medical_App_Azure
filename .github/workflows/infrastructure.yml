@@ -1,0 +1,123 @@
+# Infrastructure CI/CD (PROMPT.md §33, §36):
+#   bicep build + lint → what-if (pull requests, against dev) → deploy on main
+#   dev → staging → prod (prod waits for the environment's required reviewers; every deploy job
+#   prints its own what-if before `az deployment group create`).
+# Manual runs: choose an environment and whether to stop after what-if.
+name: infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure.yml"
+      - ".github/workflows/reusable-infrastructure.yml"
+  pull_request:
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure.yml"
+      - ".github/workflows/reusable-infrastructure.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+      what_if_only:
+        description: Stop after what-if
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infrastructure-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: bicep build and lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Bicep
+        run: az bicep install && az bicep version
+      - name: Build and lint every Bicep file
+        working-directory: infrastructure
+        run: |
+          out="${RUNNER_TEMP}/bicep"
+          mkdir -p "$out"
+          for file in main.bicep modules/*.bicep; do
+            echo "::group::${file}"
+            az bicep build --file "$file" --outdir "$out"
+            az bicep lint --file "$file" --diagnostics-format sarif > "${out}/$(basename "$file").sarif"
+            echo "::endgroup::"
+          done
+          for file in parameters/*.bicepparam; do
+            az bicep build-params --file "$file" --outfile "${out}/$(basename "$file").json"
+          done
+      - name: Check the deployment scripts
+        run: |
+          for script in infrastructure/scripts/*.sh; do bash -n "$script"; done
+          shellcheck infrastructure/scripts/*.sh backend/entrypoint.sh
+
+  what-if:
+    name: what-if (dev)
+    needs: validate
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-infrastructure.yml
+    with:
+      environment: dev
+      what_if_only: true
+
+  manual:
+    name: manual run
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-infrastructure.yml
+    with:
+      environment: ${{ inputs.environment }}
+      what_if_only: ${{ inputs.what_if_only }}
+
+  deploy-dev:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-infrastructure.yml
+    with:
+      environment: dev
+      what_if_only: false
+
+  deploy-staging:
+    needs: deploy-dev
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-infrastructure.yml
+    with:
+      environment: staging
+      what_if_only: false
+
+  deploy-prod:
+    needs: deploy-staging
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-infrastructure.yml
+    with:
+      environment: prod
+      what_if_only: false

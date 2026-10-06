@@ -1,0 +1,137 @@
+# Backend CI/CD (PROMPT.md §36, §37):
+#   ruff → pytest (PostgreSQL service container) → build Docker image → push to ACR
+#        → run the migration job once → update the Container App revision
+# The image is built once per commit and promoted dev → staging → prod (each environment has
+# its own registry; prod waits for the environment's required reviewers).
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+      - ".github/workflows/reusable-deploy-backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+      - ".github/workflows/reusable-deploy-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: ruff, migrations check, pytest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        # >= 15 required (NULLS NOT DISTINCT, D17); same major as Azure (Q-T5).
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: medical
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d medical"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      DATABASE_URL: postgres://ci:ci-only@localhost:5432/medical
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements/*.txt
+      - run: python -m pip install -r requirements/dev.txt -r requirements/prod.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: python manage.py check
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py spectacular --file "${RUNNER_TEMP}/openapi.yaml" --validate --fail-on-warn
+      # Azurite-marked tests skip themselves here; e2e.yml runs them against docker compose.
+      - run: python -m pytest -q
+
+  image:
+    name: build image
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the runtime image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          target: runtime
+          tags: medical-backend:${{ github.sha }}
+          push: false
+          provenance: false
+          outputs: type=docker,dest=${{ runner.temp }}/medical-backend.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Check the image runs as non-root and refuses replica migrations
+        run: |
+          docker load --input "${RUNNER_TEMP}/medical-backend.tar"
+          user="$(docker image inspect "medical-backend:${GITHUB_SHA}" --format '{{.Config.User}}')"
+          [ "$user" = "app:app" ] || { echo "::error::image user is '$user'"; exit 1; }
+          if docker run --rm -e RUN_MIGRATIONS_ON_START=true "medical-backend:${GITHUB_SHA}" web; then
+            echo "::error::web mode accepted RUN_MIGRATIONS_ON_START=true"; exit 1
+          fi
+      - name: Upload the image
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}/medical-backend.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-dev:
+    needs: image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-deploy-backend.yml
+    with:
+      environment: dev
+
+  deploy-staging:
+    needs: deploy-dev
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-deploy-backend.yml
+    with:
+      environment: staging
+
+  deploy-prod:
+    needs: deploy-staging
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-deploy-backend.yml
+    with:
+      environment: prod

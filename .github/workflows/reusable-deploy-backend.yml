@@ -1,0 +1,129 @@
+# Deploys the `backend-image` artifact of the calling run to one environment (PROMPT.md §37):
+#   1. push the image to the environment's registry (OIDC login, AcrPush);
+#   2. point the migrate job at the new image and run it ONCE; stop on failure
+#      (the running revision keeps serving: migrations are expand/contract);
+#   3. point the cleanup job at the new image;
+#   4. create the new Container App revision; Container Apps shifts traffic only when its
+#      readiness probe (/api/ready/) passes;
+#   5. smoke test /api/health/ and /api/ready/.
+# Rollback: docs/azure-deployment.md ("Rolling back").
+#
+# GitHub environment variables used: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+# AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME, MIGRATE_JOB_NAME, CLEANUP_JOB_NAME.
+name: deploy backend
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: dev, staging or prod
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-backend-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+      MIGRATE_JOB_NAME: ${{ vars.MIGRATE_JOB_NAME }}
+      CLEANUP_JOB_NAME: ${{ vars.CLEANUP_JOB_NAME }}
+    steps:
+      - name: Check environment variables
+        run: |
+          for name in RESOURCE_GROUP ACR_NAME CONTAINER_APP_NAME MIGRATE_JOB_NAME CLEANUP_JOB_NAME; do
+            if [ -z "${!name}" ]; then
+              echo "::error::GitHub environment '${{ inputs.environment }}' is missing a variable for ${name} (docs/github-setup.md)"
+              exit 1
+            fi
+          done
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Push the image to the registry
+        run: |
+          login_server="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)"
+          image="${login_server}/medical-backend:${GITHUB_SHA}"
+          docker load --input "${RUNNER_TEMP}/medical-backend.tar"
+          docker tag "medical-backend:${GITHUB_SHA}" "$image"
+          az acr login --name "$ACR_NAME"
+          docker push "$image"
+          echo "IMAGE=${image}" >> "$GITHUB_ENV"
+
+      - name: Run the migration job once
+        run: |
+          az containerapp job update --name "$MIGRATE_JOB_NAME" --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE" --output none
+          execution="$(az containerapp job start --name "$MIGRATE_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" --query name -o tsv)"
+          echo "Started migration execution ${execution}"
+          deadline=$((SECONDS + 1800))
+          while :; do
+            status="$(az containerapp job execution show --name "$MIGRATE_JOB_NAME" \
+              --resource-group "$RESOURCE_GROUP" --job-execution-name "$execution" \
+              --query properties.status -o tsv)"
+            case "$status" in
+              Succeeded) echo "Migrations applied"; break ;;
+              Failed | Stopped | Degraded)
+                echo "::error::Migration execution ${execution} ended with status ${status}; the current revision was not changed. Logs: Log Analytics, ContainerAppConsoleLogs_CL where ContainerJobName_s == '${MIGRATE_JOB_NAME}'"
+                exit 1 ;;
+            esac
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Migration execution ${execution} still '${status}' after 30 minutes"
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Update the cleanup job image
+        run: |
+          az containerapp job update --name "$CLEANUP_JOB_NAME" --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE" --output none
+
+      - name: Create the new revision
+        run: |
+          suffix="g${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}"
+          az containerapp update --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE" --revision-suffix "$suffix" --output none
+          revision="${CONTAINER_APP_NAME}--${suffix}"
+          deadline=$((SECONDS + 900))
+          while :; do
+            health="$(az containerapp revision show --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" --revision "$revision" \
+              --query properties.healthState -o tsv)"
+            [ "$health" = "Healthy" ] && break
+            if [ "$health" = "Unhealthy" ] || [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Revision ${revision} is '${health}'. In single-revision mode the previous revision keeps serving until a new one is ready; see docs/azure-deployment.md (Rolling back)."
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "Revision ${revision} is healthy"
+
+      - name: Smoke test
+        run: |
+          fqdn="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn -o tsv)"
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "https://${fqdn}/api/health/"
+          echo
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "https://${fqdn}/api/ready/"
+          echo
