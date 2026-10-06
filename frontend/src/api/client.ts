@@ -63,7 +63,19 @@ export function readCookie(name: string): string | undefined {
   return undefined;
 }
 
+// Every API path segment is a literal name or a UUID. Ids come from route params, which React
+// Router decodes (%2F → "/"), so a crafted link could otherwise smuggle "../", "?" or "#" into a
+// path and send a CSRF-bearing request to another same-origin endpoint.
+const SAFE_SEGMENT = /^[A-Za-z0-9_-]*$/;
+
+function assertSafePath(path: string): void {
+  if (!path.startsWith("/") || !path.split("/").every((segment) => SAFE_SEGMENT.test(segment))) {
+    throw new ApiError(404, "NOT_FOUND", ar.errors.notFound);
+  }
+}
+
 export function buildUrl(path: string, query?: Record<string, QueryValue>): string {
+  assertSafePath(path);
   // Absolute URL so the same code works in the browser and in Node-based tests.
   const url = new URL(`${API_PREFIX}${path}`, window.location.origin);
   for (const [key, value] of Object.entries(query ?? {})) {
@@ -124,9 +136,10 @@ export async function apiFetch<T>(path: string, init: ApiRequestInit = {}): Prom
     if (token) headers.set("X-CSRFToken", token);
   }
 
+  const url = buildUrl(path, init.query);
   let response: Response;
   try {
-    response = await fetch(buildUrl(path, init.query), {
+    response = await fetch(url, {
       method,
       headers,
       body,

@@ -270,3 +270,16 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     expect(screen.getByRole("link", { name: "طباعة الاستمارة" })).toHaveAttribute("href", `${detailPath}/print`);
   });
 });
+
+describe("AdminApplicationDetailPage path safety", () => {
+  it("does not turn a crafted id into a request to another endpoint", async () => {
+    const paths: string[] = [];
+    const record = ({ request }: { request: Request }) => void paths.push(new URL(request.url).pathname);
+    server.events.on("request:start", record);
+    server.use(handlers.me(meAdmin), handlers.referenceData());
+    renderApp("/admin/applications/..%2F..%2Fauth%2Flogout");
+    expect(await screen.findByRole("alert")).toHaveTextContent("العنصر المطلوب غير موجود.");
+    server.events.removeListener("request:start", record);
+    expect(paths.filter((path) => !["/api/v1/auth/me/", "/api/v1/reference-data/"].includes(path))).toEqual([]);
+  });
+});

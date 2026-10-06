@@ -298,6 +298,11 @@ its implementation (admin pages: 33 failing tests first; seed: 5 failing; dev-lo
   500; now handles `IntegrityError` (regression test). (3) The e2e dev-login helper raced the SPA's
   own `/auth/me/` for the `csrftoken` cookie → intermittent CSRF 403; it now waits for that request.
   (4) The production-settings test inherited the container's `OCR_*` environment; isolated.
+  (6) Found by the post-commit security review: route params were interpolated into API paths, and
+  React Router decodes `%2F`, so a crafted link (`/admin/applications/..%2F..%2Fauth%2Flogout`)
+  could aim a CSRF-bearing request at another same-origin endpoint (also true of the Session 4–5
+  doctor endpoints). `buildUrl` now refuses any path segment outside `[A-Za-z0-9_-]` before a
+  request is built (D99); 9 tests (8 client, 1 page). Frontend total 269.
   (5) Two lint findings in the previously hidden files (unused `noqa`, yoda comparison) + format.
 - **Verification (outputs in the session transcript):** fresh stack on empty volumes
   (`docker compose -p medical-fresh up -d`, alternate ports): postgres, azurite, backend healthy,
@@ -539,6 +544,9 @@ its implementation (admin pages: 33 failing tests first; seed: 5 failing; dev-lo
   user the concurrent request created.
 - **D98 — `.gitignore` ignores `/reference/` (root only);** the unanchored rule hid two source
   directories since Session 1.
+- **D99 — API paths are allowlisted centrally:** every segment must match `[A-Za-z0-9_-]*`
+  (literal names and UUIDs only); anything else is a local `NOT_FOUND` (`العنصر المطلوب غير موجود.`)
+  and no request is sent. One check in `buildUrl` covers `apiFetch` and `apiUpload`.
 
 ## Deviations from PROMPT.md
 
@@ -643,7 +651,7 @@ confirmed by the organization). Technical/environment questions for the user:
 1. Environment: Docker Desktop running → `npm run up` (or `docker compose up -d --build`): postgres,
    azurite and Django (development settings, migrated and seeded). `cd frontend && npm ci && npm run dev`.
    Checks: `npm run test:backend` (expect **855 passed**), `npm run lint`, `cd frontend && npm run ci`
-   (expect **260 passed**), `npx playwright test` (expect 9 passed, 3 skipped).
+   (expect **269 passed**), `npx playwright test` (expect 9 passed, 3 skipped).
 2. `backend/Dockerfile` has only `base` + `dev` stages: add `builder` and `runtime` (non-root,
    Gunicorn, collectstatic, healthcheck) and keep `dev` for compose. The `dev` stage sets
    `RUN_MIGRATIONS_ON_START=true` / `SEED_ON_START=true`; the runtime must not (D93, §37).

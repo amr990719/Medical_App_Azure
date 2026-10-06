@@ -217,3 +217,32 @@ describe("apiUpload", () => {
     expect(error).toMatchObject({ status: 413, code: "FILE_TOO_LARGE" });
   });
 });
+
+describe("path safety (route params are interpolated into API paths)", () => {
+  // React Router decodes %2F in params, so a crafted link can put "../" into an id.
+  const unsafe = [
+    "/admin/applications/../../auth/logout/transition/",
+    "/admin/applications/./x/",
+    "/documents/x/..%2F..%2Fauth%2Flogout/",
+    "/applications/x?y=1/submit/",
+    "/applications/x#/submit/",
+    String.raw`/applications/x\..\..\auth/`,
+  ];
+
+  it.each(unsafe)("refuses %s without sending a request", async (path) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(apiFetch(path, { method: "POST" })).rejects.toMatchObject({ status: 404, code: "NOT_FOUND" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unsafe upload path", async () => {
+    await expect(apiUpload("/applications/../../auth/logout/documents/", new FormData())).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("still sends normal paths", async () => {
+    server.use(http.get(`${window.location.origin}/api/v1/applications/5f0c1a52-0000-4000-8000-000000000123/`, () => HttpResponse.json({ ok: true })));
+    await expect(apiFetch("/applications/5f0c1a52-0000-4000-8000-000000000123/")).resolves.toEqual({ ok: true });
+  });
+});
