@@ -12,3 +12,9 @@ azure-identity>=1.19,<2
 msal>=1.31,<2                 # Entra External ID authorization code flow (+PKCE)
 PyJWT[crypto]>=2.9,<3         # independent ID-token signature validation
 requests>=2.32,<3
+azure-keyvault-secrets>=4.11,<5   # Key Vault settings loader (config/secrets.py)
+openai>=3.24,<4               # Azure OpenAI OCR provider (structured outputs, Entra tokens)
+# Application Insights. The distro and the psycopg 3 instrumentation share one OpenTelemetry
+# contrib release, so both are pinned together.
+azure-monitor-opentelemetry==1.8.10
+opentelemetry-instrumentation-psycopg==0.65b0

@@ -134,8 +134,9 @@ def test_provider_failure_is_ocr_unavailable_without_details():
     assert "boom" not in exc.value.message
 
 
-def test_azure_openai_provider_is_not_wired_yet(settings):
+def test_unconfigured_azure_openai_provider_is_ocr_unavailable(settings):
     settings.OCR_PROVIDER = "azure_openai"
+    settings.AZURE_OPENAI_ENDPOINT = ""
     doc = stored(T.NATIONAL_ID_FRONT)
     with pytest.raises(OcrUnavailable):
         extract_document(doc, actor=doc.application.doctor.user)

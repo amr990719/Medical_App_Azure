@@ -152,3 +152,29 @@ specs run on the desktop project and resize to 390 px themselves.
   container `medical-documents` is created on first use.
 - **Backend tests use development settings** — run them through `npm run test:backend` (adds
   `--ds=config.settings.test`).
+
+## Running the production image locally
+
+The `runtime` stage of `backend/Dockerfile` is the image deployed to Container Apps. It uses
+production settings, which refuse a database connection without TLS, development sign-in, mock
+OCR and Blob account keys (the Azurite emulator string is the one exception).
+
+```bash
+# once per compose volume: self-signed TLS for the compose PostgreSQL (development stays on sslmode=prefer)
+backend/.venv/Scripts/python backend/scripts/local_postgres_tls.py
+
+docker build --target runtime -t medical-backend backend/
+# prodlike.env (never commit it): DJANGO_SECRET_KEY=<64 random chars>, ALLOWED_HOSTS=localhost,
+#   CSRF_TRUSTED_ORIGINS=https://localhost:8443, DATABASE_URL=postgres://medical:medical@postgres:5432/medical,
+#   DB_AUTH_MODE=password, DB_SSLMODE=require, BLOB_CONNECTION_STRING=<Azurite string with host azurite>,
+#   ENTRA_AUTHORITY / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET / ENTRA_REDIRECT_URI=<placeholders>
+docker run -d --name medical-prod --network medical-syndicates_default --env-file prodlike.env \
+  -p 8010:8000 medical-backend            # web mode: Gunicorn, never migrates
+curl http://localhost:8010/api/health/    # {"status": "ok"}
+curl http://localhost:8010/api/ready/     # {"status": "ok", "database": "ok"}
+docker run --rm --network medical-syndicates_default --env-file prodlike.env medical-backend migrate
+docker run --rm --network medical-syndicates_default --env-file prodlike.env medical-backend cleanup --dry-run
+```
+
+Other API paths answer `301` to HTTPS unless the request carries `X-Forwarded-Proto: https` (as
+Container Apps ingress sends it).

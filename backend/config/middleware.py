@@ -50,3 +50,40 @@ class RequestIdMiddleware:
             },
         )
         return response
+
+
+class HealthProbeMiddleware:
+    """First in MIDDLEWARE: answers `GET /api/health/` and `/api/ready/` before host validation
+    and the HTTPS redirect. Platform probes (Container Apps, Docker HEALTHCHECK) reach a replica
+    by IP or `localhost` over plain HTTP; ALLOWED_HOSTS stays strict for everything else. Probe
+    responses carry no data and are not access-logged (they would flood the logs)."""
+
+    def __init__(self, get_response):
+        from config import health
+
+        self.get_response = get_response
+        self._probes = {"/api/health/": health.health, "/api/ready/": health.ready}
+
+    def __call__(self, request):
+        probe = self._probes.get(request.path_info)
+        if probe is not None and request.method == "GET":
+            return probe(request)
+        return self.get_response(request)
+
+
+API_CONTENT_SECURITY_POLICY = (
+    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+)
+
+
+class ContentSecurityPolicyMiddleware:
+    """Production: the API only returns JSON and document bytes, so nothing it serves may load
+    scripts, styles or frames (PROMPT.md §30). The SPA's own CSP is set by Static Web Apps."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        response.setdefault("Content-Security-Policy", API_CONTENT_SECURITY_POLICY)
+        return response

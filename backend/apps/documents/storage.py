@@ -1,9 +1,10 @@
 """Blob storage abstraction (PROMPT.md §19–20, decision D6).
 
 `AzureBlobStorage` talks to Azure Blob Storage: a connection string locally (Azurite), or the
-account URL + `DefaultAzureCredential` (managed identity) in Azure, where read URLs are
-user-delegation SAS. The container is PRIVATE; SAS URLs are read-only, scoped to one blob and
-expire within 5 minutes. `InMemoryStorage` backs unit tests only.
+account URL + the shared managed-identity credential (`config.azure`) in Azure, where read URLs
+are user-delegation SAS (identity needs `Storage Blob Data Contributor` + `Storage Blob
+Delegator`; the delegation key is cached for an hour). The container is PRIVATE; SAS URLs are
+read-only, scoped to one blob and expire within 5 minutes. `InMemoryStorage` backs unit tests.
 """
 
 import threading
@@ -19,6 +20,11 @@ from django.utils.http import content_disposition_header
 
 MAX_SAS_TTL_SECONDS = 300
 SAS_CLOCK_SKEW = timedelta(minutes=1)
+DELEGATION_KEY_LIFETIME = timedelta(hours=1)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 @dataclass(frozen=True)
@@ -93,14 +99,29 @@ class AzureBlobStorage:
         if connection_string:
             self._service = BlobServiceClient.from_connection_string(connection_string)
         elif account_url:
-            from azure.identity import DefaultAzureCredential
+            from config.azure import get_azure_credential
 
-            self._service = BlobServiceClient(account_url, credential=DefaultAzureCredential())
+            self._service = BlobServiceClient(account_url, credential=get_azure_credential())
         else:
             raise ValueError("BLOB_CONNECTION_STRING or BLOB_ACCOUNT_URL must be set")
         self._container_name = container
         self._container = self._service.get_container_client(container)
         self._create_container = create_container
+        self._key_lock = threading.Lock()
+        self._delegation_key = None
+        self._delegation_key_expiry = datetime.min.replace(tzinfo=UTC)
+
+    def _user_delegation_key(self, now: datetime, needed_until: datetime):
+        """Entra-signed delegation key, reused for up to an hour (one Storage call per hour,
+        not per document view). Renewed when a new SAS could outlive it."""
+        with self._key_lock:
+            if self._delegation_key is None or self._delegation_key_expiry < needed_until:
+                expiry = now + DELEGATION_KEY_LIFETIME
+                self._delegation_key = self._service.get_user_delegation_key(
+                    now - SAS_CLOCK_SKEW, expiry
+                )
+                self._delegation_key_expiry = expiry
+            return self._delegation_key
 
     def _blob(self, blob_name: str):
         return self._container.get_blob_client(blob_name)
@@ -144,7 +165,7 @@ class AzureBlobStorage:
         """Read-only SAS for ONE blob, valid at most 5 minutes from now."""
         from azure.storage.blob import BlobSasPermissions, generate_blob_sas
 
-        now = datetime.now(UTC)
+        now = _utcnow()
         expiry = now + timedelta(seconds=min(ttl_seconds, MAX_SAS_TTL_SECONDS))
         start = now - SAS_CLOCK_SKEW
         signing = {}
@@ -153,7 +174,7 @@ class AzureBlobStorage:
         if account_key:
             signing["account_key"] = account_key
         else:
-            signing["user_delegation_key"] = self._service.get_user_delegation_key(start, expiry)
+            signing["user_delegation_key"] = self._user_delegation_key(now, expiry)
         token = generate_blob_sas(
             account_name=self._service.account_name,
             container_name=self._container_name,

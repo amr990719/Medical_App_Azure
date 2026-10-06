@@ -323,6 +323,91 @@ its implementation (admin pages: 33 failing tests first; seed: 5 failing; dev-lo
   reference number → admin sees مقدم + `إعادة تقديم الطلب` in the audit), plus the Session 4/5 specs.
   Screenshots in `docs/screenshots/session-6/`.
 
+### Session 7 — 2026-10-06 — Phase 6 (Azure integration + production Docker image)
+Scope set by the user: Blob via managed identity (Azurite locally), Key Vault settings, Entra-token
+PostgreSQL backend, Azure OpenAI OCR provider, Application Insights with masking, production
+Dockerfile + entrypoint without migrations, `production.py` hardening and startup checks. No Azure
+resource was created and nothing was deployed. Built test-first: every new test module was run red
+(6 collection errors) before its implementation.
+- **Shared credential** `config/azure.py`: one cached `DefaultAzureCredential`
+  (`managed_identity_client_id` from `AZURE_CLIENT_ID`) used by Blob, Key Vault, PostgreSQL, Azure
+  OpenAI and Application Insights (one token cache) — D100.
+- **Blob (Task 7.1)** `apps/documents/storage.py`: connection string wins (Azurite), otherwise
+  account URL + the shared credential; user-delegation key cached for 1 h and renewed before a
+  5-minute SAS could outlive it; SAS read-only, one blob, ≤ 300 s (D101).
+- **Key Vault (Task 7.2)** `config/secrets.py::load_secrets(names, vault_url, required)`: env wins,
+  then `KEY_VAULT_URL` with the managed identity; `ENTRA_CLIENT_SECRET` ↔ `entra-client-secret`;
+  vault errors become `ImproperlyConfigured` naming the secret, never its value (D102).
+- **PostgreSQL (Task 7.3)** `config/db/entra_postgres/base.py`: `DatabaseWrapper` puts an Entra
+  access token (`https://ossrdbms-aad.database.windows.net/.default`) in the password of every new
+  connection, cached until 5 min before expiry, refuses non-TLS `sslmode`; production
+  `DB_AUTH_MODE=entra` (default) selects it and caps `CONN_MAX_AGE` at 1800 s;
+  `DB_AUTH_MODE=password` keeps the stock backend with `DATABASE_PASSWORD` (env / Key Vault) or the
+  URL password (D103).
+- **OCR (Task 7.4)** `apps/ocr/providers/azure_openai.py`: `openai.AzureOpenAI` with
+  `get_bearer_token_provider(credential, cognitiveservices scope)` (no API key), one
+  `chat.completions.create` with the Arabic system instructions + the §21.3 prompt from
+  `schemas.py`, the image as a `data:` URL, strict `json_schema` response format, `store=False`,
+  30 s timeout, 1 retry; refusals, truncation, invalid JSON and every SDK/credential error become
+  `OcrProviderError` with no chained exception (D104). `docs/ocr.md` written.
+- **Telemetry (Task 7.5)** `config/telemetry.py`: `configure_telemetry()` in `wsgi.py` before
+  Django loads (per Gunicorn worker), no-op without `APPLICATIONINSIGHTS_CONNECTION_STRING`;
+  `MaskingSpanProcessor` (span names, attributes, exception events) and
+  `MaskingLogRecordProcessor` (bodies, attributes incl. stack traces) registered before the
+  exporters; `TelemetryLogHandler` attached to the root logger through Django `LOGGING` with the
+  `mask_national_ids` filter (D105); psycopg 3 instrumented explicitly (the distro only knows
+  psycopg2); optional Entra ingestion (`APPLICATIONINSIGHTS_AUTHENTICATION=entra`).
+- **Production settings (Task 7.5, §30)**: Key Vault secrets; required `CSRF_TRUSTED_ORIGINS`,
+  `ENTRA_AUTHORITY/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI`; TLS-only `DB_SSLMODE`; Blob account keys
+  refused (managed identity only, Azurite string allowed for local runs, D106); Azure OpenAI
+  settings required when OCR uses it; HSTS preload on (D107); COOP; API CSP middleware;
+  `HealthProbeMiddleware` first in `MIDDLEWARE` (all settings) so probes bypass host validation and
+  the HTTPS redirect (D108); `DEV_AUTH_ENABLED` / `DEBUG` refusals kept.
+- **Docker (Task 7.6)** `backend/Dockerfile`: `builder` (wheels) → `runtime` (python:3.12-slim,
+  wheels bind-mounted so they are not a layer, uid 10001 `app`, code owned by root,
+  `collectstatic` at build with base settings, Python `HEALTHCHECK` on `/api/health/`,
+  `ENTRYPOINT entrypoint.sh`, `CMD web`) and the unchanged `dev` stage. `entrypoint.sh` modes:
+  `web` (Gunicorn, refuses `RUN_MIGRATIONS_ON_START=true`), `migrate` (waits for the database, then
+  `migrate --noinput`: the Container Apps job), `cleanup` (`cleanup_blobs` + args), anything else
+  runs as before (compose dev). `config/gunicorn.py`: workers/threads/timeout from env, no preload,
+  **access log off** (query strings may hold a national ID; Django writes the masked access log),
+  control socket off (D109).
+- **Local TLS for PostgreSQL**: `backend/scripts/local_postgres_tls.py` issues a self-signed cert
+  with `cryptography` and enables `ssl=on` in the compose PostgreSQL through `docker exec` (the
+  alpine image has no `openssl`), so the production image runs locally with `sslmode=require`
+  (D110). Development settings (`sslmode=prefer`) keep working.
+- **Dependencies:** `azure-keyvault-secrets` 4.11, `openai` 3.24 (`httpx2` transport),
+  `azure-monitor-opentelemetry` 1.8.10 + `opentelemetry-instrumentation-psycopg` 0.65b0 (pinned
+  together), Gunicorn 26.2. The host venv had no pip: bootstrapped with `ensurepip` (uv is not on
+  PATH in this shell).
+- **Docs:** `docs/ocr.md`, `docs/security.md` (draft: controls + legal decisions L1–L8),
+  `.env.example` gained every new name.
+- **Verification (outputs in the session transcript):**
+  - `docker build --target runtime -t medical-backend:runtime backend/` succeeded (432 MB).
+  - Run on the compose network with `config.settings.production`, `DB_AUTH_MODE=password`,
+    `DB_SSLMODE=require`, the Azurite connection string, placeholder Entra values and a random
+    secret: container `healthy`, `whoami` → `app` (uid 10001); `GET /api/health/` 200
+    `{"status": "ok"}`; `GET /api/ready/` 200 `{"database": "ok"}` with the connection on TLSv1.3
+    (`pg_stat_ssl`); probe with `Host: 10.0.0.12:8000` 200; API over plain HTTP → 301 to https;
+    via `X-Forwarded-Proto: https` → 401 with CSP, HSTS (1 year, preload), nosniff,
+    `Referrer-Policy: same-origin`, COOP, `X-Frame-Options: DENY`, `X-Request-ID`; unknown Host →
+    400; storage = `AzureBlobStorage` reaching Azurite; `migrate` mode → "No migrations to apply";
+    `cleanup --dry-run` → `purged=0 orphans=0`; `web` + `RUN_MIGRATIONS_ON_START=true` → exit 1;
+    `DEV_AUTH_ENABLED=true` → `ImproperlyConfigured: DEV_AUTH_ENABLED must never be enabled in
+    production.`
+  - `python manage.py check --deploy` with production settings (host, both `DB_AUTH_MODE`s, and
+    inside the image): **System check identified no issues (0 silenced)** — nothing to justify.
+  - Backend **940 passed** in the compose container (`npm run test:backend`, Azurite tests
+    included; was 855), 939 on the host + the Gunicorn test; ruff check + format clean.
+    Frontend `npm run ci` green (**269 passed**, unchanged code). Playwright **9 passed, 3 skipped** against the rebuilt stack (PostgreSQL with TLS on).
+  - **NOT VERIFIED — requires Azure credentials:** managed-identity tokens; Blob access and
+    user-delegation keys on a real account (roles Storage Blob Data Contributor + Storage Blob
+    Delegator); Key Vault reads (Key Vault Secrets User); Entra login to Azure Database for
+    PostgreSQL (identity mapped to a role); Azure OpenAI calls (Cognitive Services OpenAI User,
+    model quality, content filtering on ID documents); Application Insights export and Entra
+    ingestion (Monitoring Metrics Publisher); probe/Host/`X-Forwarded-Proto` behaviour behind
+    Container Apps ingress and the SWA linked backend.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -548,6 +633,40 @@ its implementation (admin pages: 33 failing tests first; seed: 5 failing; dev-lo
   (literal names and UUIDs only); anything else is a local `NOT_FOUND` (`العنصر المطلوب غير موجود.`)
   and no request is sent. One check in `buildUrl` covers `apiFetch` and `apiUpload`.
 
+- **D100 — One process-wide Azure credential** (`config/azure.py`), read from the environment
+  (not Django settings) because the Key Vault loader runs while settings are imported.
+  `AZURE_TOKEN_CREDENTIALS=prod` is an environment setting for Azure (Session 8), not code.
+- **D101 — User-delegation key cached per storage client for 1 h**, renewed when a new SAS
+  (≤ 5 min) could outlive it; account-key signing kept only for Azurite.
+- **D102 — Key Vault is a fallback, the environment wins.** Container Apps Key Vault references
+  are the primary path (§29); `KEY_VAULT_URL` covers names not injected. A missing secret is
+  skipped; a required one missing everywhere refuses startup.
+- **D103 — `DB_AUTH_MODE` defaults to `entra` in production.** `CONN_MAX_AGE` capped at 1800 s
+  (an open connection stays valid after its token expires, but new connections always get a fresh
+  token); TLS enforced both in settings and in the backend.
+- **D104 — OCR provider errors carry no cause.** `raise … from None` drops SDK exceptions, which
+  can contain request/response content; the client is cached per endpoint/API version.
+- **D105 — Telemetry log handler lives in Django `LOGGING`.** Django's `dictConfig` would remove a
+  handler the distro attached to the root logger, so the distro's handler is parked on
+  `config.telemetry.distro` and ours (with the masking filter) is configured by production
+  settings when a connection string exists. Span masking rewrites the finished span in a
+  processor registered before the batch exporter (relies on SDK private attributes; pinned by a
+  test with the real SDK).
+- **D106 — Blob account keys are refused in production;** only the Azurite well-known account may
+  use a connection string (local production-like runs).
+- **D107 — `SECURE_HSTS_PRELOAD=True` by default** (plan 7.5); env can turn it off. The header
+  alone does nothing until the domain is submitted to the preload list (organizational decision).
+- **D108 — Probes bypass host validation:** `HealthProbeMiddleware` (first) answers
+  `GET /api/health/` and `/api/ready/` before `CommonMiddleware`/`SecurityMiddleware`, because
+  Container Apps probes use the replica IP as Host and plain HTTP. They are no longer
+  access-logged.
+- **D109 — Gunicorn access log off, control socket off;** Django's masked access log is the only
+  one.
+- **D110 — Local TLS via a script, not a compose change:** enabling TLS on the existing volume is
+  reversible (`ALTER SYSTEM RESET ssl`) and needs no new image.
+- **D111 — `collectstatic` at build time uses `config.settings.base`** with a throwaway build-only
+  key; no secret enters the image. Static files are not served (JSON API only).
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -598,14 +717,21 @@ its implementation (admin pages: 33 failing tests first; seed: 5 failing; dev-lo
 | 44 | §8 every page responsive | applications list switches to cards below 768 px; doctors, beneficiaries and fee tables scroll horizontally inside their own container | wide tabular data; the page itself never scrolls sideways (checked at 390 px for list and detail) |
 | 45 | plan: commit per task, "Session 6: admin ui and local e2e" | one commit `Phase 4C-5: admin UI and local environment` | explicit user instruction |
 | 46 | plan Session 6 "Task 6.4 Playwright doctor flow" | already done in Session 5; this session adds the §42 admin and correction-loop specs (plan 9.1) | user scope for this session |
+| 47 | plan 7.4 PDF first page via `pypdfium2` | PDFs keep the clear `OCR_UNAVAILABLE` message | §21.2 allows "skip OCR for PDFs with a clear message"; PDF uploads are off by default |
+| 48 | plan 7.5 `DATA_UPLOAD_MAX_MEMORY_SIZE` 9 MB | 2 MB (non-file bodies); files streamed above 2 MB, capped by `MAX_UPLOAD_BYTES` | stricter; the 9 MB figure only matters if files were held in memory |
+| 49 | plan 7.6 `HEALTHCHECK CMD curl …`, `libmagic1` | Python `urllib` health check, no apt packages | no curl/libmagic needed (`filetype`, D29); smaller image |
+| 50 | plan 7.6 `gunicorn … --access-logfile -` | access log off | D109: Gunicorn's lines include query strings |
+| 51 | plan 7.3 path `backend/config/db/entra_postgres/base.py` with the token in the backend only | same path; `CONN_MAX_AGE` cap and TLS rule also in `production.py` | misconfiguration fails at startup, not on the first connection |
+| 52 | plan: commit `Session 7: azure integration and production image` | `Phase 6: Azure integration` | explicit user instruction |
+| 53 | plan 7.6 verify `docker run … manage.py check` | full run: container healthy against compose PostgreSQL (TLS) + Azurite, job modes, refusals | user's done-when |
 
 ## Open questions
 
 Business questions 1–14 are tracked in `docs/business-rules.md` §10 (defaults implemented, to be
 confirmed by the organization). Technical/environment questions for the user:
 
-- **Q-T1** Azure subscription, region and Entra External ID tenant are not available in this session;
-  Sessions 7–8 will generate everything and mark Azure-dependent checks `NOT VERIFIED — requires Azure credentials`.
+- **Q-T1** Azure subscription, region and Entra External ID tenant are still not available; Session 7
+  code paths are mocked and marked `NOT VERIFIED — requires Azure credentials` (list in Session 7).
 - **Q-T2** Resolved: Docker Desktop 29.7.2 runs PostgreSQL 16 + Azurite.
 - **Q-T3** Resolved: Python 3.12.15 (uv, D10); Node v22.11.0 / npm 11.7 are installed.
 - **Q-T5** CI and Azure must use PostgreSQL ≥ 15 (`NULLS NOT DISTINCT`, D17); Bicep should pin 16.
@@ -644,20 +770,32 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T12** The dev database accumulates `e2e-*@dev.local` doctors and applications with every
   Playwright run (reference numbers keep increasing). `docker compose down -v` resets it; CI
   (Session 8) should run e2e against a fresh stack.
+- **Q-T13** Container Apps ingress / SWA linked backend: confirm the `Host` header Django sees and
+  that `X-Forwarded-Proto: https` is set (ALLOWED_HOSTS, HTTPS redirect, CSRF origin). NOT
+  VERIFIED — requires Azure credentials (Session 8 deployment docs).
+- **Q-T14** Application Insights ingestion: connection string only, or Entra-authenticated
+  (`APPLICATIONINSIGHTS_AUTHENTICATION=entra` + `Monitoring Metrics Publisher`, local auth disabled
+  on the resource)? Default here: connection string; recommended: Entra.
+- **Q-B22** (business/legal) Decisions L1–L8 in `docs/security.md` §6 (religion field, OCR by an AI
+  service, region / cross-border transfer, retention, admin access, breach procedure, production
+  access, malware scanning).
 
 ## Next session starts with
 
-**Session 7 — Azure integration + production Docker image** (`docs/plan.md` → Session 7).
-1. Environment: Docker Desktop running → `npm run up` (or `docker compose up -d --build`): postgres,
-   azurite and Django (development settings, migrated and seeded). `cd frontend && npm ci && npm run dev`.
-   Checks: `npm run test:backend` (expect **855 passed**), `npm run lint`, `cd frontend && npm run ci`
-   (expect **269 passed**), `npx playwright test` (expect 9 passed, 3 skipped).
-2. `backend/Dockerfile` has only `base` + `dev` stages: add `builder` and `runtime` (non-root,
-   Gunicorn, collectstatic, healthcheck) and keep `dev` for compose. The `dev` stage sets
-   `RUN_MIGRATIONS_ON_START=true` / `SEED_ON_START=true`; the runtime must not (D93, §37).
-   `entrypoint.sh` already waits for the database; add the `migrate` / `cleanup` job modes.
-3. Carry-over: `/profile` page (deviation 32), Q-B19 payment instructions, Q-B20/Q-B21.
-4. Testing notes: admin page tests use fixtures captured from the compose backend
-   (`src/test/fixtures/admin-*.json`, `adminHandlers`); MSW answers with the FIRST matching
-   handler, so per-test overrides go before the defaults in `server.use(...)`. e2e helpers live in
-   `frontend/e2e/helpers.ts` (`pageDevLogin`, `createSubmittedApplication`, `reviewAction`).
+**Session 8 — Bicep, Entra scripts, GitHub Actions, GitHub setup docs** (`docs/plan.md` → Session 8).
+1. Environment: Docker Desktop running → `npm run up`. The compose PostgreSQL now has TLS on
+   (Session 7 script; a fresh volume needs `python backend/scripts/local_postgres_tls.py` again
+   before running the production image locally). Checks: `npm run test:backend` (expect **940
+   passed**), `npm run lint`, `cd frontend && npm run ci` (expect **269 passed**).
+2. Production image: `docker build --target runtime -t medical-backend backend/`; container command
+   `web` (default), job commands `migrate` (once per deployment, before traffic shifts) and
+   `cleanup` (scheduled). Health probes: liveness `/api/health/`, readiness `/api/ready/`.
+3. What Bicep must provide (from Session 7 code): user-assigned identity with `AZURE_CLIENT_ID`;
+   `AZURE_TOKEN_CREDENTIALS=prod`; roles Storage Blob Data Contributor + Storage Blob Delegator,
+   Key Vault Secrets User, Cognitive Services OpenAI User, Monitoring Metrics Publisher, AcrPull;
+   PostgreSQL Entra admin + a role for the identity (`DATABASE_URL=postgres://<identity-name>@…`,
+   `DB_AUTH_MODE=entra`, `DB_SSLMODE=require`); `BLOB_ACCOUNT_URL`; Key Vault references for
+   `DJANGO_SECRET_KEY` and `ENTRA_CLIENT_SECRET`; `APPLICATIONINSIGHTS_CONNECTION_STRING`;
+   `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `ENTRA_*`; `OCR_ENABLED=false` until L2 is approved;
+   a shared cache for throttles (Q-T6); Azure OpenAI with local auth disabled.
+4. Carry-over: `/profile` page (deviation 32), Q-B19 payment instructions, Q-B20/Q-B21, Q-T13/Q-T14.

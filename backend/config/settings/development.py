@@ -30,6 +30,6 @@ BLOB_CONNECTION_STRING = env(
 )
 BLOB_CREATE_CONTAINER = env.bool("BLOB_CREATE_CONTAINER", default=True)
 
-# OCR with the deterministic mock provider (the Azure OpenAI provider arrives in Session 7).
+# OCR with the deterministic mock provider (production uses OCR_PROVIDER=azure_openai).
 OCR_ENABLED = env.bool("OCR_ENABLED", default=True)
 OCR_PROVIDER = env("OCR_PROVIDER", default="mock")

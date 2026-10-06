@@ -7,17 +7,17 @@ pytestmark = pytest.mark.django_db
 
 
 def test_response_carries_generated_request_id(client):
-    response = client.get("/api/health/")
+    response = client.get("/api/v1/unknown/")
     assert re.fullmatch(r"[0-9a-f]{32}", response["X-Request-ID"])
 
 
 def test_safe_incoming_request_id_is_propagated(client):
-    response = client.get("/api/health/", HTTP_X_REQUEST_ID="abc-123_DEF")
+    response = client.get("/api/v1/unknown/", HTTP_X_REQUEST_ID="abc-123_DEF")
     assert response["X-Request-ID"] == "abc-123_DEF"
 
 
 def test_unsafe_incoming_request_id_is_replaced(client):
-    response = client.get("/api/health/", HTTP_X_REQUEST_ID="evil\nheader" + "x" * 200)
+    response = client.get("/api/v1/unknown/", HTTP_X_REQUEST_ID="evil\nheader" + "x" * 200)
     assert re.fullmatch(r"[0-9a-f]{32}", response["X-Request-ID"])
 
 
