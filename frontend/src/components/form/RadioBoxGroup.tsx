@@ -53,7 +53,7 @@ export function RadioBoxGroup<T extends string>({
               <label
                 key={option.value}
                 className={cx(
-                  "relative inline-flex min-h-9 select-none items-center border-[1.5px] px-3 font-bold",
+                  "relative inline-flex min-h-9 select-none items-center border-[1.5px] px-3 font-bold print:min-h-7 print:px-2",
                   "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-teal-deep",
                   error ? "border-danger" : "border-paper-line",
                   checked

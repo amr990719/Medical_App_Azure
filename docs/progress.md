@@ -199,6 +199,66 @@ Scope limited by the user to the foundation: no doctor form, no admin pages. Bui
   `python frontend/scripts/rtl_check.py frontend/src` 0 errors / 0 warnings. Backend untouched
   (the 847-test suite was not re-run this session).
 
+### Session 5 — 2026-10-06 — Phase 4B (doctor journey)
+Scope limited by the user to the doctor journey (PROMPT.md §8–11, 17.6, 18, 43): no admin pages,
+no profile page. Built test-first: every test file was run red before its implementation, except
+`mappers.test.ts` (written first but run together with the implementation) and the PDF page-count
+check (added to the e2e spec after the print view existed).
+- **Backend (only change):** dev login accepts `create: true` and creates a fresh DOCTOR for an
+  unknown e-mail (DEV_AUTH_ENABLED only, existing users keep their role, inactive refused) so every
+  Playwright run starts without an application (D68). 4 tests; `openapi.yaml` + `schema.d.ts` regenerated.
+- **Form state (§10):** `features/application-form/draftController.ts` — autosave engine outside
+  React (D69): debounced 800 ms, one cycle sends only changed fields to the owning resource
+  (`PATCH /profile/`, `PATCH /applications/{id}/`, `POST/PATCH /beneficiaries/`), incomplete
+  national IDs/years stay local (D70), network/5xx retry 1 s/2 s/4 s then `تعذّر الحفظ — إعادة المحاولة`
+  (button retries), 4xx field errors shown inline and the rest of the request re-sent (D71),
+  `flush()` before continue/print/sign-out, `release()` on unmount, `beforeunload` while dirty.
+  OCR merge fills only empty fields (`mergeMemberOcr`/`mergeRowOcr`, port of `handleOcrResult` /
+  `updateBeneficiaryBatch`); a valid national ID pre-fills empty birth year/gender and flags a
+  contradicting value (UX mirror, D72); kinship change clears that row's documents (optimistic,
+  server deletes them); a cleared stored row asks before `DELETE`; read-only when not editable.
+  `useApplicationDraft` + `ApplicationFormProvider` + `useApplicationForm` expose it.
+- **Paper form (§9):** `PaperForm` = `FormHeader` (union, title, `أول مرة/إضافة` boxes, clickable
+  112×144 photo box → PERSONAL_PHOTO) + `AttachmentsPanel` (ID front/back, syndicate card from the
+  server rules, SmartUpload + `مسح تلقائي`) + `MemberSection` (7 rows, 12-col spans of §9.4, 27
+  governorates, box radios, NidInput, read-only Entra e-mail boxes, LTR numeric fields) +
+  `BeneficiaryTable` (exactly `max_beneficiaries` rows, fixed column layout, paperclip grey/green,
+  DocumentModal with OCR into that row, confirm dialogs; cards below 768 px via `useMediaQuery`,
+  table always in print) + `DeclarationSection` (exact §9.7 text, red-underlined paragraph, inline
+  dashed name, signature block). `DocumentsChecklist` (step 3, member + each active beneficiary,
+  ✓ مرفق / غير مرفق / اختياري, upload/replace per item), `FeeSummaryPanel` gains `title` and
+  `accent` (teal start border / banana header).
+- **Pages:** `WizardFrame` (sticky top bar: sign-out icon, `استمارة اشتراك — {fy}`, autosave
+  indicator, print icon; sticky stepper from `steps_complete`). `FormPage` (validation panel +
+  inline errors after continue, `متابعة لرفع الإيصال` → flush → fresh `GET /validation/` → steps
+  1–3 clean → `/payment`, D74; read-only banner; correction notes). `PaymentPage` (§18: back link,
+  banana fee summary, instructions, drop zone with type/size/400×300 pre-check, uploaded bar with
+  size, payment status and `إزالة`, continue → review). `ReviewPage` (read-only sheet, server
+  errors + way back, receipt hint, optimistic acceptance checkbox stored via
+  `declaration_accepted`, submit/resubmit, submit errors listed). `StatusPage` (confirmation after
+  submit, reference number, badge, date, snapshot total, `تم التقديم ✓ → قيد المراجعة → إشعار بالنتيجة`,
+  polling 45 s while SUBMITTED/UNDER_REVIEW, notes, `تصحيح وإعادة التقديم`, print).
+  `PrintPage` + `src/print.css` (A4, margin 0, exact colours, no chrome). `ApplicationRedirectPage`.
+- **Fix in Session 4 code:** `BoxInput` lost a digit when several characters were inserted into a
+  box holding the same leading digit (autofill/IME); it now remembers each box's selection (D80,
+  two regression tests).
+- **Tests:** Vitest 222 passed in 31 files (was 137): draft hook 14 (debounce, routing, OCR merge,
+  ID pre-fill/mismatch, kinship change, create/delete rows, retry/backoff, error state, partial
+  field errors, read-only, beforeunload), MemberSection 9, BeneficiaryTable 8, DocumentModal +1,
+  DocumentsChecklist 3, SmartUpload OCR 5, FeeSummaryPanel +2, FormPage 8, PaymentPage 5,
+  ReviewPage 6, StatusPage 5, Print/redirect 6, mappers 7, nationalId 3, formatFileSize 1.
+- **End to end (real stack, D83):** `frontend/e2e/doctor-submit.spec.ts` — fresh doctor via dev
+  login → `/application/new` → upload ID front → mock OCR fills name/ID/birth year/governorate/
+  district/address → ID back + syndicate card OCR → WIFE (3 documents), SON_MINOR (birth
+  certificate OCR fills name + year), DAUGHTER → fee panel `الدرجة 3`, `3٬025 ج.م` → screenshots
+  1280/390 (no horizontal overflow) → continue → receipt upload → review → accept → submit →
+  `MED-2026-0000NN` → print view → A4 PDF (2 pages). Artefacts in `docs/screenshots/session-5/`
+  (`form-1280.png`, `form-390.png`, `status-1280.png`, `print-a4-preview.png`, `print-a4.pdf`).
+- **Result:** `npm run lint` clean, `npm run typecheck` clean, `npm test` 222 passed, `npm run build`
+  OK, `rtl_check.py frontend/src` 0 errors / 0 warnings, `npx playwright test` 7 passed + 1 skipped
+  (the doctor spec runs on the desktop project only and resizes itself to 390 px). Backend
+  `pytest` 851 passed, `ruff check` + `ruff format --check` clean.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -333,6 +393,49 @@ Scope limited by the user to the foundation: no doctor form, no admin pages. Bui
   never mistakes which context they are in.
 - **D67 — CSRF token read from the `csrftoken` cookie on every unsafe request;** the `csrf_token`
   in the `/auth/me/` body is not used.
+- **D68 — `POST /auth/dev/login/ {"email", "create": true}`** creates a DOCTOR for an unknown
+  e-mail (dev/test only, 404 otherwise). Chosen over the plan's `?reset=1` because it deletes
+  nothing (the audit log is append-only and protects users).
+- **D69 — The autosave engine is a plain class** (`DraftController`) read through
+  `useSyncExternalStore`: the React Compiler lint rules forbid refs/setState during render and in
+  effects, and timers/in-flight requests must not depend on render timing. Timings live in
+  `draftDefaults` (tests shorten them).
+- **D70 — Incomplete national IDs (< 14 digits) and years (< 4 digits) are never sent** while
+  drafting; they stay local (dirty → `beforeunload` warns) until complete or cleared (`null`).
+- **D71 — Save failures:** network/5xx → automatic retries 1 s, 2 s, 4 s, then the indicator turns
+  into a retry button; 4xx → the field messages are shown under their fields and the same request is
+  re-sent without the refused fields so the rest is saved. A field stays dirty until the server
+  acknowledged that exact value.
+- **D72 — Frontend national-ID parsing is a UX mirror** (century, real past date, position 13
+  parity) for pre-filling empty birth year/gender and an early mismatch hint; PROMPT.md §13 allows
+  it. The server re-parses on PATCH and in validation.
+- **D73 — Wizard steps (form, payment, review) and the print view sit outside `DoctorLayout`:** they
+  render `WizardFrame` (the §9.1 top bar + stepper) or no chrome (print); status stays in the
+  doctor layout.
+- **D74 — `متابعة لرفع الإيصال` is gated by step 1–3 errors only.** The declaration-name error
+  (step 5) shows inline after continuing and blocks on the review page.
+- **D75 — The review page lists the validation endpoint's errors;** rules 16–17 (receipt,
+  acceptance) are not in that response (D24), so the page shows a receipt hint from
+  `steps_complete["4"]` and lists the submit endpoint's step errors when a submission is refused.
+- **D76 — Row documents are read from the application query, not kept in form state;** a kinship
+  change empties that row's cached documents immediately and the PATCH response confirms it.
+  Opening the paperclip of a row not yet stored flushes the autosave first (the upload needs the
+  beneficiary id).
+- **D77 — Status polling every 45 s** only while SUBMITTED or UNDER_REVIEW; the timeline marks
+  step 2 current for both and fills step 3 with the decision (approved / rejected / correction).
+- **D78 — The acceptance checkbox is optimistic** (follows the click, reverts if the PATCH fails);
+  submit stays disabled until the server stored the acceptance.
+- **D79 — One beneficiaries layout is rendered at a time** (`useMediaQuery("(min-width: 768px)")`,
+  desktop when `matchMedia` is missing), so inputs are never duplicated in the DOM.
+- **D80 — `BoxInput` remembers each box's selection** (`select`, `mouseup`, `keyup`) to tell a
+  replacement from an insertion before/after the existing character when a change carries several
+  characters.
+- **D81 — Payment instructions are static text in `ar.ts`** until the organization provides them
+  (§18 says admin-configurable; see Q-B19).
+- **D82 — The e2e run gives its doctor a random valid national ID** after OCR: the mock provider
+  always returns `28506150101234`, and `Doctor.national_id` is UNIQUE across runs.
+- **D83 — Session evidence (screenshots + A4 PDF) is committed** under `docs/screenshots/session-5/`;
+  it contains only synthetic data and `e2e-*@dev.local` addresses.
 
 ## Deviations from PROMPT.md
 
@@ -367,6 +470,14 @@ Scope limited by the user to the foundation: no doctor form, no admin pages. Bui
 | 27 | plan "dev login works to an empty dashboard placeholder" | real dashboard with API data | user's scope for this session |
 | 28 | plan Session 5 owns SmartUpload, DocumentModal, FeeSummaryPanel | built now (upload part / shell / panel) | user's scope for this session; OCR, checklist and modal wiring stay in Session 5 |
 | 29 | plan 6.4 Playwright doctor flow | only `e2e/foundation.spec.ts` now | the doctor flow does not exist yet |
+| 30 | plan 5.1 `BeneficiaryRow.documents` in form state, `useApplicationDraft` holding the logic | documents read from the application query; logic in `draftController.ts` | D69, D76 |
+| 31 | plan 5.2 `useUploadDocument`/`useExtract`/`DocumentThumb`/`preCheck` as separate files | OCR mutation inside `SmartUpload`; `useUploadDocument` for compact slots (photo, checklist); thumbnail inline | fewer files, same behaviour |
+| 32 | plan 5.6 `ProfilePage` | `/profile` still a placeholder | user scope for this session; the form edits the profile fields |
+| 33 | plan 6.4 (Session 6) Playwright doctor spec with `?reset=1` | built now; `create: true` dev login | user asked for it in Session 5; D68 |
+| 34 | user: "add WIFE and SON_MINOR" | WIFE, SON_MINOR **and DAUGHTER** | worked example 2 (§17.4/§42) totals 3025 only with the daughter |
+| 35 | §18 instructions "configurable by admins" | static placeholder text | D81, Q-B19 |
+| 36 | plan "commit `Session 5: doctor flow`" | one commit `Phase 4B: doctor flow` | explicit user instruction |
+| 37 | plan Session 5 "manual run through compose" | Playwright run against `runserver` + Vite + compose (PostgreSQL, Azurite) | compose has no Django service until Session 6 |
 
 ## Open questions
 
@@ -399,27 +510,29 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B16** (business) Should admins see drafts before submission? Default: no (D36).
 - **Q-B17** (business) The receipt minimum is applied as width ≥ 400 AND height ≥ 300 (prototype
   rule), so a portrait 300×400 photo is refused. Confirm, or relax to "either orientation".
+- **Q-B19** (business) The payment instructions on the receipt page are placeholder text (D81).
+  The organization must provide the real text (bank / branch / e-payment details); deciding whether
+  admins edit it in the UI adds a settings model in a later session.
+- **Q-T11** The e-mail row of the paper form has 26 boxes; longer Entra e-mails are shown with as
+  many boxes as needed (wrapping), never truncated. Confirm this is acceptable on the printed form.
 
 ## Next session starts with
 
-**Session 5 — Doctor flow** (`docs/plan.md` → Session 5). Phase 4A built the foundation only.
-1. Environment: `docker compose up -d`; in `backend/`:
-   `DJANGO_SETTINGS_MODULE=config.settings.development .venv/Scripts/python manage.py runserver 8000`
-   (migrate + `seed_dev_data` first on a fresh database); in `frontend/`: `npm ci && npm run dev`
-   → http://localhost:5173, dev login as `doctor@dev.local` (already has a FY 2026 draft).
-   Checks: `npm run lint`, `npx tsc --noEmit`, `npm test` (expect **137 passed**), `npm run build`,
-   `python frontend/scripts/rtl_check.py frontend/src`, `npm run test:e2e` (backend running).
-2. Reuse what exists — do not rebuild: `NidInput`/`BoxStringInput`/`DashedField`/`RadioBoxGroup`
-   (`src/components/form/`), `ProgressStepper`, `ValidationErrorPanel`, `StickyActionBar`,
-   `FeeSummaryPanel` + `useFeeQuote`, `SmartUpload` (add the `مسح تلقائي` OCR button and
-   `useExtract` there), `DocumentModal` (wire into `BeneficiaryTable`), `Modal`, `useReferenceData`,
-   `useApplications`, `queryKeys`, `toCamel`/`toSnake`, `src/test/fixtures.ts` + `renderApp` /
-   `renderWithProviders` (`src/test/render.tsx`) for tests.
-3. Replace the placeholders in `src/router.tsx` for `/profile` and `/application/:id/*`;
-   `/application/:id` must redirect to the right step (Task 5.5).
-4. Still to build for Session 5: `ConfirmDialog` (kinship change), `AutosaveIndicator` (strings
-   exist in `ar.autosave`), the form state/autosave hook, MemberSection, BeneficiaryTable/cards,
-   DocumentsChecklist, Declaration, Payment/Review/Status/Print pages.
-5. Testing notes: in jsdom the multipart filename is lost between XHR and MSW (browsers keep it) —
-   assert on file bytes/type; hold MSW responses with a promise instead of `delay()` to test
-   in-flight UI. After any backend serializer change: regenerate `openapi.yaml` and `npm run gen:api`.
+**Session 6 — Admin UI + local end-to-end environment** (`docs/plan.md` → Session 6). The doctor
+journey is complete; Task 6.4 (doctor Playwright spec) is already done (deviation 33).
+1. Environment: Docker Desktop must be running → `docker compose up -d`; in `backend/`:
+   `DJANGO_SETTINGS_MODULE=config.settings.development .venv/Scripts/python manage.py runserver 8000`;
+   in `frontend/`: `npm ci && npm run dev`. Checks: `npm run lint`, `npm run typecheck`, `npm test`
+   (expect **222 passed**), `npm run build`, `python scripts/rtl_check.py src`,
+   `npx playwright test` (expect 7 passed, 1 skipped; each doctor run creates one `e2e-*@dev.local`
+   doctor and one submitted application with a new reference number). Backend: 851 passed.
+2. Reuse for the admin pages: `PaperForm` (wrap in `ApplicationFormProvider readOnly`) for the
+   admin detail/print views needs an admin data source — the draft hook reads the doctor
+   endpoints (`/applications/{id}/`, `/profile/`), so the admin print page should get its own
+   read-only provider fed from `GET /admin/applications/{id}/` (or `submitted_snapshot`).
+   `StatusBadge`, `StatusTimeline`, `FeeSummaryPanel`, `ConfirmDialog`, `useMediaQuery`,
+   `formatFileSize`, `DocumentModal` (read-only) are ready.
+3. Carry-over: `/profile` page (deviation 32), admin print route, Q-B19 payment instructions.
+4. Testing notes: `src/test/renderForm.tsx` renders inside a live provider; `draftDefaults` shortens
+   autosave timings in page tests; `vi.mock("@/features/documents/imageSize")` for receipt sizes;
+   `e2e/make-fixtures.py` regenerates the synthetic upload images.

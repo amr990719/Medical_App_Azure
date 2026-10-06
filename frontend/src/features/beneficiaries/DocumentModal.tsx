@@ -1,22 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/api/keys";
-import type { Beneficiary, DocumentRequirement, DocumentType } from "@/api/types";
+import type { OcrFields } from "@/api/endpoints/documents";
+import type { Beneficiary } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { SmartUpload } from "@/features/documents/SmartUpload";
 import { ar, t } from "@/i18n/ar";
-
-/** `required_documents` is typed loosely by the schema; keep only well-formed slots. */
-function asRequirement(raw: Record<string, unknown>): DocumentRequirement | null {
-  const { type, required, label, ocrCapable } = raw;
-  if (typeof type !== "string" || typeof label !== "string") return null;
-  return {
-    type: type as DocumentType,
-    required: required === true,
-    label,
-    ocrCapable: ocrCapable === true,
-  };
-}
+import { requirementsOf } from "./requirements";
 
 export interface DocumentModalProps {
   open: boolean;
@@ -24,18 +14,25 @@ export interface DocumentModalProps {
   beneficiary: Beneficiary;
   onClose: () => void;
   readOnly?: boolean;
+  /** OCR suggestions of a capable slot (national ID, birth certificate) for this row. */
+  onExtracted?: (fields: OcrFields) => void;
 }
 
 /**
  * Documents of one beneficiary (PROMPT.md §11): one slot per document the server's rules table
  * requires or allows for this kinship and age. Each upload is saved immediately; closing is safe.
- * OCR on the capable slots is added in Session 5.
+ * OCR-capable slots offer `مسح تلقائي`; the suggestions fill only this row's empty fields.
  */
-export function DocumentModal({ open, applicationId, beneficiary, onClose, readOnly = false }: DocumentModalProps) {
+export function DocumentModal({
+  open,
+  applicationId,
+  beneficiary,
+  onClose,
+  readOnly = false,
+  onExtracted,
+}: DocumentModalProps) {
   const queryClient = useQueryClient();
-  const requirements = beneficiary.requiredDocuments
-    .map(asRequirement)
-    .filter((slot): slot is DocumentRequirement => slot !== null);
+  const requirements = requirementsOf(beneficiary);
 
   const name = beneficiary.fullName.trim() || ar.documents.unnamedBeneficiary;
 
@@ -57,6 +54,8 @@ export function DocumentModal({ open, applicationId, beneficiary, onClose, readO
             label={slot.label}
             required={slot.required}
             disabled={readOnly}
+            ocrCapable={slot.ocrCapable}
+            onExtracted={onExtracted}
             document={beneficiary.documents.find((doc) => doc.documentType === slot.type) ?? null}
             onUploaded={() => {
               void queryClient.invalidateQueries({ queryKey: queryKeys.applications.detail(applicationId) });

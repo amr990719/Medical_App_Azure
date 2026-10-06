@@ -152,4 +152,68 @@ describe("SmartUpload", () => {
     await screen.findByText("✓ تم الإرفاق: front.png");
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
+
+  describe("مسح تلقائي (OCR)", () => {
+    const stored = toCamel(uploaded) as DocumentSummary;
+
+    it("is offered only for OCR-capable types with a stored document and OCR enabled", () => {
+      const onExtracted = vi.fn();
+      const { unmount } = renderUpload({ ocrCapable: true, onExtracted });
+      expect(screen.queryByRole("button", { name: "مسح تلقائي" })).toBeNull(); // nothing uploaded yet
+      unmount();
+      renderUpload({ ocrCapable: false, onExtracted, document: stored });
+      expect(screen.queryByRole("button", { name: "مسح تلقائي" })).toBeNull();
+    });
+
+    it("is hidden when the server reports OCR disabled", () => {
+      const view = renderUpload({ ocrCapable: true, onExtracted: vi.fn(), document: stored });
+      view.queryClient.setQueryData(["reference-data"], (old: Record<string, unknown>) => ({ ...old, ocrEnabled: false }));
+      return waitFor(() => expect(screen.queryByRole("button", { name: "مسح تلقائي" })).toBeNull());
+    });
+
+    it("sends the stored document to the server and hands back the suggestions", async () => {
+      server.use(
+        http.post(`${API}/documents/d1/extract/`, () =>
+          HttpResponse.json({ document_id: "d1", document_type: "NATIONAL_ID_FRONT", fields: { member_name: "أحمد" } }),
+        ),
+      );
+      const onExtracted = vi.fn();
+      const { user } = renderUpload({ ocrCapable: true, onExtracted, document: stored });
+      await user.click(screen.getByRole("button", { name: "مسح تلقائي" }));
+      expect(await screen.findByText("✓ تم استخراج البيانات — راجع الحقول أدناه وعدّل إن لزم")).toBeInTheDocument();
+      expect(onExtracted).toHaveBeenCalledWith({ member_name: "أحمد" });
+    });
+
+    it("shows a progress bar while scanning", async () => {
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.use(
+        http.post(`${API}/documents/d1/extract/`, async () => {
+          await held;
+          return HttpResponse.json({ document_id: "d1", document_type: "NATIONAL_ID_FRONT", fields: {} });
+        }),
+      );
+      const { user } = renderUpload({ ocrCapable: true, onExtracted: vi.fn(), document: stored });
+      await user.click(screen.getByRole("button", { name: "مسح تلقائي" }));
+      expect(await screen.findByText("جارٍ المسح…")).toBeInTheDocument();
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+      release();
+      await waitFor(() => expect(screen.queryByText("جارٍ المسح…")).toBeNull());
+    });
+
+    it("tells the doctor to type the data when OCR fails", async () => {
+      server.use(
+        http.post(`${API}/documents/d1/extract/`, () =>
+          HttpResponse.json({ error: { code: "OCR_UNAVAILABLE", message: "x", fields: {} } }, { status: 503 }),
+        ),
+      );
+      const onExtracted = vi.fn();
+      const { user } = renderUpload({ ocrCapable: true, onExtracted, document: stored });
+      await user.click(screen.getByRole("button", { name: "مسح تلقائي" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("فشل المسح التلقائي. يمكنك إدخال البيانات يدوياً.");
+      expect(onExtracted).not.toHaveBeenCalled();
+    });
+  });
 });

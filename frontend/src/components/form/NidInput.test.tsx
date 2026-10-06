@@ -185,6 +185,25 @@ describe("NidInput", () => {
     expect(onChange).toHaveBeenCalledWith("3");
   });
 
+  it("a multi-digit insertion over a selected box starting with the same digit keeps every digit", () => {
+    // Autofill, IME or Playwright fill(): the box's "2" is selected and replaced by 14 digits.
+    render(<Harness initial="28506150101234" />);
+    const first = box(0);
+    first.setSelectionRange(0, 1);
+    fireEvent.select(first);
+    fireEvent.change(first, { target: { value: "28506150124093" } });
+    expect(fullValue()).toHaveValue("28506150124093");
+  });
+
+  it("a multi-digit insertion before a box's digit keeps every inserted digit", () => {
+    render(<Harness initial="28506150101234" />);
+    const first = box(0);
+    first.setSelectionRange(0, 0);
+    fireEvent.select(first);
+    fireEvent.change(first, { target: { value: "29001010101235" + "2" } });
+    expect(fullValue()).toHaveValue("29001010101235");
+  });
+
   it("supports the small size", () => {
     render(<NidInput label={LABEL} value="" onChange={() => {}} size="small" />);
     expect(screen.getByRole("group", { name: LABEL })).toHaveAttribute("data-size", "small");

@@ -164,6 +164,47 @@ def test_dev_login_refuses_inactive_user():
     assert dev_login(csrf_client(), "gone@example.test").status_code == 400
 
 
+def _dev_login_create(client: APIClient, email: str):
+    token = bootstrap_csrf(client)
+    return client.post(
+        DEV_LOGIN, {"email": email, "create": True}, format="json", HTTP_X_CSRFTOKEN=token
+    )
+
+
+def test_dev_login_create_makes_a_fresh_doctor_for_end_to_end_runs():
+    from apps.accounts.models import User
+
+    client = csrf_client()
+    response = _dev_login_create(client, "E2E-1@dev.local")
+    assert response.status_code == 200
+    user = User.objects.get(email="e2e-1@dev.local")
+    assert user.role == "DOCTOR"
+    assert not user.has_usable_password()
+    assert client.get(ME).json()["user"]["email"] == "e2e-1@dev.local"
+
+
+def test_dev_login_create_reuses_an_existing_user_and_never_changes_its_role():
+    AdminUserFactory(email="boss@example.test")
+    response = _dev_login_create(csrf_client(), "boss@example.test")
+    assert response.status_code == 200
+    assert response.json()["user"]["role"] == "ADMIN"
+
+
+def test_dev_login_create_refuses_inactive_user():
+    UserFactory(email="gone@example.test", is_active=False)
+    assert _dev_login_create(csrf_client(), "gone@example.test").status_code == 400
+
+
+@override_settings(DEV_AUTH_ENABLED=False)
+def test_dev_login_create_disabled_returns_404():
+    from apps.accounts.models import User
+
+    client = csrf_client()
+    response = client.post(DEV_LOGIN, {"email": "x@dev.local", "create": True}, format="json")
+    assert response.status_code == 404
+    assert not User.objects.filter(email="x@dev.local").exists()
+
+
 # --- session lifetime and backend -------------------------------------------------------------
 
 

@@ -30,3 +30,17 @@ export async function uploadDocument(
 export async function deleteDocument(id: string): Promise<void> {
   await apiFetch<undefined>(`/documents/${id}/`, { method: "DELETE" });
 }
+
+/** Suggested values only (PROMPT.md §21): the caller merges them into EMPTY fields. */
+export type OcrFields = Record<string, string | number>;
+
+export async function extractDocument(id: string): Promise<OcrFields> {
+  const result = await apiFetch<components["schemas"]["OcrSuggestion"]>(`/documents/${id}/extract/`, {
+    method: "POST",
+  });
+  const fields: OcrFields = {};
+  for (const [key, value] of Object.entries(result.fields)) {
+    if (typeof value === "string" || typeof value === "number") fields[key] = value;
+  }
+  return fields;
+}

@@ -43,12 +43,19 @@ class DevUserSerializer(serializers.ModelSerializer):
 
 class DevLoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
+    # Development/end-to-end only: create a fresh DOCTOR when the e-mail is unknown, so every
+    # Playwright run starts without an application. Existing users keep their role.
+    create = serializers.BooleanField(required=False, default=False)
 
-    def validate_email(self, value: str) -> User:
-        user = User.objects.filter(email=value.strip().lower(), is_active=True).first()
-        if user is None:
-            raise serializers.ValidationError("لا يوجد مستخدم تجريبي بهذا البريد")
-        return user
+    def validate(self, attrs: dict) -> dict:
+        email = attrs["email"].strip().lower()
+        user = User.objects.filter(email=email).first()
+        if user is None and attrs["create"]:
+            user = User.objects.create_user(email, display_name="", role=Role.DOCTOR)
+        if user is None or not user.is_active:
+            raise serializers.ValidationError({"email": ["لا يوجد مستخدم تجريبي بهذا البريد"]})
+        attrs["email"] = user
+        return attrs
 
 
 __all__ = ["Role"]

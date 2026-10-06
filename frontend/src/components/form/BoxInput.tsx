@@ -61,6 +61,9 @@ export function BoxInput({
   // Auto-advance focuses the next box before the parent re-renders with the new value, so the
   // "never past the first empty box" redirect must only apply to focus the user initiated.
   const movingFocus = useRef(false);
+  // Last selection of each box (select events), so a multi-character change (autofill, IME)
+  // knows whether it replaced the box's character or was inserted before/after it.
+  const selections = useRef<({ start: number; end: number } | undefined)[]>([]);
   const errorId = useId();
   const chars = Array.from(value).slice(0, length);
   const filled = chars.length;
@@ -100,6 +103,10 @@ export function BoxInput({
     commit(chars.filter((_, i) => i !== index));
   };
 
+  const rememberSelection = (index: number, input: HTMLInputElement) => {
+    selections.current[index] = { start: input.selectionStart ?? 0, end: input.selectionEnd ?? 0 };
+  };
+
   const handleFocus = (index: number) => {
     if (!readOnly && !movingFocus.current && index > filled) {
       focusBox(filled);
@@ -118,10 +125,18 @@ export function BoxInput({
       return;
     }
     let typed = raw;
+    const selection = selections.current[index];
+    selections.current[index] = undefined;
     if (previous && raw.length > 1) {
-      // The caret was before or after the existing character: keep only the new input.
-      if (raw.startsWith(previous)) typed = raw.slice(previous.length);
-      else if (raw.endsWith(previous)) typed = raw.slice(0, -previous.length);
+      if (selection && selection.end > selection.start) {
+        typed = raw; // the existing character was selected and replaced
+      } else if (selection?.start === 0 && raw.endsWith(previous)) {
+        typed = raw.slice(0, -previous.length); // inserted before it
+      } else if (raw.startsWith(previous)) {
+        typed = raw.slice(previous.length); // the caret was after the existing character
+      } else if (raw.endsWith(previous)) {
+        typed = raw.slice(0, -previous.length);
+      }
     }
     const accepted = Array.from(sanitize(typed));
     if (accepted.length === 0) return;
@@ -200,6 +215,9 @@ export function BoxInput({
             readOnly={readOnly}
             value={chars[index] ?? ""}
             onFocus={() => handleFocus(index)}
+            onSelect={(event) => rememberSelection(index, event.currentTarget)}
+            onMouseUp={(event) => rememberSelection(index, event.currentTarget)}
+            onKeyUp={(event) => rememberSelection(index, event.currentTarget)}
             onChange={(event) => handleChange(index, event)}
             onKeyDown={(event) => handleKeyDown(index, event)}
             onPaste={(event) => handlePaste(index, event)}

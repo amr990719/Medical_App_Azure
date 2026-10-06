@@ -89,3 +89,104 @@ export const handlers = {
       HttpResponse.json({ error: { code: "NOT_FOUND", message: "غير موجود", fields: {} } }, { status: 404 }),
     ),
 };
+
+// ---- Session 5: doctor flow fixtures --------------------------------------------------------
+
+export type ApiProfile = Schemas["DoctorProfile"];
+export type ApiBeneficiary = Schemas["Beneficiary"];
+export type ApiDocument = Schemas["DocumentSummary"];
+
+export const APP_ID = draft.id;
+
+export function apiProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
+  return {
+    id: "8b1f4a52-0000-4000-8000-000000000001",
+    email: "doctor@dev.local",
+    full_name: "",
+    national_id: null,
+    date_of_birth: null,
+    birth_year: null,
+    gender: "",
+    religion: "",
+    phone_number: "",
+    syndicate_type: "",
+    sub_syndicate: "",
+    syndicate_registration_number: "",
+    syndicate_registration_year: null,
+    treatment_card_number: "",
+    governorate: "",
+    neighborhood: "",
+    address: "",
+    updated_at: "2026-10-05T22:40:31+03:00",
+    ...overrides,
+  };
+}
+
+export function apiDocument(overrides: Partial<ApiDocument> = {}): ApiDocument {
+  const id = overrides.id ?? "d-front";
+  return {
+    id,
+    document_type: "NATIONAL_ID_FRONT",
+    beneficiary_id: null,
+    original_filename: "front.png",
+    content_type: "image/png",
+    file_size: 2048,
+    scan_status: "SKIPPED",
+    created_at: "2026-10-05T10:00:00+03:00",
+    content_url: `/api/v1/documents/${id}/content/`,
+    ...overrides,
+  };
+}
+
+const requirement = (type: string, label: string, required: boolean, ocr: boolean) => ({
+  type,
+  label,
+  required,
+  ocr_capable: ocr,
+});
+
+export const SPOUSE_REQUIREMENTS = [
+  requirement("BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي", true, true),
+  requirement("MARRIAGE_CERTIFICATE", "شهادة الزواج", true, false),
+  requirement("INSURANCE_PRINT", "برينت تأميني", true, false),
+];
+
+export const CHILD_REQUIREMENTS = [
+  requirement("BIRTH_CERTIFICATE", "شهادة الميلاد", true, true),
+  requirement("BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي", false, true),
+];
+
+export function apiBeneficiary(overrides: Partial<ApiBeneficiary> = {}): ApiBeneficiary {
+  return {
+    id: "b-wife",
+    row_number: 1,
+    kinship: "WIFE",
+    full_name: "منى سعيد عبد الله",
+    birth_year: 1988,
+    national_id: null,
+    is_active: true,
+    required_documents: SPOUSE_REQUIREMENTS,
+    documents: [],
+    updated_at: "2026-10-05T22:40:31+03:00",
+    ...overrides,
+  };
+}
+
+export const cleanValidation = {
+  is_valid: true,
+  errors: [],
+  by_step: { "1": [], "2": [], "3": [], "4": [], "5": [] },
+  steps_complete: { "1": true, "2": true, "3": true, "4": false, "5": false },
+  warnings: [],
+  submit_ready: false,
+};
+
+export const draftHandlers = {
+  profile: (profile: ApiProfile = apiProfile()) => http.get(`${API}/profile/`, () => HttpResponse.json(profile)),
+  application: (app: ApiApplication) =>
+    http.get(`${API}/applications/${app.id}/`, () => HttpResponse.json(app)),
+  fees: (id: string = APP_ID, quote: ApiFeeQuote = feeQuote) =>
+    http.get(`${API}/applications/${id}/fees/`, () => HttpResponse.json(quote)),
+  validation: (id: string = APP_ID, result: object = cleanValidation) =>
+    http.get(`${API}/applications/${id}/validation/`, () => HttpResponse.json(result)),
+};

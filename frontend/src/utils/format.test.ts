@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatMoney, formatNumber, formatRelativeTime } from "./format";
+import { formatDate, formatFileSize, formatMoney, formatNumber, formatRelativeTime } from "./format";
 
 describe("formatMoney", () => {
   it("formats with the Arabic thousands separator, Western digits and the pound sign", () => {
@@ -43,5 +43,13 @@ describe("formatRelativeTime", () => {
     const now = new Date("2026-10-05T12:00:00Z");
     expect(formatRelativeTime("2026-10-05T09:00:00Z", now)).toContain("3 ساعات");
     expect(formatRelativeTime("2026-10-02T12:00:00Z", now)).toContain("3 أيام");
+  });
+});
+
+describe("formatFileSize", () => {
+  it("shows megabytes with one decimal and kilobytes below 1 MB", () => {
+    expect(formatFileSize(1_572_864)).toBe("1.5 ميجابايت");
+    expect(formatFileSize(8 * 1024 * 1024)).toBe("8 ميجابايت");
+    expect(formatFileSize(2048)).toBe("2 كيلوبايت");
   });
 });

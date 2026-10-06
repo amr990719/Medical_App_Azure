@@ -789,6 +789,8 @@ export interface components {
         DevLoginRequest: {
             /** Format: email */
             email: string;
+            /** @default false */
+            create: boolean;
         };
         DevUser: {
             /** Format: uuid */

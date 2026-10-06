@@ -1,3 +1,5 @@
+import { ar, t } from "@/i18n/ar";
+
 /**
  * Display formatting with the ar-EG conventions of PROMPT.md §7.1:
  * money `3٬025 ج.م` (Western digits, Arabic thousands separator), dates `٣ أكتوبر ٢٠٢٦`.
@@ -44,4 +46,14 @@ export function formatRelativeTime(iso: string, now: Date = new Date()): string 
     if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
   }
   return relative.format(0, "minute");
+}
+
+const MEGABYTE = 1024 * 1024;
+
+/** `1.5 ميجابايت` / `200 كيلوبايت` for upload bars. */
+export function formatFileSize(bytes: number): string {
+  if (bytes >= MEGABYTE) {
+    return t(ar.upload.megabytes, { value: Math.round((bytes / MEGABYTE) * 10) / 10 });
+  }
+  return t(ar.upload.kilobytes, { value: Math.max(1, Math.round(bytes / 1024)) });
 }

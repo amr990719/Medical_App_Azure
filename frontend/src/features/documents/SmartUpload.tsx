@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
-import { uploadDocument } from "@/api/endpoints/documents";
+import { extractDocument, uploadDocument, type OcrFields } from "@/api/endpoints/documents";
 import type { DocumentSummary, DocumentType } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -18,13 +18,18 @@ export interface SmartUploadProps {
   /** The document already stored in this slot, if any. */
   document: DocumentSummary | null;
   onUploaded: (document: DocumentSummary) => void;
+  /** OCR-capable type (reference data `ocr_capable`): offers `مسح تلقائي` once a file is stored. */
+  ocrCapable?: boolean;
+  /** Receives the server's suggestions; the caller merges them into EMPTY fields only. */
+  onExtracted?: (fields: OcrFields) => void;
   disabled?: boolean;
   className?: string;
 }
 
 /**
  * One document slot (PROMPT.md §11): upload on select with progress, thumbnail through the
- * authorized content URL, server error messages in Arabic. OCR ("مسح تلقائي") joins in Session 5.
+ * authorized content URL, server error messages in Arabic, and `مسح تلقائي`: the server reads the
+ * stored document and returns suggestions (PROMPT.md §21); the browser never calls an AI service.
  */
 export function SmartUpload({
   applicationId,
@@ -34,6 +39,8 @@ export function SmartUpload({
   required,
   document,
   onUploaded,
+  ocrCapable = false,
+  onExtracted,
   disabled = false,
   className,
 }: SmartUploadProps) {
@@ -49,13 +56,20 @@ export function SmartUpload({
       uploadDocument({ applicationId, file, documentType, beneficiaryId }, setProgress),
     onSuccess: (stored) => {
       setCurrent(stored);
+      extract.reset();
       onUploaded(stored);
     },
+  });
+
+  const extract = useMutation({
+    mutationFn: (documentId: string) => extractDocument(documentId),
+    onSuccess: (fields) => onExtracted?.(fields),
   });
 
   const shown = current ?? document;
   const error = localError ?? (upload.isError ? upload.error.message : null);
   const limits = reference.data?.upload;
+  const canScan = Boolean(ocrCapable && onExtracted && reference.data?.ocrEnabled && shown && !disabled);
 
   const handleFile = (file: File | undefined) => {
     if (!file || !limits) return;
@@ -88,7 +102,7 @@ export function SmartUpload({
       </span>
 
       <div className="clear-both flex items-center gap-3">
-        <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-smoke">
+        <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-smoke">
           {shown && shown.contentType.startsWith("image/") ? (
             <img
               src={shown.contentUrl}
@@ -115,7 +129,7 @@ export function SmartUpload({
               </div>
             </div>
           ) : shown ? (
-            <p className="break-all font-semibold text-teal-deep">
+            <p className="font-semibold text-teal-deep [overflow-wrap:anywhere]">
               {t(ar.upload.attached, { name: shown.originalFilename })}
             </p>
           ) : null}
@@ -124,10 +138,30 @@ export function SmartUpload({
               {error}
             </p>
           ) : null}
+          {extract.isPending ? (
+            <div className="mt-1">
+              <p className="text-slate">{ar.upload.ocrRunning}</p>
+              <div
+                role="progressbar"
+                aria-label={ar.upload.ocrRunning}
+                className="mt-1 h-2 overflow-hidden rounded-full bg-border"
+              >
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-teal" />
+              </div>
+            </div>
+          ) : extract.isSuccess ? (
+            <p role="status" className="mt-1 font-semibold text-teal-deep">
+              {ar.upload.ocrSuccess}
+            </p>
+          ) : extract.isError ? (
+            <p role="alert" className="mt-1 font-semibold text-status-correction-fg">
+              {ar.upload.ocrFailed}
+            </p>
+          ) : null}
         </div>
       </div>
 
-      <div>
+      <div className="flex flex-wrap gap-2">
         <input
           ref={inputRef}
           type="file"
@@ -150,6 +184,17 @@ export function SmartUpload({
           <Icon name="upload" className="size-4" />
           {shown ? ar.upload.replace : ar.upload.choose}
         </Button>
+        {canScan && shown ? (
+          <Button
+            variant="ghost"
+            className="bg-teal-light text-teal-deep hover:bg-teal-light/70"
+            disabled={extract.isPending || upload.isPending}
+            onClick={() => extract.mutate(shown.id)}
+          >
+            <Icon name="scan" className="size-4" />
+            {ar.upload.ocr}
+          </Button>
+        ) : null}
       </div>
     </fieldset>
   );

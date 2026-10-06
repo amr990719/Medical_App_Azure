@@ -1,0 +1,49 @@
+/*
+ * A4 printing of the paper form (PROMPT.md §9.8). Screen chrome is removed with Tailwind's
+ * `print:hidden`; this file sets the page box and keeps the sheet's colours and rules exact.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* The sheet fills the page; the page margin is internal padding (margin: 0 above). */
+  .print-root {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .paper-sheet {
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 9mm 11mm !important;
+    font-size: 10.5pt;
+    line-height: 1.55;
+  }
+
+  .paper-sheet > * + * {
+    margin-top: 4mm !important;
+  }
+
+  /* The beneficiaries table must fit the page width instead of scrolling. */
+  .paper-sheet table {
+    min-width: 0 !important;
+  }
+
+  .paper-sheet section,
+  .paper-sheet tr {
+    break-inside: avoid;
+  }
+}

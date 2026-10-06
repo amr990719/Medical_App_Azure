@@ -10,11 +10,22 @@ export interface FeeSummaryPanelProps {
   quote?: FeeQuote;
   isLoading?: boolean;
   error?: Error | null;
+  /** Defaults to `ملخص الرسوم`; the form page uses `ملخص الاشتراك — السنة المالية {FY}`. */
+  title?: string;
+  /** "teal": start border (form, review). "banana": banana header (payment page, §18). */
+  accent?: "teal" | "banana";
   className?: string;
 }
 
 /** PROMPT.md §17.6: the server's breakdown, tier and total. */
-export function FeeSummaryPanel({ quote, isLoading = false, error, className }: FeeSummaryPanelProps) {
+export function FeeSummaryPanel({
+  quote,
+  isLoading = false,
+  error,
+  title = ar.fees.title,
+  accent = "teal",
+  className,
+}: FeeSummaryPanelProps) {
   const titleId = useId();
   const failure = error?.message ?? (quote && !quote.isValid ? quote.errorMessage || ar.fees.unavailable : null);
 
@@ -22,14 +33,28 @@ export function FeeSummaryPanel({ quote, isLoading = false, error, className }: 
     <section
       aria-labelledby={titleId}
       aria-busy={isLoading || undefined}
-      className={cx("rounded-xl border border-border bg-white p-5", className)}
+      className={cx(
+        "overflow-hidden rounded-xl border border-border bg-white p-5",
+        accent === "teal" && "border-s-4 border-s-teal",
+        className,
+      )}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div
+        className={cx(
+          "flex flex-wrap items-center justify-between gap-3",
+          accent === "banana" && "-mx-5 -mt-5 mb-1 bg-banana px-5 py-3",
+        )}
+      >
         <h2 id={titleId} className="text-lg font-extrabold text-charcoal">
-          {ar.fees.title}
+          {title}
         </h2>
         {quote?.isValid && quote.tier !== null ? (
-          <span className="rounded-full bg-teal-light px-3 py-0.5 text-sm font-bold text-teal-deep">
+          <span
+            className={cx(
+              "rounded-full px-3 py-0.5 text-sm font-bold",
+              accent === "banana" ? "bg-white/80 text-charcoal" : "bg-teal-light text-teal-deep",
+            )}
+          >
             {t(ar.fees.tier, { tier: quote.tier })}
           </span>
         ) : null}
@@ -61,7 +86,7 @@ export function FeeSummaryPanel({ quote, isLoading = false, error, className }: 
               <tr key={`${row.label}-${index}`} className="border-b border-border last:border-0">
                 <td className="py-2 pe-4 align-top">
                   {row.label}
-                  {row.note ? <span className="block text-xs text-muted">{row.note}</span> : null}
+                  {row.note ? <span className="block text-xs font-semibold text-status-correction-fg">{row.note}</span> : null}
                 </td>
                 <td className="py-2 text-end align-top font-semibold whitespace-nowrap">{formatMoney(row.fee)}</td>
               </tr>

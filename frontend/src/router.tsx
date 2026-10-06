@@ -4,7 +4,13 @@ import { ar } from "@/i18n/ar";
 import { AdminLayout } from "@/layouts/AdminLayout";
 import { DoctorLayout } from "@/layouts/DoctorLayout";
 import { PublicLayout } from "@/layouts/PublicLayout";
+import { ApplicationRedirectPage } from "@/pages/application/ApplicationRedirectPage";
+import { FormPage } from "@/pages/application/FormPage";
 import { NewApplicationPage } from "@/pages/application/NewApplicationPage";
+import { PaymentPage } from "@/pages/application/PaymentPage";
+import { PrintPage } from "@/pages/application/PrintPage";
+import { ReviewPage } from "@/pages/application/ReviewPage";
+import { StatusPage } from "@/pages/application/StatusPage";
 import { DashboardPage } from "@/pages/doctor/DashboardPage";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { LandingPage } from "@/pages/public/LandingPage";
@@ -16,7 +22,10 @@ const placeholder = (path: string, title: string): RouteObject => ({
   element: <PlaceholderPage title={title} />,
 });
 
-/** Every route of PROMPT.md §8. Pages built in Sessions 5–6 are placeholders for now. */
+/**
+ * Every route of PROMPT.md §8. Wizard steps (form, payment, review) bring their own frame
+ * (top bar + stepper, §9.1) and the print view has no chrome; admin pages arrive in Session 6.
+ */
 export const routes: RouteObject[] = [
   {
     element: <PublicLayout />,
@@ -34,14 +43,14 @@ export const routes: RouteObject[] = [
           { path: "dashboard", element: <DashboardPage /> },
           placeholder("profile", ar.pages.profile),
           { path: "application/new", element: <NewApplicationPage /> },
-          placeholder("application/:id", ar.pages.application),
-          placeholder("application/:id/form", ar.pages.form),
-          placeholder("application/:id/payment", ar.pages.payment),
-          placeholder("application/:id/review", ar.pages.review),
-          placeholder("application/:id/status", ar.pages.status),
-          placeholder("application/:id/print", ar.pages.print),
+          { path: "application/:id", element: <ApplicationRedirectPage /> },
+          { path: "application/:id/status", element: <StatusPage /> },
         ],
       },
+      { path: "application/:id/form", element: <FormPage /> },
+      { path: "application/:id/payment", element: <PaymentPage /> },
+      { path: "application/:id/review", element: <ReviewPage /> },
+      { path: "application/:id/print", element: <PrintPage /> },
     ],
   },
   {

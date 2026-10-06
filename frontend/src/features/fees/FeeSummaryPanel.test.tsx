@@ -47,4 +47,18 @@ describe("FeeSummaryPanel", () => {
     render(<FeeSummaryPanel error={new ApiError(400, "VALIDATION_ERROR", "لا يوجد جدول رسوم مفعل")} />);
     expect(screen.getByRole("alert")).toHaveTextContent("لا يوجد جدول رسوم مفعل");
   });
+
+  it("takes the form page title with the fiscal year and a teal start border (§17.6)", () => {
+    render(
+      <FeeSummaryPanel quote={quote} title="ملخص الاشتراك — السنة المالية 2026" accent="teal" />,
+    );
+    const panel = screen.getByRole("region", { name: "ملخص الاشتراك — السنة المالية 2026" });
+    expect(panel.className).toMatch(/border-s-teal/);
+  });
+
+  it("has a banana header on the payment page (§18)", () => {
+    render(<FeeSummaryPanel quote={quote} accent="banana" />);
+    const heading = screen.getByRole("heading", { name: "ملخص الرسوم" });
+    expect(heading.parentElement?.className).toMatch(/bg-banana/);
+  });
 });

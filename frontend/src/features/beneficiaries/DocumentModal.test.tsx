@@ -1,7 +1,10 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 import type { Beneficiary } from "@/api/types";
+import { API } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
+import { server } from "@/test/server";
 import { DocumentModal } from "./DocumentModal";
 
 const wife: Beneficiary = {
@@ -77,5 +80,28 @@ describe("DocumentModal", () => {
   it("names an unnamed beneficiary", () => {
     renderModal({ ...wife, fullName: "" });
     expect(screen.getByRole("dialog", { name: "مستندات المستفيد: مستفيد بدون اسم" })).toBeInTheDocument();
+  });
+
+  it("offers مسح تلقائي only on OCR-capable slots and hands the suggestions back", async () => {
+    server.use(
+      http.post(`${API}/documents/d-nid/extract/`, () =>
+        HttpResponse.json({ document_id: "d-nid", document_type: "BENEFICIARY_NATIONAL_ID", fields: { name: "سارة" } }),
+      ),
+    );
+    const withId: Beneficiary = {
+      ...wife,
+      documents: [
+        ...wife.documents,
+        { ...wife.documents[0]!, id: "d-nid", documentType: "BENEFICIARY_NATIONAL_ID", contentUrl: "/x" },
+      ],
+    };
+    const onExtracted = vi.fn();
+    const { user } = renderWithProviders(
+      <DocumentModal open applicationId="a1" beneficiary={withId} onClose={vi.fn()} onExtracted={onExtracted} />,
+    );
+    const scans = screen.getAllByRole("button", { name: "مسح تلقائي" });
+    expect(scans).toHaveLength(1); // the marriage certificate is stored but not OCR-capable
+    await user.click(scans[0]!);
+    await waitFor(() => expect(onExtracted).toHaveBeenCalledWith({ name: "سارة" }));
   });
 });

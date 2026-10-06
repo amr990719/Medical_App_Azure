@@ -35,3 +35,14 @@ export async function fetchFeeQuote(id: string): Promise<FeeQuote> {
 export async function fetchValidation(id: string): Promise<ValidationResult> {
   return toCamel(await apiFetch<ApiValidationResult>(`/applications/${id}/validation/`));
 }
+
+export type ApplicationPatch = components["schemas"]["PatchedApplicationUpdateRequest"];
+
+export async function updateApplication(id: string, changes: ApplicationPatch): Promise<Application> {
+  return toCamel(await apiFetch<ApiApplication>(`/applications/${id}/`, { method: "PATCH", body: changes }));
+}
+
+/** DRAFT → SUBMITTED or NEEDS_CORRECTION → SUBMITTED; a 400 carries every step error. */
+export async function submitApplication(id: string): Promise<Application> {
+  return toCamel(await apiFetch<ApiApplication>(`/applications/${id}/submit/`, { method: "POST" }));
+}
