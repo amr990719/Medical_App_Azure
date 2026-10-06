@@ -35,7 +35,7 @@ Two GitHub environments per Azure environment, with different trust:
 
 | GitHub environment | Used by | Branch rule | Azure identity can |
 |---|---|---|---|
-| `dev`, `staging`, `prod` | deployments (push to `main`, manual deploy) | **protected branches only** (`main`); `prod` also requires reviewers | deploy (Contributor, AcrPush, condition-restricted RBAC admin) |
+| `dev`, `staging`, `prod` | deployments (push to `main`, manual deploy) | **protected branches only** (`main`); `prod` also requires reviewers | deploy (custom *Deployer* role, AcrPush, condition-restricted RBAC admin) |
 | `dev-plan`, `staging-plan`, `prod-plan` | pull-request what-if, manual what-if-only runs | none (pull requests run here) | read + validate/what-if only |
 
 On `pull_request` events the workflow files come from the PR branch, so anything a PR can reach
@@ -62,6 +62,10 @@ for env in dev-plan staging-plan prod-plan; do gh api -X PUT "repos/<owner>/<rep
 
 (`gh api orgs/<org>/teams/<team-slug> --jq .id` gives the team id; use `{"type": "User", "id": <user-id>}`
 for individual reviewers.) "Protected branches" relies on the branch protection of section 5.
+`setup-github-oidc` reads these settings with `gh api` (read-only) and refuses to trust the deploy
+identity while `<env>` accepts unprotected branches (or `prod` has no reviewers). Configure this
+section first; `--skip-github-check` / `-SkipGitHubCheck` exists only for a repository that does
+not exist yet and prints a warning.
 
 ## 3. Azure side: OIDC identities (once per environment)
 
@@ -71,11 +75,13 @@ in that resource group only:
 | Identity | Federated to | Roles (resource-group scope) |
 |---|---|---|
 | `id-medsyn-<env-short>` (the **app** identity, also declared by `main.bicep`) | — | none here; Bicep grants its data-plane roles |
-| `id-github-medsyn-<env>` (deploy) | `repo:<owner>/<repo>:environment:<env>` | **Contributor** (deploy Bicep, update the app and jobs, start the migrate job, read the SWA token); **AcrPush**; **Role Based Access Control Administrator** with an ABAC condition: create/delete only the six data-plane roles `main.bicep` grants (Blob Data Contributor, Blob Delegator, Key Vault Secrets User, AcrPull, OpenAI User, Monitoring Metrics Publisher) **and only for the app identity's principal id** — it cannot grant anything to itself or to any other identity |
+| `id-github-medsyn-<env>` (deploy) | `repo:<owner>/<repo>:environment:<env>` | custom **Deployer (&lt;rg&gt;)** = Contributor minus `federatedIdentityCredentials/write|delete` on managed identities (it cannot add a trust to the app identity and sign in as it) and minus storage `listKeys`, `regenerateKey`, `ListAccountSas`, `listServiceSas` (deploy Bicep, update the app and jobs, start the migrate job, read the SWA token); **AcrPush**; **Role Based Access Control Administrator** with an ABAC condition: create/delete only the six data-plane roles `main.bicep` grants (Blob Data Contributor, Blob Delegator, Key Vault Secrets User, AcrPull, OpenAI User, Monitoring Metrics Publisher) **and only for the app identity's principal id** — it cannot grant anything to itself or to any other identity |
 | `id-github-medsyn-<env>-plan` (preview) | `repo:<owner>/<repo>:environment:<env>-plan` | **Reader** + custom role *Deployment What-If Operator (&lt;rg&gt;)* (`deployments/read`, `validate/action`, `whatIf/action`, `operationstatuses/read`) |
 
-Residual risk, accepted and mitigated by the `main`-only environments and reviews: Contributor
-can still reconfigure resources (for example re-enable shared keys on the storage account). An
+Residual risk, accepted and mitigated by the `main`-only environments and reviews: whoever can
+deploy can run code as the app identity (deploying the app is exactly that), and the Deployer role
+can still reconfigure resources (for example make a container public or switch Key Vault to
+access policies). An
 Azure Policy *deny* on `allowSharedKeyAccess`, public blob access and Key Vault access-policy mode
 is the next hardening step (Session 9). Whether the custom what-if role covers every resource
 type in the template is **NOT VERIFIED**: if what-if reports `AuthorizationFailed`, add the
@@ -173,6 +179,8 @@ repository contents*; Settings → Code security → secret scanning and push pr
 |---|---|
 | `AADSTS70021: No matching federated identity record` | The job is not running in the environment named in the federated credential (subject `repo:<owner>/<repo>:environment:<env>`), or the repository was renamed — re-run `setup-github-oidc`. |
 | `AuthorizationFailed … roleAssignments/write` in Bicep | The identity lacks the condition-restricted RBAC Administrator role, the template asks for a role outside the allowed list, the target principal is not the app identity (re-run `setup-github-oidc` if the app identity was recreated), or `KEY_VAULT_OPERATOR_*` was set in GitHub. |
+| `setup-github-oidc` stops with "must allow protected branches only" | Configure section 2 (and branch protection, section 5) first. |
+| `AuthorizationFailed` on `federatedIdentityCredentials` or `listKeys` in a workflow | Intended: the Deployer role excludes them. Do those operations as an operator. |
 | `AADSTS70021` on a branch run or manual dispatch | Expected: `<env>` accepts `main` only. Use `what_if_only=true` (runs in `<env>-plan`). |
 | `unauthorized: authentication required` on `docker push` | AcrPush missing on the resource group, or `ACR_NAME` points at another environment's registry. |
 | Deploy job waits forever | `prod` requires a reviewer: approve it under the run's *Review deployments*. |

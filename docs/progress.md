@@ -491,6 +491,13 @@ static role review), Azure MCP Bicep schemas / best practices / retail prices.
   itself Blob/Key Vault data access; the condition now also pins the app identity's principal id
   and Key Vault Secrets Officer left the list (D118). Scripts, workflows and docs updated;
   re-verified with bash -n, shellcheck, the PowerShell parser, actionlint and gitleaks.
+- **Second review round (over-broad grant / CI trust in `setup-github-oidc`), accepted:** Contributor
+  could add a federated credential to the app identity (sign in as the app) and list storage keys;
+  the deploy identity's trust depended on a GitHub setting nobody checked. Now a custom *Deployer*
+  role (Contributor minus federated-credential writes and storage key/SAS listing) replaces
+  Contributor (an old Contributor assignment is removed), and the script verifies the GitHub
+  environment's branch policy / prod reviewers with `gh api` before trusting the deploy identity
+  (fails closed; `--skip-github-check` warns) (D127).
 
 ## Decisions
 
@@ -778,6 +785,10 @@ static role review), Azure MCP Bicep schemas / best practices / retail prices.
   restricted to the protected `main` branch (reviewers for prod) and holds the deploy identity;
   `<env>-plan` holds a Reader + custom what-if identity and is the only one pull requests and
   what-if-only runs reach (on `pull_request` the PR branch controls the workflow files).
+- **D127 — Custom Deployer role instead of Contributor** for the GitHub deploy identity (no
+  `federatedIdentityCredentials` writes, no storage key/SAS listing), and `setup-github-oidc` fails
+  closed unless the GitHub deploy environment is restricted to protected branches. NOT VERIFIED that
+  every Bicep resource deploys with it (the excluded actions are not used by the template).
 - **D119 — PostgreSQL database created by the Entra admin (script), not Bicep,** so it is owned by
   an Entra principal that can grant on schema `public`; the app identity is a non-admin role with
   `CONNECT/CREATE/TEMP` + `USAGE/CREATE` on `public` (the migrate job owns the tables).

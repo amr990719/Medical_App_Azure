@@ -5,15 +5,18 @@ GitHub Actions -> Azure with OIDC federated credentials (PowerShell port of setu
 .DESCRIPTION
 Run once per environment; idempotent. Creates two GitHub identities in the environment's
 resource group:
-  deploy  id-github-<base>-<env>, federated to environment <env> (restrict that GitHub
-          environment to the protected main branch; required reviewers for prod).
-          Roles: Contributor, AcrPush, and Role Based Access Control Administrator with an ABAC
-          condition: only the six data-plane roles main.bicep declares, only for the app
-          identity id-<base>-<env> (created here so its principal id is known).
+  deploy  id-github-<base>-<env>, federated to environment <env>. The script first checks with
+          `gh` (read-only) that the GitHub environment accepts protected branches only (and has
+          required reviewers for prod) and stops otherwise (-SkipGitHubCheck to override).
+          Roles: custom "Deployer (<rg>)" = Contributor minus managed-identity federated
+          credential writes and storage key/SAS listing; AcrPush; Role Based Access Control
+          Administrator with an ABAC condition: only the six data-plane roles main.bicep
+          declares, only for the app identity id-<base>-<env> (created here).
   plan    id-github-<base>-<env>-plan, federated to environment <env>-plan (pull requests and
           what-if-only runs). Roles: Reader + a custom role allowing only deployment
           validate/what-if.
-Prints the GitHub environment variables to set; does not call GitHub.
+Residual trust: whoever can deploy can run code as the app identity; the boundary is the
+reviewed, protected main branch. Prints the GitHub variables to set; changes nothing on GitHub.
 Works in Windows PowerShell 5.1 and PowerShell 7.
 
 .EXAMPLE
@@ -24,7 +27,8 @@ param(
     [Parameter(Mandatory = $true)][string]$ResourceGroup,
     [Parameter(Mandatory = $true)][ValidateSet('dev', 'staging', 'prod')][string]$Environment,
     [Parameter(Mandatory = $true)][ValidatePattern('^[^/]+/[^/]+$')][string]$Repo,
-    [string]$BaseName = 'medsyn'
+    [string]$BaseName = 'medsyn',
+    [switch]$SkipGitHubCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +48,22 @@ function Test-Az {
 }
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Azure CLI (az) is required' }
+
+# --- The deploy credential is only as safe as the GitHub environment's protection -----------
+if ($SkipGitHubCheck) {
+    Write-Warning "-SkipGitHubCheck: environment '$Environment' protection NOT verified. Until it accepts protected branches only, any branch can deploy."
+}
+else {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw 'GitHub CLI (gh) is required to verify the environment protection (or -SkipGitHubCheck)' }
+    $protected = & gh api "repos/$Repo/environments/$Environment" --jq '.deployment_branch_policy.protected_branches // false'
+    if ($LASTEXITCODE -ne 0) { throw "GitHub environment '$Environment' not found in $Repo (docs/github-setup.md section 2)" }
+    if ((($protected | Out-String).Trim()) -ne 'true') { throw "GitHub environment '$Environment' must allow protected branches only (docs/github-setup.md section 2)" }
+    if ($Environment -eq 'prod') {
+        $reviewers = & gh api "repos/$Repo/environments/$Environment" --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length'
+        if ((($reviewers | Out-String).Trim()) -eq '0') { throw "GitHub environment 'prod' must require reviewers (docs/github-setup.md section 2)" }
+    }
+    Write-Host "GitHub environment '$Environment' is restricted to protected branches"
+}
 
 $envShort = @{ dev = 'dev'; staging = 'stg'; prod = 'prd' }[$Environment]
 $issuer = 'https://token.actions.githubusercontent.com'
@@ -70,6 +90,35 @@ function Set-Federation([string]$Identity, [string]$GitHubEnvironment) {
     Invoke-Az identity federated-credential $verb -g $ResourceGroup --identity-name $Identity -n $name `
         --issuer $issuer --subject $subject --audiences api://AzureADTokenExchange --output none | Out-Null
     Write-Host "Federated credential on ${Identity}: $subject"
+}
+
+function Set-CustomRole([string]$Name, [string]$Description, [string[]]$Actions, [string[]]$NotActions) {
+    $file = [System.IO.Path]::GetTempFileName()
+    try {
+        $definition = [ordered]@{
+            Name             = $Name
+            Description      = $Description
+            Actions          = $Actions
+            NotActions       = $NotActions
+            AssignableScopes = @($rgId)
+        }
+        Set-Content -Path $file -Encoding ascii -Value ($definition | ConvertTo-Json -Depth 3)
+        $existing = Invoke-Az role definition list --custom-role-only true --name $Name --query '[0].name' -o tsv
+        if ($existing) {
+            Write-Host "Updating custom role $Name"
+            # `az role definition update` finds the definition by its Name within AssignableScopes.
+            Invoke-Az role definition update --role-definition "@$file" --output none | Out-Null
+        }
+        else {
+            Write-Host "Creating custom role $Name"
+            Invoke-Az role definition create --role-definition "@$file" --output none | Out-Null
+            for ($i = 0; $i -lt 6; $i++) {
+                if (Invoke-Az role definition list --custom-role-only true --name $Name --query '[0].name' -o tsv) { break }
+                Start-Sleep -Seconds 10
+            }
+        }
+    }
+    finally { Remove-Item -Force $file }
 }
 
 function Grant-Role([string]$Principal, [string]$Role, [string]$Label, [string]$Condition = '') {
@@ -102,6 +151,29 @@ $deployName = "id-github-$BaseName-$Environment"
 $deploy = Get-Identity $deployName 'github-actions-deploy'
 Set-Federation $deployName $Environment
 
+$deployerRole = "Deployer ($ResourceGroup)"
+Set-CustomRole $deployerRole `
+    'Contributor without managed-identity federated credential writes and without storage account key/SAS listing (GitHub deploy identity).' `
+    @('*') `
+    @(
+    'Microsoft.Authorization/*/Delete',
+    'Microsoft.Authorization/*/Write',
+    'Microsoft.Authorization/elevateAccess/Action',
+    'Microsoft.Blueprint/blueprintAssignments/write',
+    'Microsoft.Blueprint/blueprintAssignments/delete',
+    'Microsoft.Compute/galleries/share/action',
+    'Microsoft.Purview/consents/write',
+    'Microsoft.Purview/consents/delete',
+    'Microsoft.Resources/deploymentStacks/manageDenySetting/action',
+    'Microsoft.Subscription/cancel/action',
+    'Microsoft.Subscription/enable/action',
+    'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write',
+    'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/delete',
+    'Microsoft.Storage/storageAccounts/listKeys/action',
+    'Microsoft.Storage/storageAccounts/regenerateKey/action',
+    'Microsoft.Storage/storageAccounts/ListAccountSas/action',
+    'Microsoft.Storage/storageAccounts/listServiceSas/action')
+
 $contributor = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
 $acrPush = '8311e382-0749-4cb8-b61a-7f3ba6c4aaa5'
 $rbacAdmin = 'f58310d9-a9f6-439a-9e8d-f62e7b41a168'
@@ -110,9 +182,16 @@ $appRoles = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe, db58b8e5-c6ad-4a2a-8342-41906
 $appPrincipal = $app.PrincipalId
 $condition = "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$appRoles} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$appPrincipal})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$appRoles} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {$appPrincipal}))"
 
-Grant-Role $deploy.PrincipalId $contributor 'Contributor'
+Grant-Role $deploy.PrincipalId $deployerRole $deployerRole
 Grant-Role $deploy.PrincipalId $acrPush 'AcrPush'
 Grant-Role $deploy.PrincipalId $rbacAdmin 'Role Based Access Control Administrator (app roles, app identity only)' $condition
+
+# Remove a broad Contributor assignment left by an earlier version of this script.
+$oldContributor = Invoke-Az role assignment list --assignee $deploy.PrincipalId --scope $rgId --role $contributor --query '[0].id' -o tsv
+if ($oldContributor) {
+    Write-Host "Removing the previous Contributor assignment of $deployName"
+    Invoke-Az role assignment delete --ids $oldContributor --output none | Out-Null
+}
 
 # --- Plan identity (pull requests, what-if only) ----------------------------------------------
 $planName = "id-github-$BaseName-$Environment-plan"
@@ -120,32 +199,12 @@ $plan = Get-Identity $planName 'github-actions-plan'
 Set-Federation $planName "$Environment-plan"
 
 $whatIfRole = "Deployment What-If Operator ($ResourceGroup)"
-$existingRole = Invoke-Az role definition list --custom-role-only true --name $whatIfRole --query '[0].name' -o tsv
-if (-not $existingRole) {
-    Write-Host "Creating custom role $whatIfRole"
-    $roleFile = [System.IO.Path]::GetTempFileName()
-    try {
-        $definition = [ordered]@{
-            Name             = $whatIfRole
-            Description      = 'Validate and preview (what-if) resource group deployments; no write access.'
-            Actions          = @(
-                'Microsoft.Resources/deployments/read',
-                'Microsoft.Resources/deployments/validate/action',
-                'Microsoft.Resources/deployments/whatIf/action',
-                'Microsoft.Resources/deployments/operationstatuses/read')
-            NotActions       = @()
-            AssignableScopes = @($rgId)
-        }
-        Set-Content -Path $roleFile -Encoding ascii -Value ($definition | ConvertTo-Json -Depth 3)
-        Invoke-Az role definition create --role-definition "@$roleFile" --output none | Out-Null
-    }
-    finally { Remove-Item -Force $roleFile }
-    # New role definitions take a moment to replicate before they can be assigned.
-    for ($i = 0; $i -lt 6; $i++) {
-        if (Invoke-Az role definition list --custom-role-only true --name $whatIfRole --query '[0].name' -o tsv) { break }
-        Start-Sleep -Seconds 10
-    }
-}
+Set-CustomRole $whatIfRole 'Validate and preview (what-if) resource group deployments; no write access.' `
+    @('Microsoft.Resources/deployments/read',
+    'Microsoft.Resources/deployments/validate/action',
+    'Microsoft.Resources/deployments/whatIf/action',
+    'Microsoft.Resources/deployments/operationstatuses/read') `
+    @()
 Grant-Role $plan.PrincipalId 'Reader' 'Reader'
 Grant-Role $plan.PrincipalId $whatIfRole $whatIfRole
 

@@ -5,31 +5,34 @@
 # Creates, in the environment's resource group, two GitHub identities with different trust:
 #
 #   deploy  `id-github-<base>-<env>`, federated to `repo:<owner>/<repo>:environment:<env>`.
-#           The GitHub environment <env> must be restricted to the protected `main` branch
-#           (and require reviewers for prod), so only reviewed code can obtain this token.
-#           Roles on the resource group:
-#             Contributor            deploy Bicep, update the Container App, start the migrate
-#                                    job, read the SWA deployment token
+#           Before trusting it, the script checks with `gh` (read-only) that the GitHub
+#           environment <env> only accepts protected branches (and, for prod, has required
+#           reviewers); it stops otherwise. Roles on the resource group:
+#             Deployer (<rg>)        custom role = Contributor minus: managed-identity federated
+#                                    credential writes (no taking over the app identity) and
+#                                    storage account key / SAS listing
 #             AcrPush                push images to the environment's registry
 #             Role Based Access Control Administrator, with an ABAC condition: it may create or
 #                                    delete ONLY the six data-plane role assignments main.bicep
-#                                    declares, and ONLY for the app's identity `id-<base>-<env>`
-#                                    (never for itself or any other principal)
+#                                    declares, and ONLY for the app identity `id-<base>-<env>`
 #   plan    `id-github-<base>-<env>-plan`, federated to `...:environment:<env>-plan`, used by
 #           pull-request and what-if-only runs (code that has not been reviewed yet).
 #           Roles: Reader + a custom role allowing only deployment validate/what-if.
 #
 # The app identity `id-<base>-<env>` is created here (Bicep then manages the same resource) so
 # its principal id can be written into the condition.
-# It prints the GitHub environment variables to set; it does NOT call GitHub.
+# Residual trust: whoever can deploy can run code as the app identity (that is what deploying
+# the app means). The boundary is the reviewed, protected `main` branch.
+# It prints the GitHub environment variables to set; it does NOT change anything on GitHub.
 #
 # Usage:
 #   infrastructure/scripts/setup-github-oidc.sh \
-#     --resource-group <rg> --environment dev|staging|prod --repo <owner>/<repo> [--base-name medsyn]
+#     --resource-group <rg> --environment dev|staging|prod --repo <owner>/<repo> \
+#     [--base-name medsyn] [--skip-github-check]
 set -euo pipefail
 
 usage() {
-    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -37,6 +40,7 @@ resource_group=""
 environment=""
 repo=""
 base_name="medsyn"
+skip_github_check=false
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -44,6 +48,7 @@ while [ $# -gt 0 ]; do
         --environment) environment="${2:?}"; shift 2 ;;
         --repo) repo="${2:?}"; shift 2 ;;
         --base-name) base_name="${2:?}"; shift 2 ;;
+        --skip-github-check) skip_github_check=true; shift ;;
         -h | --help) usage 0 ;;
         *) echo "Unknown argument: $1" >&2; usage 2 ;;
     esac
@@ -62,10 +67,41 @@ case "$repo" in
 esac
 command -v az >/dev/null || { echo "Azure CLI (az) is required" >&2; exit 1; }
 
+# --- The deploy credential is only as safe as the GitHub environment's protection -----------
+if [ "$skip_github_check" = true ]; then
+    echo "WARNING: --skip-github-check: environment '${environment}' protection NOT verified." >&2
+    echo "         Until it accepts protected branches only, any branch can deploy." >&2
+else
+    command -v gh >/dev/null || {
+        echo "GitHub CLI (gh) is required to verify the environment protection (or --skip-github-check)" >&2
+        exit 1
+    }
+    protected="$(gh api "repos/${repo}/environments/${environment}" \
+        --jq '.deployment_branch_policy.protected_branches // false')" || {
+        echo "GitHub environment '${environment}' not found in ${repo} (docs/github-setup.md §2)" >&2
+        exit 1
+    }
+    if [ "$protected" != "true" ]; then
+        echo "GitHub environment '${environment}' must allow protected branches only (docs/github-setup.md §2)" >&2
+        exit 1
+    fi
+    if [ "$environment" = prod ]; then
+        reviewers="$(gh api "repos/${repo}/environments/${environment}" \
+            --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length')"
+        if [ "$reviewers" = "0" ]; then
+            echo "GitHub environment 'prod' must require reviewers (docs/github-setup.md §2)" >&2
+            exit 1
+        fi
+    fi
+    echo "GitHub environment '${environment}' is restricted to protected branches"
+fi
+
 issuer="https://token.actions.githubusercontent.com"
 rg_id="$(az group show -n "$resource_group" --query id -o tsv)"
 subscription_id="$(az account show --query id -o tsv)"
 tenant_id="$(az account show --query tenantId -o tsv)"
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
 
 ensure_identity() { # name purpose → prints principal id
     local name="$1" purpose="$2"
@@ -88,6 +124,23 @@ ensure_federation() { # identity-name github-environment
         -n "$name" --issuer "$issuer" --subject "$subject" \
         --audiences api://AzureADTokenExchange --output none
     echo "Federated credential on ${identity}: ${subject}"
+}
+
+ensure_custom_role() { # role-name definition-file (create or update, then wait for replication)
+    local name="$1" file="$2" id
+    id="$(az role definition list --custom-role-only true --name "$name" --query "[0].name" -o tsv)"
+    if [ -z "$id" ]; then
+        echo "Creating custom role ${name}"
+        az role definition create --role-definition "@${file}" --output none
+        for _ in 1 2 3 4 5 6; do
+            [ -n "$(az role definition list --custom-role-only true --name "$name" --query "[0].name" -o tsv)" ] && break
+            sleep 10
+        done
+    else
+        echo "Updating custom role ${name}"
+        # `az role definition update` finds the definition by its Name within AssignableScopes.
+        az role definition update --role-definition "@${file}" --output none
+    fi
 }
 
 assign() { # principal-id role label [condition]
@@ -126,6 +179,36 @@ deploy_principal="$(ensure_identity "$deploy_identity" github-actions-deploy)"
 deploy_client="$(az identity show -g "$resource_group" -n "$deploy_identity" --query clientId -o tsv)"
 ensure_federation "$deploy_identity" "$environment"
 
+deployer_role="Deployer (${resource_group})"
+cat >"${work_dir}/deployer.json" <<JSON
+{
+  "Name": "${deployer_role}",
+  "Description": "Contributor without managed-identity federated credential writes and without storage account key/SAS listing (GitHub deploy identity).",
+  "Actions": ["*"],
+  "NotActions": [
+    "Microsoft.Authorization/*/Delete",
+    "Microsoft.Authorization/*/Write",
+    "Microsoft.Authorization/elevateAccess/Action",
+    "Microsoft.Blueprint/blueprintAssignments/write",
+    "Microsoft.Blueprint/blueprintAssignments/delete",
+    "Microsoft.Compute/galleries/share/action",
+    "Microsoft.Purview/consents/write",
+    "Microsoft.Purview/consents/delete",
+    "Microsoft.Resources/deploymentStacks/manageDenySetting/action",
+    "Microsoft.Subscription/cancel/action",
+    "Microsoft.Subscription/enable/action",
+    "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write",
+    "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/delete",
+    "Microsoft.Storage/storageAccounts/listKeys/action",
+    "Microsoft.Storage/storageAccounts/regenerateKey/action",
+    "Microsoft.Storage/storageAccounts/ListAccountSas/action",
+    "Microsoft.Storage/storageAccounts/listServiceSas/action"
+  ],
+  "AssignableScopes": ["${rg_id}"]
+}
+JSON
+ensure_custom_role "$deployer_role" "${work_dir}/deployer.json"
+
 contributor="b24988ac-6180-42a0-ab88-20f7382dd24c"
 acr_push="8311e382-0749-4cb8-b61a-7f3ba6c4aaa5"
 rbac_admin="f58310d9-a9f6-439a-9e8d-f62e7b41a168"
@@ -133,10 +216,18 @@ rbac_admin="f58310d9-a9f6-439a-9e8d-f62e7b41a168"
 app_roles="ba92f5b4-2d11-453d-a403-e96b0029c9fe, db58b8e5-c6ad-4a2a-8342-4190687cbf4a, 4633458b-17de-408a-b874-0445c86b69e6, 7f951dda-4ed3-4680-a7ca-43fe172d538d, 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd, 3913510d-42f4-4e42-8a64-420c390055eb"
 condition="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${app_roles}} AND @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {${app_principal}})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${app_roles}} AND @Resource[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAnyValues:GuidEquals {${app_principal}}))"
 
-assign "$deploy_principal" "$contributor" "Contributor"
+assign "$deploy_principal" "$deployer_role" "$deployer_role"
 assign "$deploy_principal" "$acr_push" "AcrPush"
 assign "$deploy_principal" "$rbac_admin" \
     "Role Based Access Control Administrator (app roles, app identity only)" "$condition"
+
+# Remove a broad Contributor assignment left by an earlier version of this script.
+old_contributor="$(az role assignment list --assignee "$deploy_principal" --scope "$rg_id" \
+    --role "$contributor" --query "[0].id" -o tsv)"
+if [ -n "$old_contributor" ]; then
+    echo "Removing the previous Contributor assignment of ${deploy_identity}"
+    az role assignment delete --ids "$old_contributor" --output none
+fi
 
 # --- Plan identity (pull requests, what-if only) ----------------------------------------------
 plan_identity="id-github-${base_name}-${environment}-plan"
@@ -145,11 +236,7 @@ plan_client="$(az identity show -g "$resource_group" -n "$plan_identity" --query
 ensure_federation "$plan_identity" "${environment}-plan"
 
 whatif_role="Deployment What-If Operator (${resource_group})"
-if [ -z "$(az role definition list --custom-role-only true --name "$whatif_role" --query "[0].name" -o tsv)" ]; then
-    echo "Creating custom role ${whatif_role}"
-    role_file="$(mktemp)"
-    trap 'rm -f "$role_file"' EXIT
-    cat >"$role_file" <<JSON
+cat >"${work_dir}/whatif.json" <<JSON
 {
   "Name": "${whatif_role}",
   "Description": "Validate and preview (what-if) resource group deployments; no write access.",
@@ -163,14 +250,7 @@ if [ -z "$(az role definition list --custom-role-only true --name "$whatif_role"
   "AssignableScopes": ["${rg_id}"]
 }
 JSON
-    az role definition create --role-definition "@${role_file}" --output none
-    # New role definitions take a moment to replicate before they can be assigned.
-    for _ in 1 2 3 4 5 6; do
-        az role definition list --custom-role-only true --name "$whatif_role" --query "[0].name" -o tsv |
-            grep -q . && break
-        sleep 10
-    done
-fi
+ensure_custom_role "$whatif_role" "${work_dir}/whatif.json"
 assign "$plan_principal" "Reader" "Reader"
 assign "$plan_principal" "$whatif_role" "$whatif_role"
 
