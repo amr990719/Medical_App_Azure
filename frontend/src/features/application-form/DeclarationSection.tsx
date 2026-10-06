@@ -35,11 +35,20 @@ export function DeclarationSection() {
             aria-describedby={error ? errorId : undefined}
             onChange={(event) => updateField("declarationName", event.target.value)}
             className={cx(
-              "mx-1 inline-block w-full max-w-72 border-0 border-b-[1.5px] border-dashed bg-transparent px-1 text-center align-baseline font-bold text-ink outline-none",
+              "mx-1 inline-block w-full max-w-72 border-0 border-b-[1.5px] border-dashed bg-transparent px-1 text-center align-baseline font-bold text-ink outline-none print:hidden",
               "focus:border-solid focus:border-ink focus:bg-banana-light/60",
               error ? "border-danger" : "border-paper-line",
             )}
-          />{" "}
+          />
+          {/* The input would clip a long name on paper: print the name itself, underlined. */}
+          <span
+            data-print-value
+            aria-hidden
+            dir="auto"
+            className="mx-1 hidden border-b-[1.5px] border-dashed border-paper-line px-1 font-bold text-ink print:inline"
+          >
+            {state.declarationName}
+          </span>{" "}
           {D.after}
         </p>
         {error ? (

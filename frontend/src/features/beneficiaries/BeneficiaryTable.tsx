@@ -54,17 +54,28 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
       ))}
     </select>
   );
+  // An input clips a long name without a trace on paper: print a wrapping copy instead.
   const name = (
-    <input
-      aria-label={labelOf(B.name)}
-      value={row.name}
-      readOnly={readOnly}
-      dir="auto"
-      maxLength={200}
-      aria-invalid={errorOf("name") ? true : undefined}
-      onChange={(event) => updateBeneficiary(index, "name", event.target.value)}
-      className={cellInput}
-    />
+    <>
+      <input
+        aria-label={labelOf(B.name)}
+        value={row.name}
+        readOnly={readOnly}
+        dir="auto"
+        maxLength={200}
+        aria-invalid={errorOf("name") ? true : undefined}
+        onChange={(event) => updateBeneficiary(index, "name", event.target.value)}
+        className={cx(cellInput, "print:hidden")}
+      />
+      <span
+        data-print-value
+        aria-hidden
+        dir="auto"
+        className="hidden min-w-0 flex-1 break-words px-1.5 py-1 font-semibold leading-snug text-ink print:block"
+      >
+        {row.name}
+      </span>
+    </>
   );
   const birthYear = (
     <input

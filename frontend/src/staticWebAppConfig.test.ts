@@ -54,9 +54,9 @@ describe("staticwebapp.config.json", () => {
     expect(cspDirective("font-src")).toContain("https://fonts.gstatic.com");
   });
 
-  it("lets document thumbnails and the admin PDF viewer load from the same origin only", () => {
+  it("lets document thumbnails load from the same origin only and frames nothing", () => {
     expect(cspDirective("img-src")).toEqual(expect.arrayContaining(["'self'", "data:", "blob:"]));
-    expect(cspDirective("frame-src")).toEqual(["'self'"]);
+    expect(cspDirective("frame-src")).toEqual(["'none'"]); // no document is ever framed (Q-T17)
   });
 
   it("sets the other security headers", () => {

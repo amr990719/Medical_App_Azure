@@ -11,7 +11,7 @@ from django.core.exceptions import ImproperlyConfigured
 from config.secrets import load_secrets
 
 from .base import *  # noqa: F403
-from .base import DATABASES, LOGGING, MIDDLEWARE, env
+from .base import DATABASES, LOGGING, MIDDLEWARE, REST_FRAMEWORK, env
 
 MIN_SECRET_KEY_LENGTH = 50
 ENTRA_TOKEN_MAX_CONN_AGE = 1800  # seconds; below the lifetime of an Entra access token
@@ -36,8 +36,11 @@ DEV_AUTH_ENABLED = False
 # --- Secrets (environment first, then Key Vault) -----------------------------------------------
 KEY_VAULT_URL: str = env("KEY_VAULT_URL", default="")
 DB_AUTH_MODE: str = env("DB_AUTH_MODE", default="entra")
+# DATABASE_PASSWORD only exists in password mode: in Entra mode no Key Vault read may stand
+# between a replica and its start (main.bicep injects the other two as Key Vault references).
 _secrets = load_secrets(
-    ["DJANGO_SECRET_KEY", "ENTRA_CLIENT_SECRET", "DATABASE_PASSWORD"],
+    ["DJANGO_SECRET_KEY", "ENTRA_CLIENT_SECRET"]
+    + (["DATABASE_PASSWORD"] if DB_AUTH_MODE == "password" else []),
     vault_url=KEY_VAULT_URL,
     required=["DJANGO_SECRET_KEY", "ENTRA_CLIENT_SECRET"],
 )
@@ -114,6 +117,9 @@ API_DOCS_ENABLED = env.bool("API_DOCS_ENABLED", default=False)
 
 # --- HTTPS, cookies and security headers (TLS terminates at the Container Apps / SWA edge) ---- -
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# SWA linked backend -> Container Apps ingress -> Django (Q-T13: NOT VERIFIED on Azure).
+TRUSTED_PROXY_COUNT = env.int("TRUSTED_PROXY_COUNT", default=2)
+REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": TRUSTED_PROXY_COUNT}
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True

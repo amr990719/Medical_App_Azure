@@ -21,7 +21,9 @@ export default defineConfig({
     },
   },
   build: {
-    sourcemap: true,
+    // Static Web Apps would publish *.map next to the bundle (the full commented source):
+    // production builds ship none; `npm run dev` keeps its in-memory maps.
+    sourcemap: false,
     target: "es2022",
   },
   test: {

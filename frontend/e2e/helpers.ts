@@ -58,8 +58,54 @@ export type SubmittedApplication = { id: string; referenceNumber: string; email:
  * itself is covered by doctor-submit.spec.ts; the admin specs start from this point.
  */
 export async function createSubmittedApplication(request: APIRequestContext): Promise<SubmittedApplication> {
+  const draft = await createDraftApplication(request, {
+    beneficiaries: [{ kinship: "WIFE", full_name: "منى سعيد عبد الله", birth_year: 1988 }],
+  });
+  return { ...draft, referenceNumber: await draft.submit() };
+}
+
+export type BeneficiaryInput = { kinship: string; full_name: string; birth_year: number; national_id?: string };
+
+export type DraftOptions = {
+  beneficiaries?: BeneficiaryInput[];
+  doctorName?: string;
+  /** Upload the payment receipt and accept the declaration (everything but the submit itself). */
+  complete?: boolean;
+  /** Upload every required beneficiary document (from the server's own rules). */
+  beneficiaryDocuments?: boolean;
+};
+
+export type DraftApplication = {
+  id: string;
+  email: string;
+  doctorName: string;
+  /** Submit the (complete) draft and return its reference number. */
+  submit: () => Promise<string>;
+};
+
+/** One fixture image per document type; the dev backend's mock OCR does not read them. */
+const FIXTURE_FOR: Record<string, string> = {
+  NATIONAL_ID_FRONT: "id-front.png",
+  NATIONAL_ID_BACK: "id-back.png",
+  SYNDICATE_ID: "syndicate-card.png",
+  BENEFICIARY_NATIONAL_ID: "spouse-id.png",
+  MARRIAGE_CERTIFICATE: "marriage.png",
+  INSURANCE_PRINT: "insurance.png",
+  BIRTH_CERTIFICATE: "birth-son.png",
+  UNIVERSITY_ID: "syndicate-card.png",
+  PAYMENT_RECEIPT: "receipt.png",
+};
+
+/**
+ * A fresh doctor (profile, WORKING, member documents) with a DRAFT application, created through
+ * the doctor API in its own cookie jar. Beneficiary documents follow each row's
+ * `required_documents` as answered by the server — THE rules table (§15), never a copy here.
+ */
+export async function createDraftApplication(
+  request: APIRequestContext,
+  { beneficiaries = [], doctorName = "كريم سامي عبد الحميد", complete = true, beneficiaryDocuments = true }: DraftOptions = {},
+): Promise<DraftApplication> {
   const email = uniqueEmail("e2e-admin");
-  const doctorName = "كريم سامي عبد الحميد";
   await apiDevLogin(request, email, true);
   const headers = { "X-CSRFToken": await csrfToken(request) };
   const ok = async <T = unknown>(response: APIResponse): Promise<T> => {
@@ -88,14 +134,9 @@ export async function createSubmittedApplication(request: APIRequestContext): Pr
   const app = await ok<{ id: string }>(await request.post("/api/v1/applications/", { headers }));
   const base = `/api/v1/applications/${app.id}/`;
   await ok(await request.patch(base, { headers, data: { work_status: "WORKING" } }));
-  const wife = await ok<{ id: string }>(
-    await request.post(`${base}beneficiaries/`, {
-      headers,
-      data: { kinship: "WIFE", full_name: "منى سعيد عبد الله", birth_year: 1988 },
-    }),
-  );
 
-  const upload = async (documentType: string, file: string, beneficiaryId?: string) => {
+  const upload = async (documentType: string, beneficiaryId?: string) => {
+    const file = FIXTURE_FOR[documentType];
     const multipart: Record<string, string | { name: string; mimeType: string; buffer: Buffer }> = {
       document_type: documentType,
       file: { name: file, mimeType: "image/png", buffer: readFileSync(fixture(file)) },
@@ -103,18 +144,30 @@ export async function createSubmittedApplication(request: APIRequestContext): Pr
     if (beneficiaryId) multipart.beneficiary_id = beneficiaryId;
     await ok(await request.post(`${base}documents/`, { headers, multipart }));
   };
-  await upload("NATIONAL_ID_FRONT", "id-front.png");
-  await upload("NATIONAL_ID_BACK", "id-back.png");
-  await upload("SYNDICATE_ID", "syndicate-card.png");
-  await upload("BENEFICIARY_NATIONAL_ID", "spouse-id.png", wife.id);
-  await upload("MARRIAGE_CERTIFICATE", "marriage.png", wife.id);
-  await upload("INSURANCE_PRINT", "insurance.png", wife.id);
-  await upload("PAYMENT_RECEIPT", "receipt.png");
+  await upload("NATIONAL_ID_FRONT");
+  await upload("NATIONAL_ID_BACK");
+  await upload("SYNDICATE_ID");
 
-  await ok(await request.patch(base, { headers, data: { declaration_name: doctorName, declaration_accepted: true } }));
-  const submitted = await ok<{ reference_number: string }>(await request.post(`${base}submit/`, { headers }));
-  expect(submitted.reference_number).toMatch(/^MED-2026-\d{6}$/);
-  return { id: app.id, referenceNumber: submitted.reference_number, email, doctorName };
+  for (const beneficiary of beneficiaries) {
+    const row = await ok<{ id: string; required_documents: { type: string; required: boolean }[] }>(
+      await request.post(`${base}beneficiaries/`, { headers, data: beneficiary }),
+    );
+    if (!beneficiaryDocuments) continue;
+    for (const slot of row.required_documents.filter((document) => document.required)) {
+      await upload(slot.type, row.id);
+    }
+  }
+
+  if (complete) {
+    await upload("PAYMENT_RECEIPT");
+    await ok(await request.patch(base, { headers, data: { declaration_name: doctorName, declaration_accepted: true } }));
+  }
+  const submit = async () => {
+    const submitted = await ok<{ reference_number: string }>(await request.post(`${base}submit/`, { headers }));
+    expect(submitted.reference_number).toMatch(/^MED-2026-\d{6}$/);
+    return submitted.reference_number;
+  };
+  return { id: app.id, email, doctorName, submit };
 }
 
 /** Admin opens the application from the list by searching its reference number. */

@@ -34,6 +34,17 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     expect(within(table).getAllByRole("row")).toHaveLength(1 + 10);
   });
 
+  it("prints the full name as wrapping text, because an input clips a long name on paper", async () => {
+    const long = "فاطمة الزهراء عبد الرحمن محمود الشناوي";
+    await renderInForm(<BeneficiaryTable />, { app: apiApplication({ beneficiaries: [apiBeneficiary({ full_name: long })] }) });
+    const input = screen.getByLabelText("اسم المستفيد — المستفيد رقم 1");
+    expect(input).toHaveValue(long);
+    expect(input).toHaveClass("print:hidden");
+    const printed = input.parentElement?.querySelector("[data-print-value]");
+    expect(printed).toHaveTextContent(long);
+    expect(printed).toHaveClass("hidden", "print:block");
+  });
+
   it("shows the paperclip only once a kinship is set: grey while documents are missing, green when complete", async () => {
     const incomplete = apiBeneficiary({ documents: wifeDocs.slice(0, 1) });
     const complete = apiBeneficiary({ id: "b-2", row_number: 2, full_name: "سارة", documents: wifeDocs });

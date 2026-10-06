@@ -269,7 +269,8 @@ export const ar = {
       openNewTab: "فتح في نافذة جديدة",
       uploadedAt: "رُفع في {date}",
       imageAlt: "صورة المستند: {label}",
-      pdfTitle: "ملف PDF: {label}",
+      notInline: "لا يمكن عرض هذا الملف داخل الصفحة. قم بتنزيله لفتحه.",
+      download: "تنزيل الملف",
     },
     print: {
       back: "العودة إلى الطلب",

@@ -42,6 +42,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "config.middleware.HealthProbeMiddleware",  # probes skip host validation and redirects
     "config.middleware.RequestIdMiddleware",
+    "config.middleware.RequestBodyLimitMiddleware",  # 413 before an oversized body is read
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -147,7 +148,13 @@ CACHES = {"default": env.cache("CACHE_URL", default="locmemcache://")}
 
 # --- Django REST Framework ----------------------------------------------------------------------
 
+# Proxies in front of Django that append to X-Forwarded-For (production: Static Web Apps linked
+# backend + Container Apps ingress). Only their entries are trusted for the client address used
+# by throttles and the audit hash; 0 ignores the header (direct connections, local development).
+TRUSTED_PROXY_COUNT: int = env.int("TRUSTED_PROXY_COUNT", default=0)
+
 REST_FRAMEWORK = {
+    "NUM_PROXIES": TRUSTED_PROXY_COUNT,
     "DEFAULT_AUTHENTICATION_CLASSES": ["config.api.authentication.SessionAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["apps.accounts.permissions.IsAuthenticatedActive"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
@@ -200,6 +207,8 @@ DOCUMENT_CONTENT_DELIVERY: str = env("DOCUMENT_CONTENT_DELIVERY", default="strea
 BLOB_SAS_TTL_SECONDS: int = min(env.int("BLOB_SAS_TTL_SECONDS", default=300), 300)
 BLOB_CLEANUP_GRACE_HOURS: int = env.int("BLOB_CLEANUP_GRACE_HOURS", default=24)
 MAX_UPLOAD_BYTES: int = env.int("MAX_UPLOAD_BYTES", default=8 * 1024 * 1024)
+# Room for the multipart boundaries and the other form fields around one file.
+MULTIPART_OVERHEAD_BYTES = 256 * 1024
 RECEIPT_MIN_WIDTH: int = 400
 RECEIPT_MIN_HEIGHT: int = 300
 ALLOW_PDF_DOCUMENTS: bool = env.bool("ALLOW_PDF_DOCUMENTS", default=False)

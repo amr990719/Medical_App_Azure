@@ -100,14 +100,14 @@ def sanitize_filename(raw: str | None) -> str:
 
 def _read(upload) -> bytes:
     if upload.size is not None and upload.size > settings.MAX_UPLOAD_BYTES:
-        raise _too_large()
+        raise too_large_error()
     data = b"".join(upload.chunks())
     if len(data) > settings.MAX_UPLOAD_BYTES:
-        raise _too_large()
+        raise too_large_error()
     return data
 
 
-def _too_large() -> FileTooLarge:
+def too_large_error() -> FileTooLarge:
     return FileTooLarge(MSG_TOO_LARGE.format(mb=settings.MAX_UPLOAD_BYTES // (1024 * 1024)))
 
 

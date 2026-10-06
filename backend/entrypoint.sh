@@ -4,7 +4,8 @@
 #             is refused, because replicas must not race to migrate.
 #   migrate   `manage.py migrate` + `createcachetable`, exactly once per deployment (Container
 #             Apps job, run before traffic shifts to the new revision).
-#   cleanup   `manage.py cleanup_blobs` (scheduled Container Apps job); extra args are passed on.
+#   cleanup   `manage.py clearsessions` + `cleanup_blobs` (scheduled Container Apps job); extra
+#             args go to cleanup_blobs, and `--dry-run` also skips clearsessions.
 #   anything else is executed as given (docker compose dev: runserver). In that case only:
 #     RUN_MIGRATIONS_ON_START=true  apply migrations first (local development only)
 #     SEED_ON_START=true            run `seed_dev_data` (refused unless DEV_AUTH_ENABLED)
@@ -42,6 +43,11 @@ case "$mode" in
         ;;
     cleanup)
         shift
+        # Expired sessions too (they hold user ids and OIDC flow state); skipped on --dry-run.
+        case " $* " in
+            *" --dry-run "*) ;;
+            *) python manage.py clearsessions ;;
+        esac
         exec python manage.py cleanup_blobs "$@"
         ;;
 esac

@@ -348,6 +348,9 @@ var baseSettings = {
   LOG_LEVEL: 'INFO'
   ALLOWED_HOSTS: allowedHosts
   CSRF_TRUSTED_ORIGINS: trustedOrigins
+  // X-Forwarded-For entries appended by the SWA linked backend and the Container Apps ingress
+  // (client address for throttles and the audit hash; Q-T13, NOT VERIFIED on Azure).
+  TRUSTED_PROXY_COUNT: '2'
   GUNICORN_WORKERS: string(gunicornWorkers)
   // Managed identity for every Azure SDK call (developer credentials excluded).
   AZURE_CLIENT_ID: identity.outputs.clientId

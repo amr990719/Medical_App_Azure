@@ -263,3 +263,39 @@ def test_azure_openai_ocr_configured(monkeypatch):
 def test_ocr_can_be_switched_off_without_code_changes(monkeypatch):
     prod = load_production(monkeypatch, OCR_ENABLED="false", OCR_PROVIDER="azure_openai")
     assert prod.OCR_ENABLED is False
+
+
+def test_entra_mode_with_injected_secrets_never_calls_key_vault(monkeypatch):
+    # main.bicep: secrets arrive as Container Apps Key Vault references, DB_AUTH_MODE=entra.
+    # No password is used in that mode, so a Key Vault hiccup must not stop a replica starting.
+    with mock.patch("config.secrets._secret_client") as factory:
+        prod = load_production(
+            monkeypatch, KEY_VAULT_URL="https://kv-medical.vault.azure.net/", DB_AUTH_MODE="entra"
+        )
+    factory.assert_not_called()
+    assert prod.DATABASES["default"]["ENGINE"] == "config.db.entra_postgres"
+
+
+def test_password_mode_reads_the_password_from_key_vault(monkeypatch):
+    client = mock.MagicMock()
+    client.__enter__.return_value = client
+    client.get_secret.return_value = mock.Mock(value="kv-db-password")
+    with mock.patch("config.secrets._secret_client", return_value=client):
+        prod = load_production(
+            monkeypatch,
+            KEY_VAULT_URL="https://kv-medical.vault.azure.net/",
+            DB_AUTH_MODE="password",
+        )
+    client.get_secret.assert_called_once_with("database-password")
+    assert prod.DATABASES["default"]["PASSWORD"] == "kv-db-password"
+
+
+def test_production_trusts_the_swa_and_ingress_proxies_by_default(monkeypatch):
+    prod = load_production(monkeypatch)
+    assert prod.REST_FRAMEWORK["NUM_PROXIES"] == 2
+
+
+def test_trusted_proxy_count_is_configurable(monkeypatch):
+    monkeypatch.setenv("TRUSTED_PROXY_COUNT", "1")
+    prod = load_production(monkeypatch)
+    assert prod.REST_FRAMEWORK["NUM_PROXIES"] == 1

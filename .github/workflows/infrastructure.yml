@@ -65,6 +65,10 @@ jobs:
           for file in parameters/*.bicepparam; do
             az bicep build-params --file "$file" --outfile "${out}/$(basename "$file").json"
           done
+      - name: Security properties of the compiled template
+        run: |
+          python3 infrastructure/scripts/check-template-security.py "${RUNNER_TEMP}/bicep/main.json"
+          python3 infrastructure/scripts/check-template-security.py "${RUNNER_TEMP}/bicep/main.json" --self-test
       - name: Check the deployment scripts
         run: |
           for script in infrastructure/scripts/*.sh; do bash -n "$script"; done

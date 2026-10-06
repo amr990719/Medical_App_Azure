@@ -3,6 +3,8 @@ import hmac
 
 from django.conf import settings
 
+from apps.common.client_ip import client_ip
+
 from .models import AuditLog
 
 # Never stored in audit metadata: record IDs and changed field NAMES instead (PROMPT.md §39).
@@ -32,8 +34,7 @@ def _scrub(value):
 def _ip_hash(request) -> str:
     if request is None:
         return ""
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    ip = forwarded.split(",")[0].strip() or request.META.get("REMOTE_ADDR", "")
+    ip = client_ip(request)  # the address the throttles count, never a client-sent entry
     if not ip:
         return ""
     return hmac.new(settings.SECRET_KEY.encode(), ip.encode(), hashlib.sha256).hexdigest()

@@ -1,7 +1,9 @@
+from io import StringIO
+
 import pytest
 from django.core.management import CommandError, call_command
 
-from apps.accounts.factories import UserFactory
+from apps.accounts.factories import AdminUserFactory, UserFactory
 from apps.accounts.models import Role
 from apps.audit.models import AuditAction, AuditLog
 
@@ -35,3 +37,29 @@ def test_grant_admin_is_idempotent():
     call_command("grant_admin", "doc@example.test")
     call_command("grant_admin", "doc@example.test")
     assert AuditLog.objects.filter(action=AuditAction.ADMIN_ROLE_GRANTED).count() == 1
+
+
+def test_granting_admin_ends_the_users_existing_sessions():
+    # MFA is checked when an admin signs in (ENTRA_ADMIN_REQUIRE_MFA). A doctor session opened
+    # without MFA must not turn into an admin session: the role change signs the user out.
+    from django.test import Client
+
+    user = UserFactory(email="promoted@example.test")
+    client = Client()
+    client.force_login(user, backend="apps.accounts.backends.SessionOnlyBackend")
+    assert client.get("/api/v1/auth/me/").status_code == 200
+    call_command("grant_admin", "promoted@example.test", stdout=StringIO())
+    assert client.get("/api/v1/auth/me/").status_code == 401
+    assert client.get("/api/v1/admin/stats/").status_code in {401, 403}
+
+
+def test_revoking_admin_ends_the_users_existing_sessions():
+    from django.test import Client
+
+    admin = AdminUserFactory()
+    client = Client()
+    client.force_login(admin, backend="apps.accounts.backends.SessionOnlyBackend")
+    assert client.get("/api/v1/admin/stats/").status_code == 200
+    admin.role = Role.DOCTOR
+    admin.save(update_fields=["role"])
+    assert client.get("/api/v1/auth/me/").status_code == 401

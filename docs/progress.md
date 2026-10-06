@@ -499,6 +499,40 @@ static role review), Azure MCP Bicep schemas / best practices / retail prices.
   environment's branch policy / prod reviewers with `gh api` before trusting the deploy identity
   (fails closed; `--skip-github-check` warns) (D127).
 
+### Session 9 — 2026-10-06 — Phase 9 (full testing + security review)
+Scope set by the user: run every check, prove each PROMPT.md §2.3 requirement with a test, a
+strict security review, fix rather than list. Every fix was test-first (red shown, then green).
+Full record: `docs/verification.md`; review: `docs/security.md` §8.
+- **Task 9.1 — e2e:** `admin-approve` / `correction-loop` already existed (Session 6). New:
+  `print-a4.spec.ts` (worst case: 10 beneficiaries with long names and national IDs, doctor and
+  admin print views, PDF page tree parsed and cross-checked, nothing wider than A4, no clipped
+  input, no validation marks → 2 pages each) and `mobile-form.spec.ts` (real Pixel 7 profile at
+  390 × 844 with touch: dashboard → card layout → beneficiary + document → Eastern Arabic year →
+  fee 2٬475 → receipt → review → submit; no horizontal scroll on any page). The e2e helper now
+  builds drafts from the server's own `required_documents` (`createDraftApplication`).
+- **Defects found by the new specs:** (V1) printed beneficiary names and the declared name were
+  clipped by their inputs → print-only wrapping copies (D128); (V2) the admin's masked national ID
+  printed with the red "14 digits" hint → client ID hints only on editable forms (D129).
+- **Task 9.2 — verification:** backend **960 passed** (was 942; pytest 9.1.1), ruff clean,
+  `check` clean, no missing migrations, 26 migrations on a new empty database (idempotent);
+  frontend `npm run ci` green (**281 passed**, was 276; rtl 0/0; build with 0 source maps);
+  Playwright **11 passed / 5 skipped** twice in a row; production image `--no-cache` build,
+  healthy against compose PostgreSQL (TLS) + Azurite, headers/redirect/Host checks live;
+  `check --deploy` **with exactly the main.bicep environment** → no issues (found V3 = F7 on the
+  way); Bicep main + 14 modules + 3 param files, 0 warnings; actionlint 0; gitleaks history clean;
+  pip-audit (prod + the image's frozen 77 packages) and npm audit clean; dev pytest CVE fixed.
+- **§2.3 requirement map** (12 defects → tests) in `docs/verification.md` §2; two missing proofs
+  added: `test_extract_only_suggests_and_saves_nothing` (mutation-checked red) and the Bicep
+  template guard.
+- **Task 9.3 — security review (manual; the `security-review` skill needs a git remote):** F1 XFF
+  throttle bypass + spoofable audit IP (D130), F2 admin MFA bypass through `grant_admin` mid-session
+  (D131), F3 upload size checked only after spooling the whole body (D132), F4 expired sessions
+  never purged (D135), F5 = Q-T17 PDF viewer could never render (D133), F6 production source maps
+  (D134), F7 Key Vault read of an unused DB password at every start (D136), F8 dev pytest CVE.
+  `infrastructure/scripts/check-template-security.py` + CI step (D137).
+- **NOT VERIFIED — requires Azure credentials:** unchanged list from Sessions 7–8, plus the
+  `TRUSTED_PROXY_COUNT=2` assumption (Q-T13) and ingress/SWA body-size limits.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -807,6 +841,29 @@ static role review), Azure MCP Bicep schemas / best practices / retail prices.
 - **D125 — Application Insights Entra-only ingestion** (`DisableLocalAuth`) in staging/prod; the
   connection string is still provided (it identifies the resource); dev keeps local auth (Q-T14).
 
+- **D128 — Paper print shows values as text:** the beneficiary name and the declared name print
+  from a print-only element that wraps; the `<input>` is hidden in print (an input clips silently).
+- **D129 — National-ID consistency hints only while editable:** read-only sheets (status, print,
+  admin) get none; the admin copy holds a masked value.
+- **D130 — Client address = the trusted proxies' X-Forwarded-For entry:** `TRUSTED_PROXY_COUNT`
+  feeds DRF `NUM_PROXIES` (0 in base settings: header ignored; 2 in production and Bicep: SWA
+  linked backend + Container Apps ingress); `apps/common/client_ip.py` gives the audit hash the
+  same address. Never the whole header (DRF's default when `NUM_PROXIES` is None).
+- **D131 — Session bound to the role:** `User.get_session_auth_hash` mixes in `role`; any role
+  change ends that user's sessions (and this release signs everyone out once).
+- **D132 — Request body cap before parsing:** `RequestBodyLimitMiddleware` answers 413
+  `FILE_TOO_LARGE` when `Content-Length` > `MAX_UPLOAD_BYTES` + `MULTIPART_OVERHEAD_BYTES` (256 KB).
+- **D133 — Only JPEG/PNG/WebP are shown inline;** every other document type is delivered as an
+  attachment (stream and SAS) and the admin viewer offers a download. Nothing is framed; SWA
+  `frame-src 'none'` (resolves Q-T17).
+- **D134 — No source maps in production builds** (`build.sourcemap = false`).
+- **D135 — The cleanup job also runs `clearsessions`** (skipped with `--dry-run`).
+- **D136 — `DATABASE_PASSWORD` is requested from Key Vault only when `DB_AUTH_MODE=password`.**
+- **D137 — Template security guard in CI:** stdlib Python over the compiled `main.json`, with a
+  self-test that breaks each rule; complements (does not replace) Azure Policy.
+- **D138 — e2e drafts follow the server's rules:** `createDraftApplication` uploads exactly the
+  `required_documents` the API returns for each beneficiary (no rules table in the tests).
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -871,6 +928,11 @@ static role review), Azure MCP Bicep schemas / best practices / retail prices.
 | 58 | plan 8.3 what-if on PR | dev only on PR | D123 |
 | 59 | plan: commits per task, `Session 8: infrastructure and ci/cd` | one commit `Phase 7-8: infrastructure and CI/CD` | explicit user instruction |
 | 60 | plan 8.1 roles list | + Storage Blob Delegator (account) + Monitoring Metrics Publisher | user-delegation SAS (D101) and Entra telemetry ingestion need them |
+| 61 | plan 9.1 page count with `pdf-lib` | page tree parsed from the PDF (`/Count` cross-checked with the page objects) | no new dependency |
+| 62 | plan: commits per task + `Session 9: testing and security review` | one commit `Phase 9: verification and security fixes` | explicit user instruction |
+| 63 | plan 9.3 `security-review` skill | manual review with the same scope | the skill needs a git remote (none, by design) |
+| 64 | §44 document viewer shows every document | images shown; PDF/HEIC offered as a download | D133 (security: no uploaded file is framed) |
+| 65 | §55 "README contains deployment commands" | not yet | Session 10 Task 10.1 writes the README |
 
 ## Open questions
 
@@ -915,9 +977,10 @@ confirmed by the organization). Technical/environment questions for the user:
   which resets it to PENDING_REVIEW). Confirm this is the intended policy.
 - **Q-T12** Locally the dev database still accumulates `e2e-*@dev.local` data (`docker compose down
   -v` resets it); `e2e.yml` runs on a fresh stack every time.
-- **Q-T13** Container Apps ingress / SWA linked backend: confirm the `Host` header Django sees and
-  that `X-Forwarded-Proto: https` is set (ALLOWED_HOSTS, HTTPS redirect, CSRF origin). NOT
-  VERIFIED — requires Azure credentials (Session 8 deployment docs).
+- **Q-T13** Container Apps ingress / SWA linked backend: confirm the `Host` header Django sees,
+  that `X-Forwarded-Proto: https` is set (ALLOWED_HOSTS, HTTPS redirect, CSRF origin), that each
+  hop appends exactly one `X-Forwarded-For` entry (`TRUSTED_PROXY_COUNT=2`, D130) and the request
+  body limits of both hops. NOT VERIFIED — requires Azure credentials.
 - **Q-T14** Application Insights ingestion: connection string only, or Entra-authenticated
   (`APPLICATIONINSIGHTS_AUTHENTICATION=entra` + `Monitoring Metrics Publisher`, local auth disabled
   on the resource)? Default here: connection string; recommended: Entra.
@@ -932,22 +995,25 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T16** The Azure retail price list shows a Container Apps *Environment Management Hour* meter
   ($0.143/h, effective 2026-09-01). Confirm whether it applies to Consumption-only environments
   before relying on dev scale-to-zero savings (docs/azure-deployment.md cost table).
-- **Q-T17** Production `X_FRAME_OPTIONS=DENY` and the content endpoint's `sandbox` CSP may stop the
-  admin PDF viewer iframe from rendering (only with `ALLOW_PDF_DOCUMENTS=true`). Session 9 to test.
+- **Q-T17** Resolved (Session 9, D133): confirmed the iframe could never render; PDFs are now
+  downloads and nothing is framed.
 - **Q-T18** Container Apps ingress must stay public for the SWA linked backend; whether the link
-  restricts direct calls to the Container App FQDN is NOT VERIFIED (also Q-T13).
+  restricts direct calls to the Container App FQDN is NOT VERIFIED (also Q-T13). A direct caller
+  could pick its own anonymous throttle bucket (docs/security.md §7).
+- **Q-T19** Production network isolation: without `ENABLE_PRIVATE_NETWORKING=true` PostgreSQL keeps
+  the "Azure services" firewall rule (any tenant's Azure resources can reach the port; Entra-only
+  sign-in still applies). Recommended on for prod; it adds VNet / private endpoint cost.
 
 ## Next session starts with
 
-**Session 9 — Full testing + security review** (`docs/plan.md` -> Session 9).
-1. Environment: Docker Desktop running -> `npm run up`. Checks: `npm run test:backend` (expect **942
-   passed**), `npm run lint`, `cd frontend && npm run ci` (expect **276 passed**). Bicep:
-   `az bicep build --file infrastructure/main.bicep` (and each module) — 0 warnings; workflows:
-   `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`; secrets:
-   `docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest git /repo`.
-2. Carried into Session 9: Q-T17 (admin PDF iframe vs `X-Frame-Options`), Q-T18/Q-T13 (direct
-   access to the Container App FQDN), the security review of the Bicep (plan 9.3), and
-   `manage.py check --deploy` with exactly the settings `main.bicep` produces.
-3. Azure: when an enabled subscription is available (Q-T1, Q-T15), follow `docs/azure-deployment.md`
-   and re-run azure-validate (what-if) first — still `NOT VERIFIED — requires Azure credentials`.
-4. Carry-over: `/profile` page (deviation 32), Q-B19 payment instructions, Q-B20/Q-B21, Q-T14, Q-T16.
+**Session 10 — Documentation + final report** (`docs/plan.md` -> Session 10).
+1. Environment: Docker Desktop running -> `npm run up`. Baseline: `npm run test:backend` (expect
+   **960 passed**), `npm run lint`, `cd frontend && npm run ci` (expect **281 passed**),
+   `npx playwright test` (expect **11 passed, 5 skipped**).
+2. The README is still a placeholder: §55 item 21 is open in `docs/verification.md` until Task 10.1
+   writes it (local commands + deployment commands from `docs/azure-deployment.md`), then mark it ✓.
+3. Final report (§56): use `docs/verification.md` (checklist, §2.3 map) and `docs/security.md` §8;
+   mention the one-time sign-out on the next deployment (D131) and the new
+   `TRUSTED_PROXY_COUNT` setting (D130).
+4. Azure: still `NOT VERIFIED — requires Azure credentials` (Q-T1, Q-T13, Q-T15, Q-T18, Q-T19).
+5. Carry-over: `/profile` page (deviation 32), Q-B19 payment instructions, Q-B20/Q-B21, Q-T14, Q-T16.

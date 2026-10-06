@@ -10,9 +10,13 @@ import { DraftController, type DraftOptions } from "./draftController";
 import { parseNationalId } from "./nationalId";
 import type { ApplicationFormState, MemberField } from "./types";
 
-/** Instant national-ID consistency hints (§9.4); the server validation stays authoritative. */
-function nationalIdErrors(state: ApplicationFormState | null): Partial<Record<MemberField, string>> {
-  if (!state || state.nationalId.length !== 14) return {};
+/**
+ * Instant national-ID consistency hints (§9.4) while the doctor types; the server validation
+ * stays authoritative. A read-only sheet has nothing to correct (and the admin's copy holds a
+ * masked value), so it gets no hints.
+ */
+function nationalIdErrors(state: ApplicationFormState | null, readOnly: boolean): Partial<Record<MemberField, string>> {
+  if (!state || readOnly || state.nationalId.length !== 14) return {};
   const parsed = parseNationalId(state.nationalId);
   if (!parsed) return { nationalId: ar.form.errors.nationalIdInvalid };
   const errors: Partial<Record<MemberField, string>> = {};
@@ -98,7 +102,7 @@ export function useApplicationDraft(
     readOnly: snapshot.readOnly,
     saveStatus: snapshot.saveStatus,
     isDirty: snapshot.isDirty,
-    fieldErrors: { ...nationalIdErrors(snapshot.state), ...snapshot.fieldErrors },
+    fieldErrors: { ...nationalIdErrors(snapshot.state, snapshot.readOnly), ...snapshot.fieldErrors },
     rowErrors: snapshot.rowErrors,
     pendingDeletion: snapshot.pendingDeletion,
     memberDocuments,

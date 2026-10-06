@@ -3,7 +3,6 @@ documents of submitted (non-draft) applications. Other ids are 404 — no IDOR."
 
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
-from django.utils.http import content_disposition_header
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers, status
@@ -18,6 +17,7 @@ from apps.accounts.permissions import IsAuthenticatedActive, IsDoctor
 from apps.applications.api.views import doctor_applications
 from apps.documents.models import Document
 from apps.documents.services import delete_document, document_content, store_document
+from apps.documents.storage import document_disposition
 from apps.reference.constants import ApplicationStatus, DocumentType
 
 from .serializers import DocumentSummarySerializer
@@ -109,7 +109,9 @@ class DocumentContentView(APIView):
             response = HttpResponseRedirect(content.redirect_url)
         else:
             response = HttpResponse(content.data, content_type=content.content_type)
-            response["Content-Disposition"] = content_disposition_header(False, content.filename)
+            response["Content-Disposition"] = document_disposition(
+                content.content_type, content.filename
+            )
             response["Content-Length"] = str(len(content.data))
         response["Cache-Control"] = "no-store, private"
         response["X-Content-Type-Options"] = "nosniff"

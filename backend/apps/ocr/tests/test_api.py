@@ -46,6 +46,30 @@ def test_extract_returns_suggestions():
     assert body["fields"]["national_id"] == "28506150101234"
 
 
+def test_extract_only_suggests_and_saves_nothing():
+    # PROMPT.md §21 / defect 2.3 #9: OCR suggests; the doctor's data changes only via autosave.
+    from apps.applications.models import InsuranceApplication
+    from apps.beneficiaries.models import Beneficiary
+    from apps.doctors.models import Doctor
+
+    doc = stored()
+    application, doctor = doc.application, doc.application.doctor
+    before = (
+        Doctor.objects.filter(pk=doctor.pk).values().get(),
+        InsuranceApplication.objects.filter(pk=application.pk).values().get(),
+        Beneficiary.objects.filter(application=application).count(),
+    )
+    response = client_for(doctor.user).post(extract_url(doc))
+    assert response.status_code == 200
+    assert response.json()["fields"]["national_id"] != doctor.national_id
+    after = (
+        Doctor.objects.filter(pk=doctor.pk).values().get(),
+        InsuranceApplication.objects.filter(pk=application.pk).values().get(),
+        Beneficiary.objects.filter(application=application).count(),
+    )
+    assert after == before
+
+
 def test_other_users_document_404():
     doc = stored()
     assert client_for(DoctorFactory().user).post(extract_url(doc)).status_code == 404

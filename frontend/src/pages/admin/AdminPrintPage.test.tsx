@@ -25,6 +25,8 @@ describe("AdminPrintPage", () => {
     expect(name).toHaveValue("أحمد محمد علي حسن");
     expect(name).toHaveAttribute("readonly");
     expect(screen.getByDisplayValue("28•••••••••234")).toBeInTheDocument();
+    // The masked value is not a typing mistake: the official copy carries no validation hint.
+    expect(screen.queryByText("الرقم القومي يجب أن يكون 14 رقماً صحيحاً")).toBeNull();
     expect(screen.getByRole("link", { name: "العودة إلى الطلب" })).toHaveAttribute(
       "href",
       `/admin/applications/${ADMIN_APP_ID}`,

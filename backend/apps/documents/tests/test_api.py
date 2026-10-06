@@ -15,7 +15,7 @@ from apps.documents.models import Document
 from apps.documents.services import store_document
 from apps.reference.constants import ApplicationStatus as S
 from apps.reference.constants import DocumentType as T
-from tests.files import EXE_BYTES, png_upload, upload
+from tests.files import EXE_BYTES, pdf_bytes, png_upload, upload
 
 pytestmark = pytest.mark.django_db
 
@@ -166,6 +166,25 @@ def test_content_streams_with_safe_headers():
     assert response["X-Content-Type-Options"] == "nosniff"
     assert "no-store" in response["Cache-Control"]
     assert response.content[:4] == b"\x89PNG"
+
+
+def test_pdf_content_is_a_download_never_framed(settings):
+    # Q-T17: an uploaded PDF is never rendered inside the app (no iframe, no inline viewer):
+    # it is served as an attachment and keeps the sandbox CSP, nosniff and X-Frame-Options.
+    settings.ALLOW_PDF_DOCUMENTS = True
+    app = ApplicationFactory()
+    doc = store_document(
+        app,
+        document_type=T.SYNDICATE_ID,
+        upload=upload(pdf_bytes(), "كارنيه.pdf", "application/pdf"),
+        actor=app.doctor.user,
+    )
+    response = client_for(app.doctor.user).get(f"/api/v1/documents/{doc.pk}/content/")
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/pdf"
+    assert response["Content-Disposition"].startswith("attachment")
+    assert "sandbox" in response["Content-Security-Policy"]
+    assert response["X-Frame-Options"] == "DENY"
 
 
 @pytest.mark.parametrize("path", ["", "content/"])

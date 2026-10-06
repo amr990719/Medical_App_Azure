@@ -5,6 +5,7 @@ from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Lower
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 
 from .managers import UserManager, normalize_email_address
 
@@ -61,3 +62,13 @@ class User(AbstractBaseUser):
     @property
     def is_admin(self) -> bool:
         return self.role == Role.ADMIN
+
+    def get_session_auth_hash(self) -> str:
+        """Bound to the role as well: Django checks this hash on every request, so granting or
+        revoking ADMIN ends the user's open sessions. A doctor session that never passed the
+        admin MFA check (ENTRA_ADMIN_REQUIRE_MFA) can therefore never act as an admin."""
+        return salted_hmac(
+            "apps.accounts.models.User.get_session_auth_hash",
+            f"{self.password}|{self.role}",
+            algorithm="sha256",
+        ).hexdigest()

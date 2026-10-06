@@ -497,14 +497,14 @@ Inputs the spec implies but no single rule names; each is pinned to a test in th
 
 ### Task 9.1: Remaining end-to-end specs
 - Create `frontend/e2e/admin-approve.spec.ts` (admin finds the seeded application → confirm payment → under review → approve; doctor sees `مقبول`), `frontend/e2e/correction-loop.spec.ts` (admin requests correction with note → doctor sees note, fixes, resubmits → same reference number), `frontend/e2e/print-a4.spec.ts` (`page.pdf({format:"A4"})` → page count ≤ 2 via `pdf-lib`), `frontend/e2e/mobile-form.spec.ts` (390×844: no horizontal scroll `document.documentElement.scrollWidth <= innerWidth`, form submittable).
-- [ ] All specs pass → commit `test(e2e): admin, correction loop, print, mobile`.
+- [x] All specs pass → commit `test(e2e): admin, correction loop, print, mobile`.
 
 ### Task 9.2: Full verification run
-- [ ] Run and record outputs in `docs/verification.md`: `npm run ci` (build, tsc, vitest, rtl_check), `pytest -q` (counts), `python manage.py check --deploy` with production settings, `migrate` on an empty database, `docker build`, compose doctor flow, OCR mock flow, authorization tests, Playwright suites, `az bicep build`, `actionlint`, secret scan (`gitleaks detect` or `trufflehog filesystem .`), `pip-audit`, `npm audit --omit=dev`. Mark Azure-dependent items `NOT VERIFIED — requires Azure credentials`.
-- [ ] Fix every failure found (systematic-debugging), re-run, commit `test: full verification pass`.
+- [x] Run and record outputs in `docs/verification.md`: `npm run ci` (build, tsc, vitest, rtl_check), `pytest -q` (counts), `python manage.py check --deploy` with production settings, `migrate` on an empty database, `docker build`, compose doctor flow, OCR mock flow, authorization tests, Playwright suites, `az bicep build`, `actionlint`, secret scan (`gitleaks detect` or `trufflehog filesystem .`), `pip-audit`, `npm audit --omit=dev`. Mark Azure-dependent items `NOT VERIFIED — requires Azure credentials`.
+- [x] Fix every failure found (systematic-debugging), re-run, commit `test: full verification pass`.
 
 ### Task 9.3: Security review
-- [ ] Run the `security-review` skill over auth (OIDC, session, CSRF, MFA refusal), uploads (sniffing, size, path, SAS TTL), permissions (IDOR on each resource, protected fields), logging (masking), rate limits (callback, OCR, uploads), headers/cookies in production settings, Bicep (public access, TLS, RBAC). Add tests for any gap; fix findings; finalize `docs/security.md` (controls table + items needing legal/organizational decisions). Commit `fix(security): review findings`.
+- [x] Run the `security-review` skill over auth (OIDC, session, CSRF, MFA refusal), uploads (sniffing, size, path, SAS TTL), permissions (IDOR on each resource, protected fields), logging (masking), rate limits (callback, OCR, uploads), headers/cookies in production settings, Bicep (public access, TLS, RBAC). Add tests for any gap; fix findings; finalize `docs/security.md` (controls table + items needing legal/organizational decisions). Commit `fix(security): review findings`.
 
 **Session 9 done when:** `docs/verification.md` lists every §55 item with PASS or `NOT VERIFIED — requires Azure credentials` and the command used; no open high findings; progress.md updated; commit `Session 9: testing and security review`.
 

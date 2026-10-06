@@ -87,3 +87,34 @@ class ContentSecurityPolicyMiddleware:
         response = self.get_response(request)
         response.setdefault("Content-Security-Policy", API_CONTENT_SECURITY_POLICY)
         return response
+
+
+class RequestBodyLimitMiddleware:
+    """Refuses a request whose declared body exceeds MAX_UPLOAD_BYTES (+ MULTIPART_OVERHEAD_BYTES
+    for the form fields) with 413, before anything reads it. Django enforces upload sizes only
+    after parsing, and spools files above FILE_UPLOAD_MAX_MEMORY_SIZE to the replica's disk, so a
+    signed-in user could otherwise send gigabytes. Without Content-Length Django reads no body."""
+
+    def __init__(self, get_response):
+        from django.conf import settings
+
+        self.get_response = get_response
+        self.limit = settings.MAX_UPLOAD_BYTES + settings.MULTIPART_OVERHEAD_BYTES
+
+    def __call__(self, request):
+        try:
+            declared = int(request.META.get("CONTENT_LENGTH") or 0)
+        except ValueError:
+            declared = 0
+        if declared > self.limit:
+            from django.http import JsonResponse
+
+            from apps.documents.validators import too_large_error
+
+            error = too_large_error()
+            return JsonResponse(
+                error.as_envelope(),
+                status=error.status_code,
+                json_dumps_params={"ensure_ascii": False},
+            )
+        return self.get_response(request)

@@ -105,6 +105,14 @@ def test_content_sas_ttl_at_most_300s_and_read_only():
     assert params["rscd"].startswith("inline")
 
 
+def test_sas_for_a_pdf_downloads_it():
+    storage = AzureBlobStorage(connection_string=OFFLINE_CONNECTION, container="medical-documents")
+    url = storage.read_url(
+        "x.pdf", ttl_seconds=60, content_type="application/pdf", filename="شهادة.pdf"
+    )
+    assert sas_params(url)["rscd"].startswith("attachment")
+
+
 def test_sas_ttl_shorter_than_maximum_is_respected():
     storage = AzureBlobStorage(connection_string=OFFLINE_CONNECTION, container="medical-documents")
     url = storage.read_url("x.png", ttl_seconds=60, content_type="image/png", filename="x.png")

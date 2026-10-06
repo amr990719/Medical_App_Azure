@@ -18,6 +18,8 @@ from typing import Protocol
 from django.conf import settings
 from django.utils.http import content_disposition_header
 
+from apps.documents.validators import IMAGE_CONTENT_TYPES
+
 MAX_SAS_TTL_SECONDS = 300
 SAS_CLOCK_SKEW = timedelta(minutes=1)
 DELEGATION_KEY_LIFETIME = timedelta(hours=1)
@@ -25,6 +27,12 @@ DELEGATION_KEY_LIFETIME = timedelta(hours=1)
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def document_disposition(content_type: str, filename: str) -> str:
+    """Images a browser shows (JPEG/PNG/WebP) open inline; anything else (PDF, HEIC) downloads.
+    An uploaded document is never rendered as a page inside the app's origin (Q-T17)."""
+    return content_disposition_header(content_type not in IMAGE_CONTENT_TYPES, filename)
 
 
 @dataclass(frozen=True)
@@ -183,7 +191,7 @@ class AzureBlobStorage:
             expiry=expiry,
             start=start,
             content_type=content_type,
-            content_disposition=content_disposition_header(False, filename),
+            content_disposition=document_disposition(content_type, filename),
             **signing,
         )
         return f"{self._blob(blob_name).url}?{token}"
