@@ -89,10 +89,13 @@ try {
     Set-Content -Path $claimsFile -Value '{"idToken": [{"name": "email", "essential": false}]}' -Encoding ascii
     Invoke-Az ad app update --id $appId --optional-claims "@$claimsFile" | Out-Null
 
-    $graph = '00000003-0000-0000-c000-000000000000'
-    Invoke-Az ad app permission add --id $appId --api $graph --api-permissions `
-        '37f7f235-527c-4136-accd-4a02d197296e=Scope' '14dad69e-099b-42c9-810b-d002981feec1=Scope' `
-        '64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0=Scope' --only-show-errors | Out-Null
+    # Delegated Graph openid, profile, email as the complete list (`permission add` appends
+    # duplicates on every re-run).
+    Set-Content -Path $claimsFile -Encoding ascii -Value ('[{"resourceAppId": "00000003-0000-0000-c000-000000000000", "resourceAccess": [' +
+        '{"id": "37f7f235-527c-4136-accd-4a02d197296e", "type": "Scope"}, ' +
+        '{"id": "14dad69e-099b-42c9-810b-d002981feec1", "type": "Scope"}, ' +
+        '{"id": "64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0", "type": "Scope"}]}]')
+    Invoke-Az ad app update --id $appId --required-resource-accesses "@$claimsFile" | Out-Null
 
     $spId = Invoke-Az ad sp list --filter "appId eq '$appId'" --query '[0].id' -o tsv
     if (-not $spId) { Invoke-Az ad sp create --id $appId --only-show-errors | Out-Null }

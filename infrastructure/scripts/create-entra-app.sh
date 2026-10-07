@@ -127,13 +127,15 @@ cat >"$claims_file" <<'JSON'
 JSON
 az ad app update --id "$app_id" --optional-claims "@${claims_file}"
 
-# Delegated Microsoft Graph permissions: openid, profile, email (nothing else).
-graph="00000003-0000-0000-c000-000000000000"
-az ad app permission add --id "$app_id" --api "$graph" --api-permissions \
-    "37f7f235-527c-4136-accd-4a02d197296e=Scope" \
-    "14dad69e-099b-42c9-810b-d002981feec1=Scope" \
-    "64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0=Scope" \
-    --only-show-errors >/dev/null
+# Delegated Microsoft Graph permissions: openid, profile, email (nothing else). Set as the
+# complete list (`permission add` appends duplicates on every re-run).
+cat >"$claims_file" <<'JSON'
+[{"resourceAppId": "00000003-0000-0000-c000-000000000000", "resourceAccess": [
+  {"id": "37f7f235-527c-4136-accd-4a02d197296e", "type": "Scope"},
+  {"id": "14dad69e-099b-42c9-810b-d002981feec1", "type": "Scope"},
+  {"id": "64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0", "type": "Scope"}]}]
+JSON
+az ad app update --id "$app_id" --required-resource-accesses "@${claims_file}"
 
 if [ -z "$(az ad sp list --filter "appId eq '$app_id'" --query "[0].id" -o tsv)" ]; then
     az ad sp create --id "$app_id" --only-show-errors >/dev/null
