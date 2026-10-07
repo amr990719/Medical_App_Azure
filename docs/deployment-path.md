@@ -548,12 +548,47 @@ if ($Status -ne "Succeeded") {
 }
 ```
 
-Check backend readiness:
+Check backend readiness through the Static Web App. Linking the Static Web App enables
+`azureStaticWebApps` authentication on the Container App, so its own FQDN answers **401** to
+everything; that is expected. `/api` on the Static Web App host only works once a frontend build
+has been deployed (§12), so run this after §12:
 
 ```powershell
-$BackendFqdn = Get-Out containerAppFqdn
-curl.exe -fsS "https://$BackendFqdn/api/ready/"
+curl.exe -fsS "https://$SWA_HOST/api/ready/"   # {"status": "ok", "database": "ok"}
 ```
+
+To see a revision that never becomes ready, read the platform events and the console:
+
+```powershell
+az containerapp revision list -n $APP -g $RG -o table
+az containerapp logs show -n $APP -g $RG --type system --format json --tail 30
+az containerapp logs show -n $APP -g $RG --type console --tail 40
+```
+
+If `docker push` from your machine stalls on large layers, or `az acr login` fails with
+`AADSTS530035` (security defaults refusing the token for a personal Microsoft account), build
+the image in the registry instead. ACR quick builds (`az acr build`) use the legacy builder and
+reject the Dockerfile's `RUN --mount`, so use a task file with BuildKit, placed in a clean
+`git archive` of `backend/` (the task file must sit inside the uploaded build context):
+
+```powershell
+$Ctx = Join-Path $env:TEMP "acr-ctx"
+Remove-Item -Recurse -Force $Ctx -ErrorAction SilentlyContinue
+New-Item -ItemType Directory $Ctx | Out-Null
+git archive -o "$Ctx\backend.tar" HEAD backend
+tar -xf "$Ctx\backend.tar" -C $Ctx
+@"
+version: v1.1.0
+steps:
+  - build: --target runtime -t `$Registry/medical-backend:$Tag -f Dockerfile .
+    env: ["DOCKER_BUILDKIT=1"]
+  - push: ["`$Registry/medical-backend:$Tag"]
+"@ | Set-Content -Encoding ascii "$Ctx\backend\acr-build.yaml"
+az acr run -r $ACR -f acr-build.yaml --no-logs "$Ctx\backend"
+az acr task list-runs -r $ACR --top 1 --query "[0].{run:runId,status:status,tag:outputImages[0].tag}" -o table
+```
+
+Use `--no-logs`: streaming the build log crashes the CLI on a Windows console (`'charmap' codec`).
 
 ## 12. Frontend Deployment
 
@@ -743,6 +778,10 @@ Production should deploy from protected `main` only and require reviewer approva
 | API calls return 401 after login | Use the Static Web App URL, not the Container App URL. The app depends on same-origin `/api`. |
 | CSRF 403 | Public hostname is missing from `CSRF_TRUSTED_ORIGINS`; set `PUBLIC_HOSTNAME` and redeploy. |
 | Container App revision never ready | Production settings are missing a required secret or variable. Check Container App logs. |
+| Startup probe fails with 400, console shows `DisallowedHost: 'localhost:8000'` | Something validates the Host header before `HealthProbeMiddleware`. It must stay `MIDDLEWARE[0]`; `configure_telemetry()` places the OTel Django middleware at position 1. |
+| Container App FQDN returns 401 for every path | Expected after the Static Web App link: only the Static Web App may call it. Test through `https://<static-web-app-host>/api/...`. |
+| `/api/...` on the Static Web App returns its HTML 404 page | No frontend build deployed yet, or the linked backend is missing (`az staticwebapp backends show`). |
+| `az acr login` fails with `AADSTS530035`, or `docker push` stalls on a layer | Build in the registry with `az acr run` and a BuildKit task file (§11). |
 | PostgreSQL auth fails | `setup-postgres-entra.sh` was not run, or the app identity/client id points to the wrong tenant. |
 | Blob upload fails | Role assignments may still be propagating, or Blob account URL/container settings are wrong. |
 | GitHub OIDC fails with `AADSTS70021` | GitHub job environment does not match the federated credential subject, or repo name changed. Re-run `setup-github-oidc.ps1`. |

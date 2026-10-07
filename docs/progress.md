@@ -606,6 +606,47 @@ Scope set by the user: dev only, resource group `Medical_App` (uaenorth), repo
   (`AADSTS530035`) after a device-code sign-in; `az login --tenant <workforce> --scope
   https://vault.azure.net/.default` fixed it.
 
+### Session 12 — 2026-10-08 — dev phase 2 (backend Container App + frontend)
+Scope set by the user: `docs/deployment-path.md` §11–12 for dev. Arabic on the user flow was
+not part of it and is still open.
+- **Image:** built locally from `runtime`, but it could not be pushed from this machine.
+  `az acr login` failed with `AADSTS530035`, even right after a fresh MFA sign-in (the ARM token
+  had `amr=pwd,mfa`; the CLI's ACR token path is refused for the live.com guest account). A manual
+  `/oauth2/exchange` login worked, but `docker push` timed out on the ~90 MB dependency layer
+  three times (connections to uaenorth kept resetting). Built in the registry instead with
+  `az acr run` (D142); the quick build (`az acr build`) fails because it uses the legacy builder,
+  which rejects `RUN --mount`.
+- **Bicep phase 2** (`main-dev`, `CONTAINER_IMAGE` set; `KEY_VAULT_OPERATOR_*` taken from the
+  phase-1 deployment parameters, `ENTRA_*` from GitHub `dev`, PostgreSQL admin variables left empty
+  as in phase 1): what-if showed 4 creates (Container App `ca-medsyn-dev-api`, jobs
+  `caj-medsyn-dev-migrate` / `caj-medsyn-dev-cleanup`, SWA linked backend `django-api`). The rest
+  was read-only-property noise and no deletes. Succeeded in 4 min 48 s.
+- **Bug found in Azure, fixed test-first (`35770c4`):** the revision never became ready. Every
+  startup probe got 400 `DisallowedHost: 'localhost:8000'` because the OpenTelemetry Django
+  instrumentation (active only with an App Insights connection string, so never in tests) inserts
+  its middleware at index 0, in front of `HealthProbeMiddleware`, and calls
+  `build_absolute_uri()`. `configure_telemetry()` now defaults
+  `OTEL_PYTHON_DJANGO_MIDDLEWARE_POSITION=1`; a regression test instruments Django for real and
+  probes with `Host: localhost:8000` under strict `ALLOWED_HOSTS`. Suite: 966 passed, 1 skipped
+  (container); ruff clean. Host-run pytest currently fails on this machine (the compose PostgreSQL
+  rejects the `medical` password from the host); the container path is unaffected.
+- **Redeployed** with image `35770c4…` (ACR run `dg5`): revision `ca-medsyn-dev-api--0000001`
+  Running / Healthy. **Migrate job** succeeded twice (`…-87cwgyq` on the first image, `…-krlhord`
+  on the fixed one).
+- **Frontend:** `npm ci && npm run build` (typecheck included), deployed with SWA CLI 2 to
+  `swa-medsyn-dev-yoepoxdsywea2` (token passed through `SWA_CLI_DEPLOYMENT_TOKEN`, never printed).
+- **Verified through `https://victorious-meadow-0e5775b00.4.azurestaticapps.net`:** `/` 200
+  (`<html lang="ar" dir="rtl">`, Arabic title), deep link `/doctor/form` 200 (SPA fallback),
+  `/api/health/` 200, **`/api/ready/` 200 `{"status": "ok", "database": "ok"}`** (Entra token auth
+  to PostgreSQL works), `/api/v1/reference-data/` and `/auth/me/` return the §46
+  `NOT_AUTHENTICATED` envelope, and `/api/v1/auth/login/` redirects with 302 to
+  `medicalsyndicates.ciamlogin.com/…/authorize` with the right client id and redirect URI. The
+  Container App FQDN answers 401 to everything, as expected: the link enables `azureStaticWebApps`
+  auth on it. **Not verified:** an interactive sign-in, blob upload, App Insights ingestion.
+- **Docs:** `deployment-path.md` §11 readiness now goes through the SWA host (the old FQDN check
+  can only return 401), adds a troubleshooting snippet and the `az acr run` fallback, and §19 has
+  four new rows.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -944,6 +985,10 @@ Scope set by the user: dev only, resource group `Medical_App` (uaenorth), repo
 - **D141 — `prod` reviewer is the single maintainer, self-review allowed:** with one person on the
   repository, `prevent_self_review: true` (docs/github-setup.md §2) would make prod undeployable.
   Turn it on once a second reviewer exists.
+- **D142 — Manual dev images are built in the registry** (`az acr run` with a BuildKit task file,
+  from a `git archive` of `backend/` at HEAD, tagged with the commit SHA) whenever pushing from a
+  workstation fails. The output matches `docker build --target runtime` and pins the image to a
+  commit. CI (`backend.yml`) still builds and pushes from the runner.
 
 ## Deviations from PROMPT.md
 
@@ -1091,14 +1136,19 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**dev phase 1, PostgreSQL and Entra are done** (Session 11). Continue `docs/deployment-path.md` §11:
+**dev phase 2 is live** (Session 12): https://victorious-meadow-0e5775b00.4.azurestaticapps.net,
+backend image `medical-backend:35770c4…`, `/api/ready/` OK through the Static Web App.
 1. Enable Arabic as the default language of the `signup-signin` user flow (portal, external tenant).
-2. Phase 2: build the runtime image, push to `crmedsyndevyoepoxdsywea2`, then redeploy with
-   `CONTAINER_IMAGE`, `STATIC_WEB_APP_LOCATION=eastasia`, `KEY_VAULT_OPERATOR_OBJECT_ID/TYPE` and
-   the three `ENTRA_*` values in the shell; run the migrate job; check `/api/ready/`.
-3. Deploy the frontend to `swa-medsyn-dev-yoepoxdsywea2`, sign in, `grant_admin`.
-4. Set `ACR_NAME`, `CONTAINER_APP_NAME`, `MIGRATE_JOB_NAME`, `CLEANUP_JOB_NAME`,
-   `STATIC_WEB_APP_NAME` on GitHub `dev`; decide branch protection for `main` (needed before any
-   workflow can deploy to `dev`; the docs' rule would block a single maintainer).
-5. Carry-over: business questions / legal L1–L8, `/profile` page (deviation 32), Q-B19,
+2. Sign in once through the SWA URL (first interactive Entra sign-in, not verified yet), then
+   `grant_admin` (§13) with `az containerapp exec`; add the user to the Entra admin group.
+   Smoke-test a draft, a document upload (blob) and App Insights ingestion.
+3. Set `ACR_NAME=crmedsyndevyoepoxdsywea2`, `CONTAINER_APP_NAME=ca-medsyn-dev-api`,
+   `MIGRATE_JOB_NAME=caj-medsyn-dev-migrate`, `CLEANUP_JOB_NAME=caj-medsyn-dev-cleanup`,
+   `STATIC_WEB_APP_NAME=swa-medsyn-dev-yoepoxdsywea2` on GitHub `dev`. Decide branch protection
+   for `main` (needed before any workflow can deploy to `dev`; the docs' rule would block a
+   single maintainer).
+4. Push `35770c4` and the docs commit when the user asks (local only so far).
+5. Local: fix host-run pytest (the compose PostgreSQL rejects the `medical` password from the
+   host; probably a stale volume vs `.env`).
+6. Carry-over: business questions / legal L1–L8, `/profile` page (deviation 32), Q-B19,
    deviation 66, `revoke_admin`.
