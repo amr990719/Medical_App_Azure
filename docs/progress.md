@@ -592,7 +592,19 @@ Scope set by the user: dev only, resource group `Medical_App` (uaenorth), repo
   `id-medsyn-dev`, Static Web App `swa-medsyn-dev-yoepoxdsywea2` /
   `victorious-meadow-0e5775b00.4.azurestaticapps.net`, storage `stmedsyndevyoepoxdsywea2`.
 - **Key Vault:** `django-secret-key` generated locally and set through a temp file (never printed).
-- **Stopped before Entra:** no External ID tenant exists (only the workforce tenant).
+- **PostgreSQL (`setup-postgres-entra.sh`):** you are the Entra admin; database `medical` and the
+  `id-medsyn-dev` role with least-privilege grants created; the temporary firewall rule was removed.
+  Script fix (commit `e8836c2`): az 2.88 firewall-rule arguments are `--server-name` / `--name`.
+- **Entra External ID:** tenant "Medical Syndicates Project" (`medicalsyndicates.onmicrosoft.com`,
+  id `24135332-2a51-43e7-ae99-8b85467b7002`), user flow `signup-signin` (`22bf7bf2-…`, created
+  by the user, **Arabic not enabled yet**). `create-entra-app.ps1` created `medical-syndicates-dev`
+  (client id `f4bac467-5e63-47a2-8eb6-aceb55725824`), linked it to the flow and stored
+  `entra-client-secret` in Key Vault (expires 2027-10-07). `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`,
+  `ENTRA_AUTHORITY` set on GitHub `dev`. Script fix: Graph permissions are now set as a complete
+  list (`permission add` appended duplicates on every re-run); re-run verified (3 permissions,
+  1 secret). Sign-in notes: the workforce tenant's security defaults refused Key Vault tokens
+  (`AADSTS530035`) after a device-code sign-in; `az login --tenant <workforce> --scope
+  https://vault.azure.net/.default` fixed it.
 
 ## Decisions
 
@@ -1079,19 +1091,14 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**dev phase 1 is deployed** (Session 11). Continue `docs/deployment-path.md` at step 9:
-1. Create the Entra External ID tenant and the `signup-signin` user flow (`docs/entra-setup.md`
-   §1–2); note the external tenant id, its subdomain (`<name>.ciamlogin.com`) and the user flow id.
-2. Run `create-entra-app.ps1 -Environment dev -TenantId <external-tenant-id>
-   -PublicUrl https://victorious-meadow-0e5775b00.4.azurestaticapps.net -Local
-   -KeyVault kvmedsyndevyoepoxdsywea2 -Subscription 247d882f-6ee9-4ecc-99ac-beef555c7fa7
-   -UserFlowId <id>`; set `ENTRA_*` as GitHub `dev` variables and in the shell.
-3. Install `psql` ≥ 15, then `setup-postgres-entra.sh --resource-group Medical_App
-   --server psql-medsyn-dev-yoepoxdsywea2 --identity-name id-medsyn-dev --database medical
-   --allow-current-ip` (Git Bash: `MSYS_NO_PATHCONV=1`).
-4. Phase 2: build/push the image to `crmedsyndevyoepoxdsywea2`, redeploy with `CONTAINER_IMAGE`
-   and `STATIC_WEB_APP_LOCATION=eastasia`, run the migrate job, deploy the frontend.
-5. Decide branch protection for `main` (needed before any workflow can deploy to `dev`; the
-   docs' rule with 1 required approval + `enforce_admins` would block a single maintainer).
-6. Carry-over: business questions / legal L1–L8, `/profile` page (deviation 32), Q-B19,
+**dev phase 1, PostgreSQL and Entra are done** (Session 11). Continue `docs/deployment-path.md` §11:
+1. Enable Arabic as the default language of the `signup-signin` user flow (portal, external tenant).
+2. Phase 2: build the runtime image, push to `crmedsyndevyoepoxdsywea2`, then redeploy with
+   `CONTAINER_IMAGE`, `STATIC_WEB_APP_LOCATION=eastasia`, `KEY_VAULT_OPERATOR_OBJECT_ID/TYPE` and
+   the three `ENTRA_*` values in the shell; run the migrate job; check `/api/ready/`.
+3. Deploy the frontend to `swa-medsyn-dev-yoepoxdsywea2`, sign in, `grant_admin`.
+4. Set `ACR_NAME`, `CONTAINER_APP_NAME`, `MIGRATE_JOB_NAME`, `CLEANUP_JOB_NAME`,
+   `STATIC_WEB_APP_NAME` on GitHub `dev`; decide branch protection for `main` (needed before any
+   workflow can deploy to `dev`; the docs' rule would block a single maintainer).
+5. Carry-over: business questions / legal L1–L8, `/profile` page (deviation 32), Q-B19,
    deviation 66, `revoke_admin`.
