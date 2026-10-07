@@ -88,8 +88,8 @@ rule_name=""
 cleanup() {
     if [ -n "$rule_name" ]; then
         echo "Removing temporary firewall rule ${rule_name}"
-        az postgres flexible-server firewall-rule delete -g "$resource_group" -n "$server" \
-            --rule-name "$rule_name" --yes --output none || true
+        az postgres flexible-server firewall-rule delete -g "$resource_group" --server-name "$server" \
+            --name "$rule_name" --yes --output none || true
     fi
 }
 trap cleanup EXIT
@@ -98,8 +98,8 @@ if [ "$allow_current_ip" = true ]; then
     my_ip="$(curl -fsS https://api.ipify.org)"
     rule_name="setup-$(date -u +%Y%m%d%H%M%S)"
     echo "Adding temporary firewall rule ${rule_name} for this machine"
-    az postgres flexible-server firewall-rule create -g "$resource_group" -n "$server" \
-        --rule-name "$rule_name" --start-ip-address "$my_ip" --end-ip-address "$my_ip" --output none
+    az postgres flexible-server firewall-rule create -g "$resource_group" --server-name "$server" \
+        --name "$rule_name" --start-ip-address "$my_ip" --end-ip-address "$my_ip" --output none
 fi
 
 # 2. Entra access token as the password (valid ~1 hour; never printed).
