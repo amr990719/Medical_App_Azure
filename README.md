@@ -571,6 +571,7 @@ More: [`docs/azure-deployment.md`](docs/azure-deployment.md), [`docs/entra-setup
 | [`docs/database.md`](docs/database.md) | ER diagram (Mermaid), constraints, indexes, migrations |
 | [`docs/api.md`](docs/api.md) | endpoints, error codes, link to the OpenAPI schema |
 | [`docs/business-rules.md`](docs/business-rules.md) | fees, national ID, kinships, documents, statuses, open business questions |
+| [`docs/deployment-path.md`](docs/deployment-path.md) | end-to-end Azure and GitHub deployment map |
 | [`docs/azure-deployment.md`](docs/azure-deployment.md) | deployment steps, migrations, rollback, backups and restore, cost |
 | [`docs/entra-setup.md`](docs/entra-setup.md) | External ID tenant, user flow, app registration, admin MFA |
 | [`docs/github-setup.md`](docs/github-setup.md) | GitHub environments, OIDC, variables, branch protection |
