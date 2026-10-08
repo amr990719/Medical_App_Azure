@@ -665,6 +665,12 @@ not part of it and is still open.
   and posted to `…/start` with only `args` replaced (`--image` overrides on `job start` may drop the
   env). Output: `az containerapp job logs show` (needs the `containerapp` extension, 1.3.0b5 installed).
   Log Analytics queries are refused by security defaults (non-ARM token).
+- **First real sign-in verified** (after `8490e3a`): `/auth/callback/` 302 created user
+  `c1b0d7b9-…`, `/auth/me/` 200, sign-out then sign-in again matched the same user by (oid, tid).
+  `grant_admin amr_ashraf55@hotmail.com` ran as job execution `caj-medsyn-dev-migrate-myfcr7j`:
+  "Granted ADMIN to user c1b0d7b9-…". Admin sign-in with MFA is **not verified** yet.
+- **Azure CLI sessions last about an hour:** with security defaults and a personal (live.com)
+  account, the CLI cannot refresh tokens silently, so long sessions need repeated MFA `az login`.
 
 ## Decisions
 
@@ -1164,11 +1170,11 @@ confirmed by the organization). Technical/environment questions for the user:
 **dev phase 2 is live** (Session 12): https://victorious-meadow-0e5775b00.4.azurestaticapps.net,
 backend image `medical-backend:35770c4…`, `/api/ready/` OK through the Static Web App. GitHub
 `dev`/`dev-plan` variables are complete and `main` is protected (D143).
-1. User: sign in again through the SWA URL (the nonce fix is live); enable Arabic as the default
-   language of the `signup-signin` user flow (portal, external tenant).
-2. Then `grant_admin amr_ashraf55@hotmail.com` (§13) via the job args override (Session 12). Add
-   the user to the Entra admin group. Admins need `mfa` in `amr` (ENTRA_ADMIN_REQUIRE_MFA=true):
-   check that the user flow enforces MFA, or the admin's next sign-in is refused with MFA_REQUIRED.
+1. User: enable Arabic as the default language of the `signup-signin` user flow (portal,
+   external tenant).
+2. Admin sign-in: `amr_ashraf55@hotmail.com` is ADMIN now. Admins need `mfa` in `amr`
+   (ENTRA_ADMIN_REQUIRE_MFA=true): set up MFA (Conditional Access in the external tenant) or the
+   next admin sign-in is refused with MFA_REQUIRED. Add the user to the Entra admin group.
    Smoke-test a draft, a document upload (blob) and App Insights ingestion.
 3. With user confirmation: push the local commits on a branch and open a PR (direct pushes to
    `main` are now refused). Merging it runs `backend.yml` / `infrastructure.yml` deploy-dev for
