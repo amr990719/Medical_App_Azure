@@ -197,6 +197,10 @@ Recommended settings:
 - block force pushes
 - block branch deletion
 
+With a single maintainer, use 0 required approvals (one approval would block every merge), and
+enforce the rule for admins. Every workflow is path-filtered, so a required check whose workflow
+did not run blocks the PR forever: require only checks that run on every PR (or add a gate job).
+
 Workflow check names come from:
 
 ```text

@@ -646,6 +646,13 @@ not part of it and is still open.
 - **Docs:** `deployment-path.md` §11 readiness now goes through the SWA host (the old FQDN check
   can only return 401), adds a troubleshooting snippet and the `az acr run` fallback, and §19 has
   four new rows.
+- **GitHub (after the deploy):** `dev` now has `ACR_NAME`, `CONTAINER_APP_NAME`, `MIGRATE_JOB_NAME`,
+  `CLEANUP_JOB_NAME`, `STATIC_WEB_APP_NAME`; `dev-plan` got `CONTAINER_APP_NAME` + the three
+  `ENTRA_*` values (the PR what-if keeps the running image only with them). `main` is protected
+  (D143). Remote `main` is still `5092034 first commit`; the 7 local commits since then are not
+  pushed, and no workflow has ever run, so no status-check names exist yet.
+- **Blocked:** the Azure CLI token expired again a day later (`AADSTS530035`), so the sign-in
+  check and `grant_admin` wait for an MFA `az login`.
 
 ## Decisions
 
@@ -989,6 +996,12 @@ not part of it and is still open.
   from a `git archive` of `backend/` at HEAD, tagged with the commit SHA) whenever pushing from a
   workstation fails. The output matches `docker build --target runtime` and pins the image to a
   commit. CI (`backend.yml`) still builds and pushes from the runner.
+- **D143 — `main` protection for a single maintainer** (user's choice): pull request required with
+  0 approvals, stale reviews dismissed, conversations resolved, no force pushes, no deletion,
+  enforced for admins too. Required status checks are not set yet: no workflow has run, and every
+  workflow is path-filtered, so a required check from a skipped workflow would block unrelated PRs
+  forever. Add them through an always-running gate job, or by choosing checks carefully. Replaces
+  the "1 approval" rule in deployment-path.md §4.3 while there is one maintainer.
 
 ## Deviations from PROMPT.md
 
@@ -1137,17 +1150,18 @@ confirmed by the organization). Technical/environment questions for the user:
 ## Next session starts with
 
 **dev phase 2 is live** (Session 12): https://victorious-meadow-0e5775b00.4.azurestaticapps.net,
-backend image `medical-backend:35770c4…`, `/api/ready/` OK through the Static Web App.
-1. Enable Arabic as the default language of the `signup-signin` user flow (portal, external tenant).
-2. Sign in once through the SWA URL (first interactive Entra sign-in, not verified yet), then
-   `grant_admin` (§13) with `az containerapp exec`; add the user to the Entra admin group.
+backend image `medical-backend:35770c4…`, `/api/ready/` OK through the Static Web App. GitHub
+`dev`/`dev-plan` variables are complete and `main` is protected (D143).
+1. User: `az login --tenant 448ad25b-b8b8-4ebe-8943-f6f1d0963835` (MFA); enable Arabic as the
+   default language of the `signup-signin` user flow (portal, external tenant); sign in once
+   through the SWA URL.
+2. Then `grant_admin` (§13). `az containerapp exec` needs a TTY, so from a non-interactive shell
+   start the migrate job with a command override instead. Add the user to the Entra admin group.
    Smoke-test a draft, a document upload (blob) and App Insights ingestion.
-3. Set `ACR_NAME=crmedsyndevyoepoxdsywea2`, `CONTAINER_APP_NAME=ca-medsyn-dev-api`,
-   `MIGRATE_JOB_NAME=caj-medsyn-dev-migrate`, `CLEANUP_JOB_NAME=caj-medsyn-dev-cleanup`,
-   `STATIC_WEB_APP_NAME=swa-medsyn-dev-yoepoxdsywea2` on GitHub `dev`. Decide branch protection
-   for `main` (needed before any workflow can deploy to `dev`; the docs' rule would block a
-   single maintainer).
-4. Push `35770c4` and the docs commit when the user asks (local only so far).
+3. With user confirmation: push the 7 local commits on a branch and open a PR (direct pushes to
+   `main` are now refused). Merging it runs `backend.yml` / `infrastructure.yml` deploy-dev for
+   the first time (the first CI deploy, which also exercises the OIDC identities).
+4. After the first workflow run: design required status checks (path filters, see D143).
 5. Local: fix host-run pytest (the compose PostgreSQL rejects the `medical` password from the
    host; probably a stale volume vs `.env`).
 6. Carry-over: business questions / legal L1–L8, `/profile` page (deviation 32), Q-B19,
