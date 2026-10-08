@@ -2,8 +2,11 @@
 ID-token validation, user mapped by (oid, tid), Django session, safe redirects.
 
 MSAL is replaced at the `OidcClient` boundary; ID tokens are real RS256 JWTs signed with a key
-generated per test run, so signature, issuer, audience, nonce and expiry checks really run."""
+generated per test run, so signature, issuer, audience, nonce and expiry checks really run.
+The fake follows MSAL's nonce contract: the flow keeps the raw nonce, the authority receives (and
+the ID token carries) its SHA-256 hex digest."""
 
+import hashlib
 import time
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
@@ -35,6 +38,8 @@ ENTRA = {
 }
 LOGIN = "/api/v1/auth/login/"
 CALLBACK = "/api/v1/auth/callback/"
+FLOW_NONCE = "nonce-1"  # kept in the session flow
+NONCE_CLAIM = hashlib.sha256(FLOW_NONCE.encode("ascii")).hexdigest()  # sent to, echoed by Entra
 
 PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -50,7 +55,7 @@ def entra_settings(settings):
         yield patched
 
 
-def make_token(*, key=PRIVATE_KEY, nonce="nonce-1", **overrides) -> str:
+def make_token(*, key=PRIVATE_KEY, nonce=NONCE_CLAIM, **overrides) -> str:
     now = int(time.time())
     payload = {
         "iss": ISSUER,
@@ -81,9 +86,9 @@ class FakeOidcClient:
     def begin(self, *, redirect_uri: str) -> dict:
         return {
             "auth_uri": f"{ENTRA['ENTRA_AUTHORITY']}/oauth2/v2.0/authorize?client_id={CLIENT_ID}"
-            "&code_challenge=abc&code_challenge_method=S256&state=state-1&nonce=nonce-1",
+            f"&code_challenge=abc&code_challenge_method=S256&state=state-1&nonce={NONCE_CLAIM}",
             "state": "state-1",
-            "nonce": "nonce-1",
+            "nonce": FLOW_NONCE,
             "code_verifier": "verifier-secret",
             "redirect_uri": redirect_uri,
         }
@@ -267,7 +272,7 @@ def test_callback_is_rate_limited():
 
 
 def test_valid_token_returns_claims():
-    assert validate_id_token(make_token(), nonce="nonce-1")["oid"] == "oid-1"
+    assert validate_id_token(make_token(), nonce=FLOW_NONCE)["oid"] == "oid-1"
 
 
 @pytest.mark.parametrize(
@@ -279,28 +284,44 @@ def test_valid_token_returns_claims():
         {"exp": int(time.time()) - 3600, "iat": int(time.time()) - 7200},
         {"nonce": "replayed"},
         {"nonce": None},
+        {"nonce": FLOW_NONCE},  # the raw nonce never leaves the server
     ],
-    ids=["signature", "issuer", "audience", "expired", "nonce", "nonce-missing"],
+    ids=["signature", "issuer", "audience", "expired", "nonce", "nonce-missing", "nonce-raw"],
 )
 def test_invalid_tokens_rejected(token_kwargs):
     with pytest.raises(OidcError):
-        validate_id_token(make_token(**token_kwargs), nonce="nonce-1")
+        validate_id_token(make_token(**token_kwargs), nonce=FLOW_NONCE)
+
+
+def test_nonce_matches_what_msal_sends_to_the_authority():
+    """Contract with MSAL itself (no network): the nonce in the authorization request, which the
+    ID token echoes, is a digest of the one stored in the flow."""
+    from msal.oauth2cli.oidc import Client
+
+    msal_client = Client(
+        {"authorization_endpoint": "https://example.test/authorize", "token_endpoint": "x"},
+        CLIENT_ID,
+    )
+    flow = msal_client.initiate_auth_code_flow(redirect_uri=ENTRA["ENTRA_REDIRECT_URI"])
+    sent = parse_qs(urlparse(flow["auth_uri"]).query)["nonce"][0]
+    assert sent != flow["nonce"]
+    assert validate_id_token(make_token(nonce=sent), nonce=flow["nonce"])["oid"] == "oid-1"
 
 
 def test_unsigned_token_rejected():
     unsigned = jwt.encode({"iss": ISSUER, "aud": CLIENT_ID}, None, algorithm="none")
     with pytest.raises(OidcError):
-        validate_id_token(unsigned, nonce="nonce-1")
+        validate_id_token(unsigned, nonce=FLOW_NONCE)
 
 
 def test_token_from_another_tenant_rejected():
     with pytest.raises(OidcError):
-        validate_id_token(make_token(tid="another-tenant"), nonce="nonce-1")
+        validate_id_token(make_token(tid="another-tenant"), nonce=FLOW_NONCE)
 
 
 def test_token_without_oid_rejected():
     from apps.accounts.oidc.claims import identity_from_claims
 
-    claims = validate_id_token(make_token(oid=None), nonce="nonce-1")
+    claims = validate_id_token(make_token(oid=None), nonce=FLOW_NONCE)
     with pytest.raises(OidcError):
         identity_from_claims(claims)

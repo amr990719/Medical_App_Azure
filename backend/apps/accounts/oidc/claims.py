@@ -6,6 +6,7 @@ audience, expiry/not-before, nonce, and tenant. Users are matched by (oid, tid) 
 match alone never links an identity to an existing account.
 """
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
@@ -64,7 +65,14 @@ def signing_key(raw_token: str):
     return _jwks_client(jwks_uri()).get_signing_key_from_jwt(raw_token).key
 
 
+def nonce_claim(flow_nonce: str) -> str:
+    """MSAL keeps the raw nonce in the flow and sends its SHA-256 hex digest to the authority
+    (msal.oauth2cli.oidc), so the digest is what a genuine ID token carries."""
+    return hashlib.sha256(flow_nonce.encode("ascii")).hexdigest()
+
+
 def validate_id_token(raw_token: str, *, nonce: str) -> dict:
+    """`nonce` is the raw nonce from the session flow."""
     try:
         claims = jwt.decode(
             raw_token,
@@ -78,7 +86,7 @@ def validate_id_token(raw_token: str, *, nonce: str) -> dict:
     except (jwt.PyJWTError, requests.RequestException) as exc:
         logger.warning("ID token rejected", extra={"reason": type(exc).__name__})
         raise OidcError() from None
-    if not nonce or claims.get("nonce") != nonce:
+    if not nonce or claims.get("nonce") != nonce_claim(nonce):
         logger.warning("ID token rejected", extra={"reason": "nonce"})
         raise OidcError()
     tenant = settings.ENTRA_TENANT_ID
