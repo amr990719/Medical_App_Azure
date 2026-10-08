@@ -651,8 +651,20 @@ not part of it and is still open.
   `ENTRA_*` values (the PR what-if keeps the running image only with them). `main` is protected
   (D143). Remote `main` is still `5092034 first commit`; the 7 local commits since then are not
   pushed, and no workflow has ever run, so no status-check names exist yet.
-- **Blocked:** the Azure CLI token expired again a day later (`AADSTS530035`), so the sign-in
-  check and `grant_admin` wait for an MFA `az login`.
+- **First real sign-in → second Azure-only bug, fixed test-first (`8490e3a`):** every
+  `/auth/callback/` logged `ID token rejected, reason: nonce`, so no user was created and
+  `grant_admin amr_ashraf55@hotmail.com` failed with "No single user matches". MSAL keeps the raw
+  nonce in the flow but sends `sha256(nonce)` hex to the authority, while `validate_id_token`
+  compared the claim with the raw value. The test fake used `"nonce-1"` on both sides. Now
+  `nonce_claim()` hashes the flow nonce, the fake follows MSAL's contract, a token with the raw
+  nonce is rejected, and a contract test drives MSAL's real `initiate_auth_code_flow`. Suite:
+  968 passed, 1 skipped; ruff clean. Image `8490e3a…` (ACR run `dg6`) deployed: revision
+  `ca-medsyn-dev-api--0000002` Healthy, `/api/ready/` 200 (no migrations in this change).
+- **One-off management commands** in Azure: `az containerapp exec` needs a TTY, so the job's
+  full container (image, 31 env vars, secrets) is copied from `GET …/jobs/caj-medsyn-dev-migrate`
+  and posted to `…/start` with only `args` replaced (`--image` overrides on `job start` may drop the
+  env). Output: `az containerapp job logs show` (needs the `containerapp` extension, 1.3.0b5 installed).
+  Log Analytics queries are refused by security defaults (non-ARM token).
 
 ## Decisions
 
@@ -1152,13 +1164,13 @@ confirmed by the organization). Technical/environment questions for the user:
 **dev phase 2 is live** (Session 12): https://victorious-meadow-0e5775b00.4.azurestaticapps.net,
 backend image `medical-backend:35770c4…`, `/api/ready/` OK through the Static Web App. GitHub
 `dev`/`dev-plan` variables are complete and `main` is protected (D143).
-1. User: `az login --tenant 448ad25b-b8b8-4ebe-8943-f6f1d0963835` (MFA); enable Arabic as the
-   default language of the `signup-signin` user flow (portal, external tenant); sign in once
-   through the SWA URL.
-2. Then `grant_admin` (§13). `az containerapp exec` needs a TTY, so from a non-interactive shell
-   start the migrate job with a command override instead. Add the user to the Entra admin group.
+1. User: sign in again through the SWA URL (the nonce fix is live); enable Arabic as the default
+   language of the `signup-signin` user flow (portal, external tenant).
+2. Then `grant_admin amr_ashraf55@hotmail.com` (§13) via the job args override (Session 12). Add
+   the user to the Entra admin group. Admins need `mfa` in `amr` (ENTRA_ADMIN_REQUIRE_MFA=true):
+   check that the user flow enforces MFA, or the admin's next sign-in is refused with MFA_REQUIRED.
    Smoke-test a draft, a document upload (blob) and App Insights ingestion.
-3. With user confirmation: push the 7 local commits on a branch and open a PR (direct pushes to
+3. With user confirmation: push the local commits on a branch and open a PR (direct pushes to
    `main` are now refused). Merging it runs `backend.yml` / `infrastructure.yml` deploy-dev for
    the first time (the first CI deploy, which also exercises the OIDC identities).
 4. After the first workflow run: design required status checks (path filters, see D143).
