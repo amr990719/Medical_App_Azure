@@ -27,7 +27,7 @@ Git repository
   v
 GitHub platform setup
   |
-  | 3. Create environments: dev, dev-plan, staging, staging-plan, prod, prod-plan
+  | 3. Create environments: dev, staging, prod
   | 4. Protect main and configure prod reviewers
   v
 Azure platform setup
@@ -159,11 +159,8 @@ Create these environments:
 
 ```text
 dev
-dev-plan
 staging
-staging-plan
 prod
-prod-plan
 ```
 
 In GitHub UI:
@@ -174,8 +171,9 @@ Repository -> Settings -> Environments -> New environment
 
 | Environment | Purpose |
 |---|---|
-| `dev`, `staging`, `prod` | Real deployments |
-| `dev-plan`, `staging-plan`, `prod-plan` | Read-only what-if / preview identities |
+| `dev`, `staging`, `prod` | Real deployments (and manual what-if-only runs) |
+
+There are no `-plan` environments any more: ARM what-if needs write permission on every resource in the template, so a read-only preview identity cannot work (D145). Pull requests get no Azure credential.
 
 For `prod`, require reviewers. For deploy environments, restrict deployment branches to protected
 branches after branch protection is configured.
@@ -311,7 +309,7 @@ This creates:
 | Azure identity | GitHub environment | Capability |
 |---|---|---|
 | `id-github-medsyn-dev` | `dev` | Deploy infrastructure and app |
-| `id-github-medsyn-dev-plan` | `dev-plan` | Read-only what-if |
+| `id-github-medsyn-dev-plan` | none (retired, D145) | Still created by `setup-github-oidc`; unused |
 | `id-medsyn-dev` | none | Runtime identity used by the app |
 
 Save the printed values for GitHub environment variables:
@@ -677,10 +675,7 @@ Set:
 | `POSTGRES_ENTRA_ADMIN_NAME` | Optional group/user display name |
 | `POSTGRES_ENTRA_ADMIN_TYPE` | Optional `Group` or `User` |
 
-For `dev-plan`, set the same Azure variables, but use the plan identity client id for
-`AZURE_CLIENT_ID`.
-
-Repeat for `staging`, `staging-plan`, `prod`, and `prod-plan` when those environments are ready.
+Repeat for `staging` and `prod` when those environments are ready.
 
 ## 15. How GitHub Actions Deploys After Setup
 
@@ -742,7 +737,7 @@ Repeat the same sequence with:
 ENV = staging
 RG = rg-medsyn-staging
 parameter file = infrastructure/parameters/staging.bicepparam
-GitHub environments = staging and staging-plan
+GitHub environment = staging
 ```
 
 Use a separate Entra app registration for staging.
@@ -778,7 +773,7 @@ Then repeat with:
 ENV = prod
 RG = rg-medsyn-prod
 parameter file = infrastructure/parameters/prod.bicepparam
-GitHub environments = prod and prod-plan
+GitHub environment = prod
 ```
 
 Production should deploy from protected `main` only and require reviewer approval.

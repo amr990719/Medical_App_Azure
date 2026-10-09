@@ -6,7 +6,7 @@
 # the Container App is passed as CONTAINER_IMAGE. When no Container App exists yet, the
 # deployment runs the first phase only (no app, jobs or SWA link; docs/azure-deployment.md).
 #
-# GitHub environment variables used (in `<env>` and `<env>-plan`): AZURE_CLIENT_ID, AZURE_TENANT_ID,
+# GitHub environment variables used (in `<env>`): AZURE_CLIENT_ID, AZURE_TENANT_ID,
 # AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, CONTAINER_APP_NAME (after phase 1), ENTRA_AUTHORITY,
 # ENTRA_TENANT_ID, ENTRA_CLIENT_ID, and optionally PUBLIC_HOSTNAME, STATIC_WEB_APP_LOCATION,
 # ENABLE_OCR, ENABLE_PRIVATE_NETWORKING, POSTGRES_ENTRA_ADMIN_OBJECT_ID / _NAME / _TYPE.
@@ -35,12 +35,17 @@ jobs:
     name: ${{ inputs.what_if_only && 'what-if' || 'deploy' }} ${{ inputs.environment }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    # what-if-only runs (pull requests, previews) use the `<env>-plan` GitHub environment, whose
-    # identity can only read and preview; deployments use `<env>`, restricted to main.
+    # Every run, what-if-only included, uses `<env>`, which accepts only the protected main branch.
+    # ARM what-if needs write permission on every resource in the template, so a read-only
+    # `<env>-plan` identity cannot preview it (D145).
     environment:
-      name: ${{ inputs.what_if_only && format('{0}-plan', inputs.environment) || inputs.environment }}
+      name: ${{ inputs.environment }}
+    # Shared with the other workflow that writes the Container App (backend image / Bicep), so the
+    # two never interleave: infrastructure reads the running image only once it holds the group,
+    # so either order ends on the newest image (Q-D1). GitHub keeps one *pending* run per group,
+    # so a third queued deploy replaces a pending one; re-run it if that happens.
     concurrency:
-      group: deploy-infrastructure-${{ inputs.environment }}
+      group: deploy-azure-app-${{ inputs.environment }}
       cancel-in-progress: false
     env:
       ENVIRONMENT: ${{ inputs.environment }}

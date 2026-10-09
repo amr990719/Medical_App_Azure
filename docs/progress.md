@@ -1031,6 +1031,14 @@ not part of it and is still open.
   workflow is path-filtered, so a required check from a skipped workflow would block unrelated PRs
   forever. Add them through an always-running gate job, or by choosing checks carefully. Replaces
   the "1 approval" rule in deployment-path.md §4.3 while there is one maintainer.
+- **D145 — No PR what-if; no `-plan` environments** (user's choice): the dev-plan what-if failed
+  with `AuthorizationFailed` for every resource in the template. ARM what-if preflight needs
+  write permission on each resource (20 refusals: storage, Key Vault, identities, nested
+  deployments), not only `deployments/whatIf/action`, so a read-only preview identity cannot work.
+  PRs now get no Azure credential (`bicep build` + lint only); what-if runs inside each deploy job
+  and in manual runs from `main`, both in the branch-protected `<env>`. The `id-github-medsyn-dev-plan`
+  identity, its role and the `dev-plan` GitHub environment are unused; deleting them is left to the
+  user (destructive).
 - **D144 — Admin MFA on dev is enforced by Conditional Access only** (user's choice):
   `entraAdminRequireMfa = false` in `dev.bicepparam`. Microsoft documents `amr` as v1.0-only, and
   External ID issues v2.0 ID tokens, so the app-side check (`"mfa" in amr`) refused an admin who
@@ -1112,7 +1120,11 @@ not part of it and is still open.
 
 ## Open questions
 
-- **Q-D1 — Concurrent dev deploys on merge:** `infrastructure.yml` and `backend.yml` both run
+- **Q-D1 (fix in PR #2) — Concurrent dev deploys on merge:** it happened on the first CI deploy
+  (merge `8164960`): infrastructure kept image `8490e3a` (read 20:43:49, Bicep 20:44:15–20:48:49)
+  while backend created revision `…--g81649602d39f-1` at 20:46:58. Fix: the backend and
+  infrastructure deploy jobs share the concurrency group `deploy-azure-app-<env>`.
+  Original note: `infrastructure.yml` and `backend.yml` both run
   on a push to `main`. The infrastructure run reads the "running image" before its Bicep
   deployment and re-applies it, so it can roll back an image `backend.yml` deployed in between.
   Check the active revision's image after merges that touch both; long term, serialize them (for
