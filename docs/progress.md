@@ -1120,7 +1120,11 @@ not part of it and is still open.
 
 ## Open questions
 
-- **Q-D1 — Concurrent dev deploys on merge:** `infrastructure.yml` and `backend.yml` both run
+- **Q-D1 (fix in PR #2) — Concurrent dev deploys on merge:** it happened on the first CI deploy
+  (merge `8164960`): infrastructure kept image `8490e3a` (read 20:43:49, Bicep 20:44:15–20:48:49)
+  while backend created revision `…--g81649602d39f-1` at 20:46:58. Fix: the backend and
+  infrastructure deploy jobs share the concurrency group `deploy-azure-app-<env>`.
+  Original note: `infrastructure.yml` and `backend.yml` both run
   on a push to `main`. The infrastructure run reads the "running image" before its Bicep
   deployment and re-applies it, so it can roll back an image `backend.yml` deployed in between.
   Check the active revision's image after merges that touch both; long term, serialize them (for

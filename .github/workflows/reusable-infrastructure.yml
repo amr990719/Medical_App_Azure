@@ -40,8 +40,12 @@ jobs:
     # `<env>-plan` identity cannot preview it (D145).
     environment:
       name: ${{ inputs.environment }}
+    # Shared with the other workflow that writes the Container App (backend image / Bicep), so the
+    # two never interleave: infrastructure reads the running image only once it holds the group,
+    # so either order ends on the newest image (Q-D1). GitHub keeps one *pending* run per group,
+    # so a third queued deploy replaces a pending one; re-run it if that happens.
     concurrency:
-      group: deploy-infrastructure-${{ inputs.environment }}
+      group: deploy-azure-app-${{ inputs.environment }}
       cancel-in-progress: false
     env:
       ENVIRONMENT: ${{ inputs.environment }}
