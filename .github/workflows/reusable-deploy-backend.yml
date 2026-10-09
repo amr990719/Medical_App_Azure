@@ -5,11 +5,13 @@
 #   3. point the cleanup job at the new image;
 #   4. create the new Container App revision; Container Apps shifts traffic only when its
 #      readiness probe (/api/ready/) passes;
-#   5. smoke test /api/health/ and /api/ready/.
+#   5. smoke test /api/health/ and /api/ready/ through the Static Web App (its linked backend
+#      enables azureStaticWebApps auth, so the Container App FQDN answers 401 to everything).
 # Rollback: docs/azure-deployment.md ("Rolling back").
 #
 # GitHub environment variables used: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
-# AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME, MIGRATE_JOB_NAME, CLEANUP_JOB_NAME.
+# AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME, MIGRATE_JOB_NAME, CLEANUP_JOB_NAME,
+# STATIC_WEB_APP_NAME.
 name: deploy backend
 
 on:
@@ -40,10 +42,12 @@ jobs:
       CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
       MIGRATE_JOB_NAME: ${{ vars.MIGRATE_JOB_NAME }}
       CLEANUP_JOB_NAME: ${{ vars.CLEANUP_JOB_NAME }}
+      STATIC_WEB_APP_NAME: ${{ vars.STATIC_WEB_APP_NAME }}
     steps:
       - name: Check environment variables
         run: |
-          for name in RESOURCE_GROUP ACR_NAME CONTAINER_APP_NAME MIGRATE_JOB_NAME CLEANUP_JOB_NAME; do
+          for name in RESOURCE_GROUP ACR_NAME CONTAINER_APP_NAME MIGRATE_JOB_NAME CLEANUP_JOB_NAME \
+            STATIC_WEB_APP_NAME; do
             if [ -z "${!name}" ]; then
               echo "::error::GitHub environment '${{ inputs.environment }}' is missing a variable for ${name} (docs/github-setup.md)"
               exit 1
@@ -121,9 +125,9 @@ jobs:
 
       - name: Smoke test
         run: |
-          fqdn="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
-            --query properties.configuration.ingress.fqdn -o tsv)"
-          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "https://${fqdn}/api/health/"
+          host="$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+            --query defaultHostname -o tsv)"
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "https://${host}/api/health/"
           echo
-          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "https://${fqdn}/api/ready/"
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "https://${host}/api/ready/"
           echo
