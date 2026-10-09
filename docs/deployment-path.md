@@ -800,6 +800,7 @@ Production should deploy from protected `main` only and require reviewer approva
 | PostgreSQL auth fails | `setup-postgres-entra.sh` was not run, or the app identity/client id points to the wrong tenant. |
 | Blob upload fails | Role assignments may still be propagating, or Blob account URL/container settings are wrong. |
 | GitHub OIDC fails with `AADSTS70021` | GitHub job environment does not match the federated credential subject, or repo name changed. Re-run `setup-github-oidc.ps1`. |
+| `azure/login` fails with `AADSTS700213` for subject `repo:<owner>@<id>/<repo>@<id>:environment:<env>` | The repository uses immutable OIDC subjects. `setup-github-oidc` now reads the prefix from `GET repos/<repo>/actions/oidc/customization/sub`; re-run it (or update the federated credential subject). |
 | Docker push unauthorized | The GitHub deploy identity needs AcrPush, or `ACR_NAME` points to the wrong registry. |
 
 ## 20. Source Files To Know

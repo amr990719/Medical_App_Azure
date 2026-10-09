@@ -669,6 +669,17 @@ not part of it and is still open.
   `c1b0d7b9-…`, `/auth/me/` 200, sign-out then sign-in again matched the same user by (oid, tid).
   `grant_admin amr_ashraf55@hotmail.com` ran as job execution `caj-medsyn-dev-migrate-myfcr7j`:
   "Granted ADMIN to user c1b0d7b9-…". Admin sign-in with MFA is **not verified** yet.
+- **First CI run (PR #1, branch `deploy/dev-phase-2`):** backend tests, frontend CI, Playwright and
+  the image build passed. Two infrastructure failures, both fixed:
+  (1) shellcheck SC2015 in `setup-postgres-entra.sh` (`5e2f05b`);
+  (2) the dev-plan what-if failed with `AADSTS700213`. The repository uses **immutable OIDC
+  subjects** (`repo:amr990719@202661413/Medical_App_Azure@1408726581:environment:…`), but
+  `setup-github-oidc` had created the classic `repo:amr990719/Medical_App_Azure:…` subjects. Both
+  scripts now read `sub_claim_prefix` from the GitHub API, and both dev federated credentials were
+  updated. Re-running the PowerShell script also found that the custom-role update path (never
+  exercised before) died on an az stderr warning under 5.1 (fixed: `Continue` for that call), and
+  that it needs a Graph token, which security defaults refuse for this account. So `dev-plan` was
+  updated directly with `az identity federated-credential update`; the roles were unchanged.
 - **Azure CLI sessions last about an hour:** with security defaults and a personal (live.com)
   account, the CLI cannot refresh tokens silently, so long sessions need repeated MFA `az login`.
 
