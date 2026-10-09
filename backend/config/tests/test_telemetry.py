@@ -58,6 +58,37 @@ def test_configures_azure_monitor_with_masking_processors(monkeypatch):
     psycopg.assert_called_once()
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("path", ["/api/health/", "/api/ready/"])
+def test_probes_skip_host_validation_with_django_instrumented(monkeypatch, settings, path):
+    """Container Apps probes send `Host: localhost:8000`. The OTel Django middleware calls
+    `request.build_absolute_uri()` (host validation), so it must sit after HealthProbeMiddleware,
+    or every probe gets 400 DisallowedHost and the replica is restarted forever."""
+    from django.test import Client
+    from opentelemetry.instrumentation.django import DjangoInstrumentor
+
+    monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", CONNECTION)
+    monkeypatch.delenv("OTEL_PYTHON_DJANGO_MIDDLEWARE_POSITION", raising=False)
+    settings.ALLOWED_HOSTS = ["app.example.com"]
+    settings.MIDDLEWARE = list(settings.MIDDLEWARE)
+    instrumentor = DjangoInstrumentor()
+    with (
+        mock.patch.dict("os.environ"),  # configure_telemetry sets the position default
+        mock.patch(
+            "azure.monitor.opentelemetry.configure_azure_monitor",
+            side_effect=lambda **_: instrumentor.instrument(),
+        ),
+        mock.patch.object(telemetry, "_instrument_psycopg"),
+    ):
+        telemetry.configure_telemetry()
+    try:
+        assert settings.MIDDLEWARE[0] == "config.middleware.HealthProbeMiddleware"
+        assert settings.MIDDLEWARE[1] == DjangoInstrumentor._opentelemetry_middleware
+        assert Client().get(path, HTTP_HOST="localhost:8000").status_code == 200
+    finally:
+        instrumentor.uninstrument()
+
+
 def test_entra_ingestion_uses_the_managed_identity(monkeypatch):
     monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", CONNECTION)
     monkeypatch.setenv("APPLICATIONINSIGHTS_AUTHENTICATION", "entra")

@@ -68,9 +68,13 @@ esac
 command -v az >/dev/null || { echo "Azure CLI (az) is required" >&2; exit 1; }
 
 # --- The deploy credential is only as safe as the GitHub environment's protection -----------
+# Subject GitHub puts in the OIDC token. Repositories can use immutable ids
+# ("repo:<owner>@<owner-id>/<repo>@<repo-id>"), which the classic "repo:<owner>/<repo>" never matches.
+subject_prefix="repo:${repo}"
 if [ "$skip_github_check" = true ]; then
     echo "WARNING: --skip-github-check: environment '${environment}' protection NOT verified." >&2
     echo "         Until it accepts protected branches only, any branch can deploy." >&2
+    echo "WARNING: --skip-github-check: OIDC subject format NOT read; assuming '${subject_prefix}'." >&2
 else
     command -v gh >/dev/null || {
         echo "GitHub CLI (gh) is required to verify the environment protection (or --skip-github-check)" >&2
@@ -94,6 +98,17 @@ else
         fi
     fi
     echo "GitHub environment '${environment}' is restricted to protected branches"
+    use_default="$(gh api "repos/${repo}/actions/oidc/customization/sub" --jq '.use_default')" || {
+        echo "Could not read the OIDC subject format of ${repo}" >&2
+        exit 1
+    }
+    if [ "$use_default" != "true" ]; then
+        echo "${repo} uses custom OIDC subject claim keys; create the federated credentials by hand" >&2
+        exit 1
+    fi
+    prefix="$(gh api "repos/${repo}/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty')"
+    [ -z "$prefix" ] || subject_prefix="$prefix"
+    echo "OIDC subject prefix: ${subject_prefix}"
 fi
 
 issuer="https://token.actions.githubusercontent.com"
@@ -115,7 +130,7 @@ ensure_identity() { # name purpose → prints principal id
 
 ensure_federation() { # identity-name github-environment
     local identity="$1" github_env="$2"
-    local name="github-${github_env}" subject="repo:${repo}:environment:${github_env}" verb=create
+    local name="github-${github_env}" subject="${subject_prefix}:environment:${github_env}" verb=create
     if az identity federated-credential show -g "$resource_group" --identity-name "$identity" \
         -n "$name" --output none 2>/dev/null; then
         verb=update
@@ -210,7 +225,7 @@ JSON
 ensure_custom_role "$deployer_role" "${work_dir}/deployer.json"
 
 contributor="b24988ac-6180-42a0-ab88-20f7382dd24c"
-acr_push="8311e382-0749-4cb8-b61a-7f3ba6c4aaa5"
+acr_push="8311e382-0749-4cb8-b61a-304f252e45ec"
 rbac_admin="f58310d9-a9f6-439a-9e8d-f62e7b41a168"
 # The six role definitions role-assignments.bicep grants to the app identity.
 app_roles="ba92f5b4-2d11-453d-a403-e96b0029c9fe, db58b8e5-c6ad-4a2a-8342-4190687cbf4a, 4633458b-17de-408a-b874-0445c86b69e6, 7f951dda-4ed3-4680-a7ca-43fe172d538d, 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd, 3913510d-42f4-4e42-8a64-420c390055eb"

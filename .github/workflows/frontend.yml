@@ -73,6 +73,8 @@ jobs:
 
   deploy-staging:
     needs: deploy-dev
+    # Off until staging exists (repository variable; docs/deployment-path.md §17).
+    if: vars.DEPLOY_STAGING == 'true'
     permissions:
       contents: read
       id-token: write

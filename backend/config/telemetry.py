@@ -140,6 +140,10 @@ def configure_telemetry() -> bool:
         return False
     if _configured:
         return True
+    # The Django instrumentation inserts its middleware at index 0 by default, and it validates
+    # the Host header (`build_absolute_uri`). Container Apps probes send `Host: localhost:8000`,
+    # so it goes right after HealthProbeMiddleware (MIDDLEWARE[0]); probes are then not traced.
+    os.environ.setdefault("OTEL_PYTHON_DJANGO_MIDDLEWARE_POSITION", "1")
 
     from azure.monitor.opentelemetry import configure_azure_monitor
     from opentelemetry.sdk.resources import SERVICE_NAME as SERVICE_NAME_KEY

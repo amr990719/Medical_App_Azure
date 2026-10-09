@@ -42,7 +42,9 @@ function Invoke-Az {
 }
 
 function Test-Az {
-    # Runs az and returns $true when it succeeds (existence checks).
+    # Runs az and returns $true when it succeeds (existence checks). Windows PowerShell 5.1 turns
+    # native stderr into a terminating error under 'Stop', so relax it for this call only.
+    $ErrorActionPreference = 'Continue'
     & az @args 2>$null | Out-Null
     return ($LASTEXITCODE -eq 0)
 }
@@ -50,8 +52,12 @@ function Test-Az {
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Azure CLI (az) is required' }
 
 # --- The deploy credential is only as safe as the GitHub environment's protection -----------
+# Subject GitHub puts in the OIDC token. Repositories can use immutable ids
+# ("repo:<owner>@<owner-id>/<repo>@<repo-id>"), which the classic "repo:<owner>/<repo>" never matches.
+$subjectPrefix = "repo:$Repo"
 if ($SkipGitHubCheck) {
     Write-Warning "-SkipGitHubCheck: environment '$Environment' protection NOT verified. Until it accepts protected branches only, any branch can deploy."
+    Write-Warning "-SkipGitHubCheck: OIDC subject format NOT read from GitHub; assuming '$subjectPrefix'."
 }
 else {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw 'GitHub CLI (gh) is required to verify the environment protection (or -SkipGitHubCheck)' }
@@ -63,6 +69,11 @@ else {
         if ((($reviewers | Out-String).Trim()) -eq '0') { throw "GitHub environment 'prod' must require reviewers (docs/github-setup.md section 2)" }
     }
     Write-Host "GitHub environment '$Environment' is restricted to protected branches"
+    $subjectConfig = & gh api "repos/$Repo/actions/oidc/customization/sub" | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw "Could not read the OIDC subject format of $Repo" }
+    if (-not $subjectConfig.use_default) { throw "$Repo uses custom OIDC subject claim keys; create the federated credentials by hand" }
+    if ($subjectConfig.sub_claim_prefix) { $subjectPrefix = $subjectConfig.sub_claim_prefix }
+    Write-Host "OIDC subject prefix: $subjectPrefix"
 }
 
 $envShort = @{ dev = 'dev'; staging = 'stg'; prod = 'prd' }[$Environment]
@@ -84,7 +95,7 @@ function Get-Identity([string]$Name, [string]$Purpose) {
 
 function Set-Federation([string]$Identity, [string]$GitHubEnvironment) {
     $name = "github-$GitHubEnvironment"
-    $subject = "repo:${Repo}:environment:$GitHubEnvironment"
+    $subject = "${subjectPrefix}:environment:$GitHubEnvironment"
     $verb = 'create'
     if (Test-Az identity federated-credential show -g $ResourceGroup --identity-name $Identity -n $name --output none) { $verb = 'update' }
     Invoke-Az identity federated-credential $verb -g $ResourceGroup --identity-name $Identity -n $name `
@@ -106,8 +117,12 @@ function Set-CustomRole([string]$Name, [string]$Description, [string[]]$Actions,
         $existing = Invoke-Az role definition list --custom-role-only true --name $Name --query '[0].name' -o tsv
         if ($existing) {
             Write-Host "Updating custom role $Name"
-            # `az role definition update` finds the definition by its Name within AssignableScopes.
+            # `az role definition update` finds the definition by its Name within AssignableScopes and
+            # warns on stderr while doing so; Windows PowerShell 5.1 would turn that warning into a
+            # terminating error under 'Stop'. Invoke-Az still fails on a non-zero exit code.
+            $ErrorActionPreference = 'Continue'
             Invoke-Az role definition update --role-definition "@$file" --output none | Out-Null
+            $ErrorActionPreference = 'Stop'
         }
         else {
             Write-Host "Creating custom role $Name"
@@ -175,7 +190,7 @@ Set-CustomRole $deployerRole `
     'Microsoft.Storage/storageAccounts/listServiceSas/action')
 
 $contributor = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
-$acrPush = '8311e382-0749-4cb8-b61a-7f3ba6c4aaa5'
+$acrPush = '8311e382-0749-4cb8-b61a-304f252e45ec'
 $rbacAdmin = 'f58310d9-a9f6-439a-9e8d-f62e7b41a168'
 # The six role definitions role-assignments.bicep grants to the app identity.
 $appRoles = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe, db58b8e5-c6ad-4a2a-8342-4190687cbf4a, 4633458b-17de-408a-b874-0445c86b69e6, 7f951dda-4ed3-4680-a7ca-43fe172d538d, 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd, 3913510d-42f4-4e42-8a64-420c390055eb'
