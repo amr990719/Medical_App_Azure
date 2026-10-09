@@ -52,8 +52,12 @@ function Test-Az {
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Azure CLI (az) is required' }
 
 # --- The deploy credential is only as safe as the GitHub environment's protection -----------
+# Subject GitHub puts in the OIDC token. Repositories can use immutable ids
+# ("repo:<owner>@<owner-id>/<repo>@<repo-id>"), which the classic "repo:<owner>/<repo>" never matches.
+$subjectPrefix = "repo:$Repo"
 if ($SkipGitHubCheck) {
     Write-Warning "-SkipGitHubCheck: environment '$Environment' protection NOT verified. Until it accepts protected branches only, any branch can deploy."
+    Write-Warning "-SkipGitHubCheck: OIDC subject format NOT read from GitHub; assuming '$subjectPrefix'."
 }
 else {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw 'GitHub CLI (gh) is required to verify the environment protection (or -SkipGitHubCheck)' }
@@ -65,6 +69,11 @@ else {
         if ((($reviewers | Out-String).Trim()) -eq '0') { throw "GitHub environment 'prod' must require reviewers (docs/github-setup.md section 2)" }
     }
     Write-Host "GitHub environment '$Environment' is restricted to protected branches"
+    $subjectConfig = & gh api "repos/$Repo/actions/oidc/customization/sub" | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw "Could not read the OIDC subject format of $Repo" }
+    if (-not $subjectConfig.use_default) { throw "$Repo uses custom OIDC subject claim keys; create the federated credentials by hand" }
+    if ($subjectConfig.sub_claim_prefix) { $subjectPrefix = $subjectConfig.sub_claim_prefix }
+    Write-Host "OIDC subject prefix: $subjectPrefix"
 }
 
 $envShort = @{ dev = 'dev'; staging = 'stg'; prod = 'prd' }[$Environment]
@@ -86,7 +95,7 @@ function Get-Identity([string]$Name, [string]$Purpose) {
 
 function Set-Federation([string]$Identity, [string]$GitHubEnvironment) {
     $name = "github-$GitHubEnvironment"
-    $subject = "repo:${Repo}:environment:$GitHubEnvironment"
+    $subject = "${subjectPrefix}:environment:$GitHubEnvironment"
     $verb = 'create'
     if (Test-Az identity federated-credential show -g $ResourceGroup --identity-name $Identity -n $name --output none) { $verb = 'update' }
     Invoke-Az identity federated-credential $verb -g $ResourceGroup --identity-name $Identity -n $name `
@@ -108,8 +117,12 @@ function Set-CustomRole([string]$Name, [string]$Description, [string[]]$Actions,
         $existing = Invoke-Az role definition list --custom-role-only true --name $Name --query '[0].name' -o tsv
         if ($existing) {
             Write-Host "Updating custom role $Name"
-            # `az role definition update` finds the definition by its Name within AssignableScopes.
+            # `az role definition update` finds the definition by its Name within AssignableScopes and
+            # warns on stderr while doing so; Windows PowerShell 5.1 would turn that warning into a
+            # terminating error under 'Stop'. Invoke-Az still fails on a non-zero exit code.
+            $ErrorActionPreference = 'Continue'
             Invoke-Az role definition update --role-definition "@$file" --output none | Out-Null
+            $ErrorActionPreference = 'Stop'
         }
         else {
             Write-Host "Creating custom role $Name"

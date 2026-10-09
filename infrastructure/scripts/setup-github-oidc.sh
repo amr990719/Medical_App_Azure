@@ -68,9 +68,13 @@ esac
 command -v az >/dev/null || { echo "Azure CLI (az) is required" >&2; exit 1; }
 
 # --- The deploy credential is only as safe as the GitHub environment's protection -----------
+# Subject GitHub puts in the OIDC token. Repositories can use immutable ids
+# ("repo:<owner>@<owner-id>/<repo>@<repo-id>"), which the classic "repo:<owner>/<repo>" never matches.
+subject_prefix="repo:${repo}"
 if [ "$skip_github_check" = true ]; then
     echo "WARNING: --skip-github-check: environment '${environment}' protection NOT verified." >&2
     echo "         Until it accepts protected branches only, any branch can deploy." >&2
+    echo "WARNING: --skip-github-check: OIDC subject format NOT read; assuming '${subject_prefix}'." >&2
 else
     command -v gh >/dev/null || {
         echo "GitHub CLI (gh) is required to verify the environment protection (or --skip-github-check)" >&2
@@ -94,6 +98,17 @@ else
         fi
     fi
     echo "GitHub environment '${environment}' is restricted to protected branches"
+    use_default="$(gh api "repos/${repo}/actions/oidc/customization/sub" --jq '.use_default')" || {
+        echo "Could not read the OIDC subject format of ${repo}" >&2
+        exit 1
+    }
+    if [ "$use_default" != "true" ]; then
+        echo "${repo} uses custom OIDC subject claim keys; create the federated credentials by hand" >&2
+        exit 1
+    fi
+    prefix="$(gh api "repos/${repo}/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty')"
+    [ -z "$prefix" ] || subject_prefix="$prefix"
+    echo "OIDC subject prefix: ${subject_prefix}"
 fi
 
 issuer="https://token.actions.githubusercontent.com"
@@ -115,7 +130,7 @@ ensure_identity() { # name purpose → prints principal id
 
 ensure_federation() { # identity-name github-environment
     local identity="$1" github_env="$2"
-    local name="github-${github_env}" subject="repo:${repo}:environment:${github_env}" verb=create
+    local name="github-${github_env}" subject="${subject_prefix}:environment:${github_env}" verb=create
     if az identity federated-credential show -g "$resource_group" --identity-name "$identity" \
         -n "$name" --output none 2>/dev/null; then
         verb=update
