@@ -51,8 +51,10 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-[ -n "$resource_group" ] && [ -n "$server" ] && [ -n "$identity_name" ] ||
-    { echo "--resource-group, --server and --identity-name are required" >&2; exit 2; }
+if [ -z "$resource_group" ] || [ -z "$server" ] || [ -z "$identity_name" ]; then
+    echo "--resource-group, --server and --identity-name are required" >&2
+    exit 2
+fi
 case "$admin_type" in
     Group | User | ServicePrincipal) ;;
     *) echo "--admin-type must be Group, User or ServicePrincipal" >&2; exit 2 ;;
