@@ -747,6 +747,16 @@ GitHub environments = staging and staging-plan
 
 Use a separate Entra app registration for staging.
 
+Pushes to `main` deploy to staging (and then to prod, after approval) only once staging is
+enabled. When the staging environment and its variables are complete, set the repository
+variable:
+
+```powershell
+gh variable set DEPLOY_STAGING --body true
+```
+
+Until then the `deploy-staging` jobs, and so `deploy-prod`, are skipped.
+
 ## 18. Repeat For Production
 
 Before production:
