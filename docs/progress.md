@@ -680,6 +680,18 @@ not part of it and is still open.
   exercised before) died on an az stderr warning under 5.1 (fixed: `Continue` for that call), and
   that it needs a Graph token, which security defaults refuse for this account. So `dev-plan` was
   updated directly with `az identity federated-credential update`; the roles were unchanged.
+- **PR #1 merged (`8164960`), the first CI deploy:** frontend, backend and infrastructure deploy-dev
+  succeeded, and staging/prod were skipped (`DEPLOY_STAGING` unset). The Q-D1 race then happened:
+  Bicep's revision `--0000003` (image `8490e3a`, 20:48:03) replaced the CI revision
+  `--g81649602d39f-1`, and both jobs were reset to `8490e3a`. `ENTRA_ADMIN_REQUIRE_MFA=False` did apply.
+- **PR #2 merged (`fee502b`):** PR what-if dropped (D145); backend and infrastructure deploys share
+  the concurrency group `deploy-azure-app-<env>`; Docker Official Images now come from
+  `public.ecr.aws/docker/library/`, after three Docker Hub `toomanyrequests` failures of the CI
+  PostgreSQL service pull. On merge, infrastructure ran 21:02:40–21:07:59 and backend waited, then
+  ran 21:08:02–21:10:46. **Final dev state (verified):** revision
+  `ca-medsyn-dev-api--gfee502b16c13-1` Healthy, 100% traffic, image `fee502b…`; migrate and cleanup
+  jobs on `fee502b…`; `ENTRA_ADMIN_REQUIRE_MFA=False`; `/api/ready/` 200 and SPA 200 through the
+  Static Web App.
 - **Azure CLI sessions last about an hour:** with security defaults and a personal (live.com)
   account, the CLI cannot refresh tokens silently, so long sessions need repeated MFA `az login`.
 
@@ -1120,7 +1132,7 @@ not part of it and is still open.
 
 ## Open questions
 
-- **Q-D1 (fix in PR #2) — Concurrent dev deploys on merge:** it happened on the first CI deploy
+- **Q-D1 (resolved, PR #2) — Concurrent dev deploys on merge:** it happened on the first CI deploy
   (merge `8164960`): infrastructure kept image `8490e3a` (read 20:43:49, Bicep 20:44:15–20:48:49)
   while backend created revision `…--g81649602d39f-1` at 20:46:58. Fix: the backend and
   infrastructure deploy jobs share the concurrency group `deploy-azure-app-<env>`.
@@ -1202,20 +1214,21 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**dev phase 2 is live** (Session 12): https://victorious-meadow-0e5775b00.4.azurestaticapps.net,
-backend image `medical-backend:35770c4…`, `/api/ready/` OK through the Static Web App. GitHub
-`dev`/`dev-plan` variables are complete and `main` is protected (D143).
-1. User: enable Arabic as the default language of the `signup-signin` user flow (portal,
-   external tenant).
-2. Admin sign-in: `amr_ashraf55@hotmail.com` is ADMIN now. Admins need `mfa` in `amr`
-   (ENTRA_ADMIN_REQUIRE_MFA=true): set up MFA (Conditional Access in the external tenant) or the
-   next admin sign-in is refused with MFA_REQUIRED. Add the user to the Entra admin group.
-   Smoke-test a draft, a document upload (blob) and App Insights ingestion.
-3. With user confirmation: push the local commits on a branch and open a PR (direct pushes to
-   `main` are now refused). Merging it runs `backend.yml` / `infrastructure.yml` deploy-dev for
-   the first time (the first CI deploy, which also exercises the OIDC identities).
-4. After the first workflow run: design required status checks (path filters, see D143).
-5. Local: fix host-run pytest (the compose PostgreSQL rejects the `medical` password from the
-   host; probably a stale volume vs `.env`).
+**dev is deployed by GitHub Actions** (Session 12): https://victorious-meadow-0e5775b00.4.azurestaticapps.net,
+image `fee502b…`, `main` protected (PR, 0 approvals), deploys on merge, backend and infrastructure
+serialized. `amr_ashraf55@hotmail.com` is ADMIN.
+1. User: try the admin sign-in (email OTP via Conditional Access; the app no longer checks `amr`
+   on dev, D144). Enable Arabic as the default language of the `signup-signin` user flow. Add the
+   admin to the Entra admin group the CA policy targets.
+2. Smoke-test on dev: a draft application, a document upload (private blob), the admin review
+   flow, App Insights ingestion (Log Analytics queries need a non-security-defaults sign-in).
+3. Owner decisions (destructive / design): delete the `dev-plan` GitHub environment, the
+   `id-github-medsyn-dev-plan` identity and the *Deployment What-If Operator (Medical_App)* role,
+   and stop `setup-github-oidc` creating them; admin MFA for staging/prod (D144); required status
+   checks given path filters (D143).
+4. Staging: resources, Entra app, GitHub `staging` variables, then `gh variable set DEPLOY_STAGING
+   --body true`.
+5. Local: fix host-run pytest (compose PostgreSQL rejects the `medical` password from the host).
+   `docker compose` now pulls `public.ecr.aws/docker/library/postgres:16-alpine`.
 6. Carry-over: business questions / legal L1–L8, `/profile` page (deviation 32), Q-B19,
    deviation 66, `revoke_admin`.
