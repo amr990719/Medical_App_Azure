@@ -4,6 +4,7 @@ Callback failures redirect to the SPA with `?auth_error=<CODE>` (the browser is 
 a JSON body would strand the user); no detail from Entra is echoed.
 """
 
+import logging
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -20,6 +21,8 @@ from apps.common.exceptions import DomainError
 
 from .claims import OidcError, get_or_create_user, identity_from_claims, validate_id_token
 from .client import get_oidc_client, is_configured
+
+logger = logging.getLogger("apps.accounts.oidc")
 
 FLOW_KEY = "oidc_flow"
 NEXT_KEY = "oidc_next"
@@ -90,6 +93,17 @@ class CallbackView(APIView):
                 raise OidcError("ACCOUNT_DISABLED")
             mfa_required = user.role == Role.ADMIN and settings.ENTRA_ADMIN_REQUIRE_MFA
             if mfa_required and "mfa" not in (claims.get("amr") or []):
+                # Method claims and claim names only: no identifier, email or token value.
+                logger.warning(
+                    "Admin sign-in refused",
+                    extra={
+                        "reason": "mfa",
+                        "amr": claims.get("amr"),
+                        "acr": claims.get("acr"),
+                        "acrs": claims.get("acrs"),
+                        "claim_names": sorted(claims),
+                    },
+                )
                 raise OidcError("MFA_REQUIRED")
         except OidcError as error:
             return error_redirect(error.code)

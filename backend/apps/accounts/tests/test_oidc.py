@@ -200,6 +200,20 @@ def test_admin_without_mfa_refused():
     assert client.get("/api/v1/auth/me/").status_code == 401
 
 
+def test_mfa_refusal_logs_methods_and_claim_names_only(caplog):
+    """Diagnosable without leaking identity: method claims and claim *names*, never values."""
+    AdminUserFactory(email="boss@example.test", entra_oid="oid-1", entra_tid=TENANT)
+    token = make_token(email="boss@example.test", amr=["pwd"], acr="b2c_1a_x")
+    with caplog.at_level("WARNING", logger="apps.accounts.oidc"):
+        sign_in(APIClient(), FakeOidcClient(token))
+    [record] = [r for r in caplog.records if getattr(r, "reason", None) == "mfa"]
+    assert record.amr == ["pwd"]
+    assert record.acr == "b2c_1a_x"
+    assert {"oid", "tid", "email", "nonce", "amr"} <= set(record.claim_names)
+    logged = str(record.__dict__)
+    assert "boss@example.test" not in logged and "oid-1" not in logged and TENANT not in logged
+
+
 def test_admin_with_mfa_accepted():
     AdminUserFactory(email="boss@example.test", entra_oid="oid-1", entra_tid=TENANT)
     client = APIClient()
