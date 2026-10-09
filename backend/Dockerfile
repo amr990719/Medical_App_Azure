@@ -7,7 +7,8 @@
 #
 #   docker build --target runtime -t medical-backend backend/
 
-FROM python:3.12-slim AS base
+# Docker Official Image through Amazon ECR Public: same image, no Docker Hub anonymous-pull limit.
+FROM public.ecr.aws/docker/library/python:3.12-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

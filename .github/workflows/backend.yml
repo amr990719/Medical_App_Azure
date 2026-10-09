@@ -37,7 +37,8 @@ jobs:
     services:
       postgres:
         # >= 15 required (NULLS NOT DISTINCT, D17); same major as Azure (Q-T5).
-        image: postgres:16
+        # Docker Official Image via ECR Public (Docker Hub rate-limits anonymous pulls from runners).
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci-only
