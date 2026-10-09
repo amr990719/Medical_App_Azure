@@ -242,13 +242,14 @@ image and identity.
 flowchart LR
     PR[Pull request] --> CI1[frontend.yml: npm ci → lint → tsc → vitest → rtl_check → build]
     PR --> CI2[backend.yml: ruff → check → migrations check → OpenAPI → pytest on PostgreSQL → docker build]
-    PR --> CI3[infrastructure.yml: bicep build + lint → template guard → what-if on dev with the -plan identity]
+    PR --> CI3[infrastructure.yml: bicep build + lint → template guard, no Azure access]
     PR --> CI4[e2e.yml: compose stack + Playwright]
     main[merge to main] --> D1[SWA deploy dev → staging → prod]
     main --> D2[image → ACR → migrate job → cleanup job → new ACA revision → smoke test]
     main --> D3[bicep what-if + deploy dev → staging → prod]
 ```
 
-GitHub OIDC federated credentials, no stored Azure passwords or deployment tokens. Two GitHub
-environments per Azure environment: `<env>` (deploy, `main` only, required reviewers on `prod`)
-and `<env>-plan` (pull requests, read + what-if only). Details: `docs/github-setup.md`.
+GitHub OIDC federated credentials, no stored Azure passwords or deployment tokens. One GitHub
+environment per Azure environment: `<env>` (deploy and manual what-if, `main` only, required
+reviewers on `prod`). Pull requests get no Azure credential: ARM what-if needs write permission on
+every resource, so a read-only preview identity is impossible (D145). Details: `docs/github-setup.md`.
