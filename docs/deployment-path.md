@@ -793,6 +793,7 @@ Production should deploy from protected `main` only and require reviewer approva
 | CSRF 403 | Public hostname is missing from `CSRF_TRUSTED_ORIGINS`; set `PUBLIC_HOSTNAME` and redeploy. |
 | Container App revision never ready | Production settings are missing a required secret or variable. Check Container App logs. |
 | Startup probe fails with 400, console shows `DisallowedHost: 'localhost:8000'` | Something validates the Host header before `HealthProbeMiddleware`. It must stay `MIDDLEWARE[0]`; `configure_telemetry()` places the OTel Django middleware at position 1. |
+| Admin completes MFA but sees "حسابات المسؤولين تتطلب التحقق بخطوتين" (`MFA_REQUIRED`) | External ID v2.0 ID tokens carry no `amr`, so the app cannot see MFA. Enforce admin MFA with Conditional Access and set `entraAdminRequireMfa = false` (D144). |
 | Container App FQDN returns 401 for every path | Expected after the Static Web App link: only the Static Web App may call it. Test through `https://<static-web-app-host>/api/...`. |
 | `/api/...` on the Static Web App returns its HTML 404 page | No frontend build deployed yet, or the linked backend is missing (`az staticwebapp backends show`). |
 | `az acr login` fails with `AADSTS530035`, or `docker push` stalls on a layer | Build in the registry with `az acr run` and a BuildKit task file (§11). |

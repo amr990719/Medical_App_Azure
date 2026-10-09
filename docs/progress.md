@@ -1020,6 +1020,12 @@ not part of it and is still open.
   workflow is path-filtered, so a required check from a skipped workflow would block unrelated PRs
   forever. Add them through an always-running gate job, or by choosing checks carefully. Replaces
   the "1 approval" rule in deployment-path.md §4.3 while there is one maintainer.
+- **D144 — Admin MFA on dev is enforced by Conditional Access only** (user's choice):
+  `entraAdminRequireMfa = false` in `dev.bicepparam`. Microsoft documents `amr` as v1.0-only, and
+  External ID issues v2.0 ID tokens, so the app-side check (`"mfa" in amr`) refused an admin who
+  had just completed email-OTP MFA (`MFA_REQUIRED`). The tenant's CA policy must cover every admin.
+  Staging and prod still say `true` and would lock admins out the same way: decide before they
+  exist (options: the same choice, or a CA authentication context checked via the `acrs` claim).
 
 ## Deviations from PROMPT.md
 
@@ -1094,6 +1100,12 @@ not part of it and is still open.
 | 67 | plan Task 10.1/10.2: two commits (`docs: readme and documentation set`, `Session 10: documentation and final report`) | one commit `Phase 10: deployment readiness` | explicit user instruction |
 
 ## Open questions
+
+- **Q-D1 — Concurrent dev deploys on merge:** `infrastructure.yml` and `backend.yml` both run
+  on a push to `main`. The infrastructure run reads the "running image" before its Bicep
+  deployment and re-applies it, so it can roll back an image `backend.yml` deployed in between.
+  Check the active revision's image after merges that touch both; long term, serialize them (for
+  example, make backend wait for infrastructure, or have Bicep read the image at deploy time).
 
 Business questions 1–14 are tracked in `docs/business-rules.md` §10 (defaults implemented, to be
 confirmed by the organization). Technical/environment questions for the user:

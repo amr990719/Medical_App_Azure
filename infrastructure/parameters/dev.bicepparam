@@ -51,4 +51,6 @@ param appInsightsDisableLocalAuth = false
 param entraAuthority = readEnvironmentVariable('ENTRA_AUTHORITY', '')
 param entraTenantId = readEnvironmentVariable('ENTRA_TENANT_ID', '')
 param entraClientId = readEnvironmentVariable('ENTRA_CLIENT_ID', '')
-param entraAdminRequireMfa = true
+// External ID issues v2.0 ID tokens, which never carry `amr`, so the app cannot see MFA. Dev
+// relies on the tenant's Conditional Access policy (email one-time code) instead (D144).
+param entraAdminRequireMfa = false
