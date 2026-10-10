@@ -631,14 +631,11 @@ Apps forwards `/api` to the linked Container App so cookies stay same-origin.
 
 ## 13. Grant The First Admin
 
-The first admin must sign in once so the user exists in the database. Then grant admin:
-
-```powershell
-az containerapp exec `
-  -n $APP `
-  -g $RG `
-  --command "python manage.py grant_admin <email-or-entra-oid>"
-```
+The first admin must sign in once so the user exists in the database. Then run
+`python manage.py grant_admin <email-or-entra-oid>`. `az containerapp exec` needs an interactive
+terminal, so run it as an execution of the migrate job with only the arguments replaced:
+`docs/azure-deployment.md` §"One-off management commands" (this is how the dev grant ran in Session
+12). `revoke_admin` removes the role the same way (audited; refuses the last admin).
 
 Then add the same user to the Entra admin group used by the admin MFA policy.
 
@@ -731,6 +728,9 @@ After deployment, verify:
 - cleanup job exists with the expected cron
 
 ## 17. Repeat For Staging
+
+Step-by-step list with the staging-specific blockers (admin MFA parameter, SWA region, the
+manual first phase 2, what `DEPLOY_STAGING` does to prod): `docs/staging-checklist.md`.
 
 Repeat the same sequence with:
 

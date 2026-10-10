@@ -1,17 +1,24 @@
 # Final report — Medical Syndicates Treatment Project Platform
 
-PROMPT.md §56, written at the end of Session 10 (Phase 10, deployment readiness) on 2026-10-06.
-Repository: `C:\Users\admin\Desktop\Medical_App_Azure` (local Git, branch `main`, no remote —
-nothing has been pushed). Every result below was produced in this session unless it says
-otherwise.
+PROMPT.md §56, written at the end of Session 10 (Phase 10, deployment readiness) on 2026-10-06
+and **updated on 2026-10-11 (Session 13)** after the first Azure deployment (dev, Sessions 11–12).
+Repository: `amr990719/Medical_App_Azure` on GitHub (`main` protected; deploys on merge). §15
+keeps the Session 10 results and adds Session 13's.
 
 **Overall status.** The application is complete and runs end to end locally (Docker Compose
 PostgreSQL 16 + Azurite + Django, Vite SPA): doctor sign-in (dev auth), OCR with the mock
 provider, form, beneficiaries, server fee quote, documents, receipt, submission with a reference
-number, admin review, payment confirmation, approval, correction loop, A4 print. The Azure
-infrastructure, Entra scripts and CI/CD exist and build/lint cleanly, but **no Azure resource and
-no Entra tenant has been used: every Azure-side claim is NOT VERIFIED — requires Azure
-credentials.**
+number, admin review, payment confirmation, approval, correction loop, A4 print.
+
+**Azure status (2026-10-11).** **dev is deployed and verified**: resource group `Medical_App`
+(uaenorth; Static Web App in eastasia), https://victorious-meadow-0e5775b00.4.azurestaticapps.net,
+deployed by GitHub Actions through OIDC on every merge to `main`. Verified: both Bicep phases, Key
+Vault references, managed-identity Entra auth to PostgreSQL, the migrate job, the SWA linked
+backend and security headers, the CI deploy identity, a real Entra External ID sign-in, and
+`grant_admin`. **NOT VERIFIED:** the full doctor → admin flow on Azure (blob uploads, review,
+payment confirmation, approval, print), App Insights ingestion, admin sign-in with MFA, OCR with
+Azure OpenAI, private networking, a restore drill, and staging/prod, which have never been
+deployed. Step-by-step status: `docs/azure-deployment.md` §"Verification status".
 
 ---
 
@@ -39,10 +46,10 @@ credentials.**
           (Entra auth, (private, (RBAC,  default)
           TLS, PITR)   no keys)  purge protection)
 
-GitHub Actions (OIDC; environments dev, staging, prod + *-plan)
+GitHub Actions (OIDC; environments dev, staging, prod; PRs get no Azure credential, D145)
    ├── frontend.yml ──────→ Static Web Apps
    ├── backend.yml ───────→ Container Registry → migrate job → new Container App revision
-   ├── infrastructure.yml → Bicep what-if (PR) / deploy (main; prod needs a reviewer)
+   ├── infrastructure.yml → Bicep what-if + deploy (main only; prod needs a reviewer)
    └── e2e.yml ───────────→ docker compose + Playwright
 ```
 
@@ -83,7 +90,7 @@ Diagrams (Mermaid): `docs/architecture.md`.
 │   │   ├── azure.py secrets.py telemetry.py logging.py middleware.py health.py gunicorn.py envfile.py urls.py
 │   │   └── tests/
 │   ├── apps/
-│   │   ├── accounts/       User (UUID, role, entra oid/tid), OIDC BFF, dev auth, grant_admin, seed_dev_data
+│   │   ├── accounts/       User (UUID, role, entra oid/tid), OIDC BFF, dev auth, grant_admin, revoke_admin, seed_dev_data
 │   │   ├── doctors/        member profile
 │   │   ├── applications/   applications, transitions, reference numbers, validation, admin API
 │   │   ├── beneficiaries/
@@ -154,11 +161,11 @@ Full table with notes and error codes: `docs/api.md`; OpenAPI at `/api/schema/` 
 | Admin | `GET admin/stats/`, `GET admin/applications/` (search, filters, ordering, pagination ≤ 100), `GET admin/applications/{id}/`, `POST …/transition/`, `POST …/payment/`, `GET/POST …/notes/`, `GET …/audit/`, `GET admin/doctors/`, `GET admin/doctors/{id}/`, `GET/POST admin/fee-schedules/`, `GET admin/fee-schedules/{id}/` |
 | Probes | `GET /api/health/` (liveness), `GET /api/ready/` (database) |
 
-## 5. Azure services (defined in Bicep — none created yet)
+## 5. Azure services (defined in Bicep — deployed for dev)
 
-**NOT VERIFIED — requires Azure credentials.** No resource was created; the only subscription
-available during development is disabled (read-only) and its policy allows no Static Web Apps
-region (Q-T15). Per environment (one resource group, `infrastructure/main.bicep`):
+All of these except the optional Azure OpenAI and private-networking modules are deployed for
+**dev** (Pay-As-You-Go subscription, uaenorth + Static Web App in eastasia, D140). staging and
+prod have not been created. Per environment (one resource group, `infrastructure/main.bicep`):
 
 | Service | Module | Configuration |
 |---|---|---|
@@ -219,8 +226,10 @@ variants: `README.md` §3–§8 and `docs/local-development.md`.
 
 ## 8. Entra External ID setup steps
 
-**NOT VERIFIED — requires Azure credentials** (scripts syntax-checked only). Details:
-`docs/entra-setup.md`.
+**Steps 1–3 verified on dev** (tenant `medicalsyndicates.onmicrosoft.com`, app
+`medical-syndicates-dev`, real doctor sign-in). **NOT VERIFIED:** Arabic on the user flow (still
+English), branding, step 4 admin MFA (dev uses Conditional Access only, D144) and step 5 rotation.
+Details: `docs/entra-setup.md`.
 
 1. Create an **external** tenant (Entra admin center → External ID → Create a tenant → External);
    note the tenant id; authority = `https://<name>.ciamlogin.com/<tenant-id>`.
@@ -240,8 +249,10 @@ variants: `README.md` §3–§8 and `docs/local-development.md`.
 
 ## 9. Azure deployment instructions
 
-**NOT VERIFIED — requires Azure credentials.** Exact Bash and PowerShell commands: `README.md`
-§9–§14; reasons and details: `docs/azure-deployment.md`; CI/CD setup: `docs/github-setup.md`.
+**Steps 1–10 were run for dev** (Sessions 11–12; two Azure-only bugs fixed test-first:
+`35770c4`, `8490e3a`). Exact Bash and PowerShell commands: `README.md` §9–§14; reasons, details
+and verification status: `docs/azure-deployment.md`; CI/CD setup: `docs/github-setup.md`;
+staging: `docs/staging-checklist.md`.
 
 1. Register providers; `az group create -n rg-medsyn-<env> -l <region>`.
 2. `export KEY_VAULT_OPERATOR_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv)`; leave
@@ -255,14 +266,15 @@ variants: `README.md` §3–§8 and `docs/local-development.md`.
 7. Build and push `backend/` (`docker build --target runtime`), set `CONTAINER_IMAGE`, deploy
    again (second phase), start the `migrate` job and wait for `Succeeded`, `curl …/api/ready/`.
 8. `npm run build` in `frontend/`, deploy `frontend/dist` with the SWA CLI (token read at run time).
-9. Sign in once, then `az containerapp exec … --command "python manage.py grant_admin <email>"`.
-10. GitHub: create the repository (only after your confirmation), environments `dev|staging|prod`
-    (+ `-plan`), `setup-github-oidc` per environment, variables, branch protection. From then on
-    every push to `main` deploys.
+9. Sign in once, then run `grant_admin <email>` as a one-off execution of the migrate job
+   (`az containerapp exec` needs a TTY; `docs/azure-deployment.md` §"One-off management commands").
+10. GitHub: environments `dev|staging|prod`, `setup-github-oidc` per environment, variables,
+    branch protection. From then on every merge to `main` deploys (staging/prod only once
+    `DEPLOY_STAGING=true`).
 
-Things to know for the **next deployment**: every user is signed out once (D131: the session hash
-now includes the role); `TRUSTED_PROXY_COUNT=2` is new and assumes the SWA linked backend and the
-Container Apps ingress each append one `X-Forwarded-For` entry (Q-T13, NOT VERIFIED).
+`TRUSTED_PROXY_COUNT=2` assumes the SWA linked backend and the Container Apps ingress each append
+one `X-Forwarded-For` entry (Q-T13: still NOT VERIFIED; `Host` and `X-Forwarded-Proto` are
+verified on dev).
 
 ## 10. Approximate Azure cost drivers
 
@@ -293,8 +305,9 @@ Details, the Session 9 review (F1–F8) and the legal decisions: `docs/security.
   users mapped by `(oid, tid)`, never by e-mail; no password forms; no tokens in the browser.
 - Session cookie `HttpOnly; Secure; SameSite=Lax`, idle 2 h / absolute 12 h, bound to the role
   (role change ends sessions); CSRF on every unsafe method.
-- Admin role only via `manage.py grant_admin` (audited); admin MFA enforced (`amr`) + Conditional
-  Access.
+- Admin role only via `manage.py grant_admin`, removed with `revoke_admin` (both audited; the last
+  active admin cannot be revoked); admin MFA by Conditional Access, plus the app's `amr` check
+  where the tenant emits it (off on dev, D144).
 - Object-level authorization on every endpoint (other doctor's object → 404); protected fields
   read-only for doctors; one transition service with `select_for_update` and audit.
 - National ID: business identifier with unique constraints, never a key; masked
@@ -359,17 +372,24 @@ in this session.
 
 ## 13. Remaining limitations
 
-**Azure / external (NOT VERIFIED — requires Azure credentials):**
+**Azure / external (status 2026-10-11; dev deployed, staging/prod not):**
 
-- Nothing was deployed: `az deployment group what-if`, the Container App, jobs, SWA linked
-  backend, managed-identity access to PostgreSQL / Blob / Key Vault / OpenAI, Application Insights
-  export and the GitHub OIDC flow have never run. The available subscription is read-only and
-  its policy offers no Static Web Apps region (Q-T1, Q-T15).
-- Entra External ID: no tenant; the `email` and `amr` claims and the Arabic hosted pages are
-  unverified (Q-T7).
-- Behind the linked backend: the `Host` header, `X-Forwarded-Proto`, the number of
-  `X-Forwarded-For` entries (`TRUSTED_PROXY_COUNT=2`) and request-body limits (Q-T13); whether the
-  Container App FQDN can be called directly, bypassing the SWA (Q-T18).
+- NOT VERIFIED on dev: the full interactive flow (draft, document and receipt uploads to private
+  Blob with user-delegation SAS, admin review, payment confirmation, approve / request
+  correction, print). It needs the owner's Entra sign-in with email OTP. The same flow passes
+  locally in Playwright on every PR.
+- NOT VERIFIED: Application Insights ingestion. Log Analytics queries are refused by the workforce
+  tenant's security defaults (`AADSTS530035`); the exact sign-in and queries are in
+  `docs/azure-deployment.md` §"Telemetry verification".
+- Entra External ID: the `email` claim is verified. `amr` is not usable with v2.0 tokens (D144), so
+  admin MFA relies on Conditional Access and admin sign-in with MFA is not verified. Arabic is not
+  enabled on the user flow (the hosted page is English).
+- Behind the linked backend: the number of `X-Forwarded-For` entries (`TRUSTED_PROXY_COUNT=2`) and
+  request-body limits (Q-T13). `Host` / `X-Forwarded-Proto` are verified, and direct calls to the
+  Container App FQDN answered 401 (Q-T18, not tested exhaustively).
+- OCR with Azure OpenAI, private networking, staging and prod: never deployed.
+- Azure CLI sessions with the personal guest account last about an hour and need an interactive MFA
+  sign-in. Long or unattended Azure work needs a work account in the tenant.
 - PostgreSQL without `ENABLE_PRIVATE_NETWORKING` keeps the "Azure services" firewall rule (Q-T19).
 - Container Apps environment management meter (Q-T16); Application Insights Entra vs.
   connection-string ingestion for dev (Q-T14).
@@ -380,20 +400,21 @@ in this session.
 
 **Application:**
 
-- `/profile` is still a placeholder page; the member data is edited on the form (deviation 32).
-- Payment instructions on the receipt page are placeholder text in `frontend/src/i18n/ar.ts`
-  (business question 8 / Q-B19).
-- `grant_admin` has no counterpart: revoking the admin role needs a Django shell
-  (`User.role = "DOCTOR"`, which ends the user's sessions) and is not audited.
+- Payment instructions on the receipt page are still placeholder text (business question 8 /
+  Q-B19): `frontend/src/i18n/ar.ts` → `payment.instructions` (marked `PLACEHOLDER (D81, Q-B19)`),
+  rendered by `frontend/src/pages/application/PaymentPage.tsx`. No test asserts the wording.
+  Replace the string and merge to `main`; the frontend deploy publishes it. Making it
+  admin-editable (§18) needs a settings model and endpoint, which is not built.
+- `/profile` (Session 13): identity and syndicate data are read-only there and edited on the form
+  (with the national-ID / OCR flow); the profile page edits contact details only.
 - An admin cannot change a payment decision after APPROVED (Q-B15).
 - PDFs are not sent to OCR (clear `OCR_UNAVAILABLE` message); PDF and HEIC uploads are off by
   default.
-- **React Hook Form and Zod are installed but not used** (PROMPT.md §6/§41 name them): the form
-  state lives in `ApplicationFormProvider` + `draftController.ts`, and instant feedback comes from
-  the server's `/validation/` endpoint after each autosave plus local hints (national-ID parsing,
-  receipt pre-check, box inputs). Behaviour matches §41 (server authoritative, immediate
-  feedback); either adopt them for field-level checks or remove `react-hook-form`, `zod` and
-  `@hookform/resolvers` from `frontend/package.json`.
+- React Hook Form + Zod (PROMPT.md §6/§41) are used by the profile page (Session 13:
+  `features/profile/contactSchema.ts`, `pages/doctor/ProfilePage.tsx`). The application form
+  keeps its custom controller (`ApplicationFormProvider` + `draftController.ts`, autosave per
+  field, server `/validation/` after each save). Rewriting it on RHF would touch every wizard
+  step for no behaviour change, so deviation 66 is narrowed to the wizard, not closed.
 - Locally, Playwright runs leave `e2e-*@dev.local` data in the dev database (Q-T12).
 - Tooling: Node 22.11 on this machine (jsdom 26 instead of 27, Q-T9); the vendored
   `frontend/scripts/rtl_check.py` has no license file upstream (Q-T8); Cairo is loaded from Google
@@ -418,7 +439,7 @@ are §57; 13–21 came up during implementation.
 | 5 | Maximum beneficiaries: 10 or 11? | 10 | `MAX_BENEFICIARIES` |
 | 6 | `SON_MINOR` ≤ 18 and spouse kinship matching the member's gender? | both enforced | `ENFORCE_SON_MINOR_AGE`, `SON_MINOR_MAX_AGE`, `ENFORCE_SPOUSE_GENDER` |
 | 7 | Can a rejected applicant re-apply in the same fiscal year? | yes, a new application | partial unique constraint |
-| 8 | How do members pay; what instructions? | placeholder text | `frontend/src/i18n/ar.ts` `payment.instructions` |
+| 8 | How do members pay; what instructions? | placeholder text (marked in code) | `frontend/src/i18n/ar.ts` `payment.instructions`, shown by `PaymentPage.tsx` |
 | 9 | Is the member photo mandatory? | optional | `REQUIRE_MEMBER_PHOTO=false` |
 | 10 | Is `(syndicate_type, registration_number)` unique? | indexed, not unique | `apps/doctors/models.py` |
 | 11 | Is sending ID images to Azure OpenAI approved, and in which region? | OCR behind a flag, off in production | `OCR_ENABLED`, Bicep `enableOcr` |
@@ -455,7 +476,7 @@ audits, live header checks, clean-database migration run): `docs/verification.md
 | README commands | every `bash` block `bash -n`, every `powershell` block through the PowerShell parser (placeholders substituted); `az … --help` for each restore command and flag | 10/10 Bash, 7/7 PowerShell parse; all `az` flags exist |
 | Diagrams | every Mermaid block in `docs/architecture.md` and `docs/database.md` through the Mermaid 11 parser | 9/9 parse (two sequence diagrams in `architecture.md` had a `;` that broke rendering — fixed) |
 | Secrets | `gitleaks git` (history) and `gitleaks dir` (this session's changed files) | no leaks found (14 commits) |
-| Azure what-if, deployment, Entra sign-in, managed identity, restore | — | **NOT VERIFIED — requires Azure credentials** |
+| Azure what-if, deployment, Entra sign-in, managed identity, restore | — | not run in Session 10; dev verified in Sessions 11–13 (below), restore still NOT VERIFIED |
 
 **Bug found and fixed in this session (documentation review):** `.env.example` says "copy to
 `.env`", but development settings loaded every line of the root `.env`, so a verbatim copy turned
@@ -464,3 +485,38 @@ int()`), and `DEV_AUTH_ENABLED`/`OCR_ENABLED` would have silently become false. 
 then fixed test-first: `backend/config/envfile.py::read_env_file` skips empty values and never
 overrides the real environment (`backend/config/tests/test_envfile.py`, 5 tests); a copied
 `.env.example` now loads with every default intact.
+
+
+### Session 13 (2026-10-11)
+
+| Check | Command | Result |
+|---|---|---|
+| Backend (changed apps) | `docker compose exec -T backend pytest -q --ds=config.settings.test apps/accounts apps/audit` | **109 passed** |
+| Backend (full suite) | `docker compose exec -T backend pytest -q --ds=config.settings.test` | **976 passed, 1 skipped** in 42.4 s |
+| Backend lint + migrations | `ruff check .`, `ruff format --check .`, `manage.py makemigrations --check --dry-run`, `sqlmigrate audit 0003` | clean; No changes detected; migration is a SQL no-op |
+| Frontend | `npm run lint`, `npm run typecheck`, `npx vitest run`, `npm run rtl:check` | ESLint and `tsc` clean; **300 passed in 43 files**; RTL 0 errors / 0 warnings in 128 files |
+| Scripts | `bash -n`, `shellcheck` (koalaman/shellcheck:stable container) on `infrastructure/scripts/*.sh` + `backend/entrypoint.sh`; PowerShell parser on `setup-github-oidc.ps1` | clean; 0 parse errors |
+| Live dev, HTTP | `curl` through the SWA host: `/`, `/doctor/form`, `/profile`, `/api/health/`, `/api/ready/`, `/api/v1/reference-data/`, `/api/v1/auth/me/`, `/api/v1/auth/login/` | 200 SPA (`lang="ar" dir="rtl"`), health 200, ready `database: ok`, §46 401 envelopes, login 302 to `medicalsyndicates.ciamlogin.com` with client id, PKCE S256 and the SWA callback; security headers present |
+| Live dev, browser | Playwright: landing → `تسجيل الدخول` | Entra sign-in page rendered (English: Arabic not enabled); stopped there (no credentials) |
+| GitHub | `gh api …/branches/main/protection`, environments, variables, `gh run list` | as recorded in `docs/progress.md` Session 13; no failed or pending current runs |
+| Azure resource state, App Insights | `az containerapp show …` | **not run**: the CLI token had expired (`AADSTS530035`), and a new MFA sign-in was not possible in this session |
+
+## 16. Owner decisions (2026-10-11)
+
+These decisions block staging or production. The defaults in the code are safe but not decided.
+
+| # | Decision | Why it blocks | Current state / recommendation |
+|---|---|---|---|
+| 1 | **Region and data residency** (L3) | the region is fixed at resource creation; moving data later means migration | dev in uaenorth with test data only. Decide the production data region and the cross-border position under Law 151/2020 before staging, so staging matches prod |
+| 2 | **Private networking before the first prod deploy** (Q-T19) | the network mode of PostgreSQL Flexible Server and of the Container Apps environment is fixed at creation; switching later means re-creating them and migrating data | recommended: `ENABLE_PRIVATE_NETWORKING=true` for prod from day one; budget VNet + private endpoints + DNS |
+| 3 | **Admin MFA strategy for staging/prod** (D144) | `staging`/`prod.bicepparam` still say `entraAdminRequireMfa=true`, which locks admins out with External ID v2.0 tokens | either Conditional Access only (as dev) or a CA authentication context checked through the `acrs` claim (needs a small code change) |
+| 4 | **OCR legal approval** (L2, L3) | sends ID images to Azure OpenAI; abuse monitoring may retain them up to 30 days | off (`OCR_ENABLED=false`, no OpenAI resource); manual entry always works |
+| 5 | **Retention policy** (L4) | applications, documents, audit, telemetry and backups have no deletion rule | nothing is deleted except orphan / soft-deleted blobs |
+| 6 | **Malware scanning** (L8) | uploads are stored unscanned (`scan_status` exists) | enable Defender for Storage malware scanning per environment (per-GB cost) and set `MALWARE_SCAN_ENABLED` |
+| 7 | **Backup / restore drill** (§48) | RPO/RTO are assumptions; no restore has been run | run drill A–C of `docs/azure-deployment.md` in staging before go-live; confirm RPO/RTO |
+| 8 | **Custom domain** | Entra redirect URIs, `PUBLIC_HOSTNAME`, CSRF origin and the printed URL depend on it | re-run `create-entra-app` with the new `--public-url`, set `PUBLIC_HOSTNAME`, redeploy (`docs/entra-setup.md` §3) |
+| 9 | Payment instructions text (Q-B19, business question 8) | doctors see placeholder text | provide bank / branch / e-payment wording |
+| 10 | Delete the retired plan identity and `-plan` environments (D145) | `dev-plan` has no branch restriction and still trusts an identity with Reader on `Medical_App` | approve the commands in `docs/azure-deployment.md` §"Retired plan identity" |
+
+Business questions 1–21 (§14) and legal decisions L1–L8 (`docs/security.md` §6) remain open as
+well.
