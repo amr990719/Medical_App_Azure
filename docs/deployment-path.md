@@ -309,8 +309,9 @@ This creates:
 | Azure identity | GitHub environment | Capability |
 |---|---|---|
 | `id-github-medsyn-dev` | `dev` | Deploy infrastructure and app |
-| `id-github-medsyn-dev-plan` | none (retired, D145) | Still created by `setup-github-oidc`; unused |
 | `id-medsyn-dev` | none | Runtime identity used by the app |
+
+Older runs also created `id-github-medsyn-dev-plan` and the *Deployment What-If Operator* role (retired, D145); the script no longer does. See `docs/azure-deployment.md` for their cleanup.
 
 Save the printed values for GitHub environment variables:
 

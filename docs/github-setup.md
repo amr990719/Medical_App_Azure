@@ -75,7 +75,8 @@ in that resource group only:
 |---|---|---|
 | `id-medsyn-<env-short>` (the **app** identity, also declared by `main.bicep`) | — | none here; Bicep grants its data-plane roles |
 | `id-github-medsyn-<env>` (deploy) | `<subject prefix>:environment:<env>`, where the prefix comes from `GET repos/<repo>/actions/oidc/customization/sub` (`repo:<owner>@<id>/<repo>@<id>` with immutable subjects) | custom **Deployer (&lt;rg&gt;)** = Contributor minus `federatedIdentityCredentials/write|delete` on managed identities (it cannot add a trust to the app identity and sign in as it) and minus storage `listKeys`, `regenerateKey`, `ListAccountSas`, `listServiceSas` (deploy Bicep, update the app and jobs, start the migrate job, read the SWA token); **AcrPush**; **Role Based Access Control Administrator** with an ABAC condition: create/delete only the six data-plane roles `main.bicep` grants (Blob Data Contributor, Blob Delegator, Key Vault Secrets User, AcrPull, OpenAI User, Monitoring Metrics Publisher) **and only for the app identity's principal id** — it cannot grant anything to itself or to any other identity |
-| `id-github-medsyn-<env>-plan` (preview, **unused since D145**; still created by the script) | `<subject prefix>:environment:<env>-plan` | **Reader** + custom role *Deployment What-If Operator (&lt;rg&gt;)* (`deployments/read`, `validate/action`, `whatIf/action`, `operationstatuses/read`) |
+
+The script no longer creates the retired `id-github-medsyn-<env>-plan` identity or the custom role *Deployment What-If Operator (&lt;rg&gt;)* (D145). dev still has both from an earlier run; `docs/azure-deployment.md` §"Retired plan identity" lists the commands to delete them.
 
 Residual risk, accepted and mitigated by the `main`-only environments and reviews: whoever can
 deploy can run code as the app identity (deploying the app is exactly that), and the Deployer role
