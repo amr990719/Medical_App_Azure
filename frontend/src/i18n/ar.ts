@@ -541,6 +541,8 @@ export const ar = {
     back: "رجوع للاستمارة",
     title: "إيصال الدفع",
     instructionsTitle: "طريقة الدفع",
+    // PLACEHOLDER (D81, Q-B19): replace with the organization's payment details (bank / branch /
+    // e-payment). Shown on PaymentPage; a frontend deploy publishes the change.
     instructions:
       "ادفع قيمة الاشتراك الموضحة في ملخص الرسوم بالطريقة التي تعلنها إدارة المشروع، ثم ارفع صورة واضحة لإيصال الدفع. ستراجع الإدارة الإيصال وتؤكد الدفع.",
     drop: "اسحب صورة الإيصال هنا",
