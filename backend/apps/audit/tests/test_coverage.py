@@ -90,6 +90,7 @@ def full_lifecycle(settings):
 
     promoted = UserFactory(email="new-admin@example.test")
     call_command("grant_admin", promoted.email, stdout=StringIO())  # ADMIN_ROLE_GRANTED
+    call_command("revoke_admin", promoted.email, stdout=StringIO())  # ADMIN_ROLE_REVOKED
     return app_id
 
 
