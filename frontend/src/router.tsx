@@ -1,7 +1,6 @@
 import type { ComponentType } from "react";
 import { Navigate, type RouteObject } from "react-router";
 import { RequireRole } from "@/auth/RequireRole";
-import { ar } from "@/i18n/ar";
 import { AdminLayout } from "@/layouts/AdminLayout";
 import { DoctorLayout } from "@/layouts/DoctorLayout";
 import { PublicLayout } from "@/layouts/PublicLayout";
@@ -13,7 +12,7 @@ import { PrintPage } from "@/pages/application/PrintPage";
 import { ReviewPage } from "@/pages/application/ReviewPage";
 import { StatusPage } from "@/pages/application/StatusPage";
 import { DashboardPage } from "@/pages/doctor/DashboardPage";
-import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import { ProfilePage } from "@/pages/doctor/ProfilePage";
 import { LandingPage } from "@/pages/public/LandingPage";
 import { NotFoundPage } from "@/pages/public/NotFoundPage";
 import { SignedOutPage } from "@/pages/public/SignedOutPage";
@@ -22,11 +21,6 @@ import { SignedOutPage } from "@/pages/public/SignedOutPage";
 const admin = (path: string, load: () => Promise<{ Component: ComponentType }>): RouteObject => ({
   path,
   lazy: load,
-});
-
-const placeholder = (path: string, title: string): RouteObject => ({
-  path,
-  element: <PlaceholderPage title={title} />,
 });
 
 /**
@@ -48,7 +42,7 @@ export const routes: RouteObject[] = [
         element: <DoctorLayout />,
         children: [
           { path: "dashboard", element: <DashboardPage /> },
-          placeholder("profile", ar.pages.profile),
+          { path: "profile", element: <ProfilePage /> },
           { path: "application/new", element: <NewApplicationPage /> },
           { path: "application/:id", element: <ApplicationRedirectPage /> },
           { path: "application/:id/status", element: <StatusPage /> },

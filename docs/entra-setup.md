@@ -5,9 +5,18 @@ How doctors and administrators sign in (PROMPT.md §27). Django is a **confident
 `oid` + `tid`, and gives the browser only an HttpOnly session cookie. The SPA never sees a token
 and has no password form.
 
-> **NOT VERIFIED — requires Azure credentials.** Every step below was written from the Microsoft
-> documentation and the scripts were syntax-checked (`bash -n`, `shellcheck`, PowerShell parser);
-> none was run against a real External ID tenant.
+> **Verified on dev (2026-10-07/08)** in tenant "Medical Syndicates Project"
+> (`medicalsyndicates.onmicrosoft.com`, `24135332-…`): §1 tenant, §2 user flow `signup-signin`,
+> §3 `create-entra-app.ps1` (app `medical-syndicates-dev`, secret in Key
+> Vault, re-run idempotent), and a **real doctor sign-in** through the Static Web App host. The user
+> was created at `/auth/callback/`, `/auth/me/` returned 200, a second sign-in matched the same user
+> by `oid` + `tid`, and the `email` claim arrived (Q-T7, `email` part). Two Azure-only bugs were
+> fixed on the way: the MSAL nonce hash (`8490e3a`) and the OTel middleware order (`35770c4`).
+>
+> **Still NOT VERIFIED:** §2 step 2 (Arabic is **not enabled** on the dev flow; the sign-in page
+> was still English on 2026-10-11), §2 step 3 branding, §4 admin MFA (the Conditional Access policy
+> and the `amr` claim; dev runs with `ENTRA_ADMIN_REQUIRE_MFA=False`, D144), §5 secret rotation,
+> the bash variant of the script, and anything in staging or prod.
 
 One app registration per environment (`medical-syndicates-dev`, `-staging`, `-prod`), each with
 its own client secret in its own Key Vault (§49). Bicep does not create app registrations.
@@ -93,7 +102,9 @@ URI and CSRF origin follow.
 ## 4. MFA for administrators (Conditional Access)
 
 Admins are ordinary Entra users whose Django role is `ADMIN` (granted only with
-`python manage.py grant_admin <email-or-oid>`, run as a one-off Container Apps job or exec).
+`python manage.py grant_admin <email-or-oid>` and removed with `revoke_admin`, both audited and run
+as a one-off execution of the migrate job, `docs/azure-deployment.md` §"One-off management
+commands").
 
 1. External tenant → **Groups** → create `medical-admins-<env>`; add every administrator.
 2. **Protection → Conditional Access → New policy** `Require MFA for administrators`:
@@ -104,6 +115,11 @@ Admins are ordinary Entra users whose Django role is `ADMIN` (granted only with
    (`ENTRA_ADMIN_REQUIRE_MFA=true`, the Bicep default). If the tenant does not emit `amr`
    (verify with a test admin: a refused admin lands on `/?auth_error=MFA_REQUIRED`), set the parameter
    `entraAdminRequireMfa=false` and rely on the Conditional Access policy alone (Q-T7).
+   **dev does exactly that** (D144): `ENTRA_ADMIN_REQUIRE_MFA=False`, with email one-time passcode
+   through Conditional Access. **staging and prod do the same** (owner decision 2026-10-11, D150):
+   `entraAdminRequireMfa = false` in all three parameter files, so the Conditional Access policy
+   on `medical-admins-<env>` is the only admin MFA control. It must exist before the first admin
+   of that environment is granted.
 
 ## 5. Rotating the client secret
 

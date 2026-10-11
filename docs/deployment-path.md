@@ -86,7 +86,7 @@ Staging and production
 | Azure region | Use the approved data-residency region. Static Web Apps must use a supported SWA region such as `westeurope`, `centralus`, `eastus2`, `westus2`, or `eastasia`. |
 | Git branch | `main` |
 | GitHub repo visibility | Private |
-| Production private networking | Decide before the first `prod` deployment. PostgreSQL networking cannot be changed later without rebuilding. |
+| Production private networking | Decided 2026-10-11 (D150): off; `prod.bicepparam` pins `enablePrivateNetworking = false`. PostgreSQL networking cannot be changed later without rebuilding. |
 | OCR | Keep off until legal/privacy approval. Enable later with `ENABLE_OCR=true`. |
 | Entra External ID | Required for deployed sign-in. Local dev sign-in is not used in Azure production settings. |
 
@@ -309,8 +309,9 @@ This creates:
 | Azure identity | GitHub environment | Capability |
 |---|---|---|
 | `id-github-medsyn-dev` | `dev` | Deploy infrastructure and app |
-| `id-github-medsyn-dev-plan` | none (retired, D145) | Still created by `setup-github-oidc`; unused |
 | `id-medsyn-dev` | none | Runtime identity used by the app |
+
+Older runs also created `id-github-medsyn-dev-plan` and the *Deployment What-If Operator* role (retired, D145); the script no longer does. See `docs/azure-deployment.md` for their cleanup.
 
 Save the printed values for GitHub environment variables:
 
@@ -630,14 +631,11 @@ Apps forwards `/api` to the linked Container App so cookies stay same-origin.
 
 ## 13. Grant The First Admin
 
-The first admin must sign in once so the user exists in the database. Then grant admin:
-
-```powershell
-az containerapp exec `
-  -n $APP `
-  -g $RG `
-  --command "python manage.py grant_admin <email-or-entra-oid>"
-```
+The first admin must sign in once so the user exists in the database. Then run
+`python manage.py grant_admin <email-or-entra-oid>`. `az containerapp exec` needs an interactive
+terminal, so run it as an execution of the migrate job with only the arguments replaced:
+`docs/azure-deployment.md` §"One-off management commands" (this is how the dev grant ran in Session
+12). `revoke_admin` removes the role the same way (audited; refuses the last admin).
 
 Then add the same user to the Entra admin group used by the admin MFA policy.
 
@@ -670,7 +668,7 @@ Set:
 | `PUBLIC_HOSTNAME` | Optional custom domain |
 | `STATIC_WEB_APP_LOCATION` | Optional, default is `westeurope` |
 | `ENABLE_OCR` | Optional, `true` only after approval |
-| `ENABLE_PRIVATE_NETWORKING` | Optional. Decide before first prod deployment. |
+| `ENABLE_PRIVATE_NETWORKING` | Leave unset. prod pins `false` in `prod.bicepparam` (D150), so this variable has no effect there. |
 | `POSTGRES_ENTRA_ADMIN_OBJECT_ID` | Optional group/user object id |
 | `POSTGRES_ENTRA_ADMIN_NAME` | Optional group/user display name |
 | `POSTGRES_ENTRA_ADMIN_TYPE` | Optional `Group` or `User` |
@@ -730,6 +728,9 @@ After deployment, verify:
 - cleanup job exists with the expected cron
 
 ## 17. Repeat For Staging
+
+Step-by-step list with the staging-specific blockers (admin MFA parameter, SWA region, the
+manual first phase 2, what `DEPLOY_STAGING` does to prod): `docs/staging-checklist.md`.
 
 Repeat the same sequence with:
 

@@ -2,7 +2,7 @@
 # GitHub Actions → Azure with OIDC federated credentials, no stored Azure passwords
 # (PROMPT.md §36, docs/github-setup.md). Run once per environment. Idempotent.
 #
-# Creates, in the environment's resource group, two GitHub identities with different trust:
+# Creates, in the environment's resource group, the GitHub deploy identity:
 #
 #   deploy  `id-github-<base>-<env>`, federated to `repo:<owner>/<repo>:environment:<env>`.
 #           Before trusting it, the script checks with `gh` (read-only) that the GitHub
@@ -15,9 +15,11 @@
 #             Role Based Access Control Administrator, with an ABAC condition: it may create or
 #                                    delete ONLY the six data-plane role assignments main.bicep
 #                                    declares, and ONLY for the app identity `id-<base>-<env>`
-#   plan    `id-github-<base>-<env>-plan`, federated to `...:environment:<env>-plan`, used by
-#           pull-request and what-if-only runs (code that has not been reviewed yet).
-#           Roles: Reader + a custom role allowing only deployment validate/what-if.
+#
+# No `-plan` identity, what-if role or `<env>-plan` environment (D145): ARM what-if needs write
+# permission on every resource in the template, so a read-only identity cannot preview it, and
+# pull requests get no Azure credential. Earlier versions created them; this script no longer
+# touches them (docs/azure-deployment.md lists the commands to delete the leftovers).
 #
 # The app identity `id-<base>-<env>` is created here (Bicep then manages the same resource) so
 # its principal id can be written into the condition.
@@ -32,7 +34,7 @@
 set -euo pipefail
 
 usage() {
-    sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -244,45 +246,17 @@ if [ -n "$old_contributor" ]; then
     az role assignment delete --ids "$old_contributor" --output none
 fi
 
-# --- Plan identity (pull requests, what-if only) ----------------------------------------------
-plan_identity="id-github-${base_name}-${environment}-plan"
-plan_principal="$(ensure_identity "$plan_identity" github-actions-plan)"
-plan_client="$(az identity show -g "$resource_group" -n "$plan_identity" --query clientId -o tsv)"
-ensure_federation "$plan_identity" "${environment}-plan"
-
-whatif_role="Deployment What-If Operator (${resource_group})"
-cat >"${work_dir}/whatif.json" <<JSON
-{
-  "Name": "${whatif_role}",
-  "Description": "Validate and preview (what-if) resource group deployments; no write access.",
-  "Actions": [
-    "Microsoft.Resources/deployments/read",
-    "Microsoft.Resources/deployments/validate/action",
-    "Microsoft.Resources/deployments/whatIf/action",
-    "Microsoft.Resources/deployments/operationstatuses/read"
-  ],
-  "NotActions": [],
-  "AssignableScopes": ["${rg_id}"]
-}
-JSON
-ensure_custom_role "$whatif_role" "${work_dir}/whatif.json"
-assign "$plan_principal" "Reader" "Reader"
-assign "$plan_principal" "$whatif_role" "$whatif_role"
-
 protection="deployment branches: protected branches only (main)"
 if [ "$environment" = prod ]; then protection="${protection}; required reviewers"; fi
 
 cat <<EOF
 
-GitHub environments (Settings → Environments). None of these values is a secret.
+GitHub environment (Settings → Environments). None of these values is a secret.
   ${environment}        ${protection}
     gh variable set AZURE_CLIENT_ID       --env ${environment} --repo ${repo} --body ${deploy_client}
-  ${environment}-plan   no branch restriction (pull requests); read + what-if only
-    gh variable set AZURE_CLIENT_ID       --env ${environment}-plan --repo ${repo} --body ${plan_client}
-  Both environments:
-    gh variable set AZURE_TENANT_ID       --env <environment> --repo ${repo} --body ${tenant_id}
-    gh variable set AZURE_SUBSCRIPTION_ID --env <environment> --repo ${repo} --body ${subscription_id}
-    gh variable set AZURE_RESOURCE_GROUP  --env <environment> --repo ${repo} --body ${resource_group}
+    gh variable set AZURE_TENANT_ID       --env ${environment} --repo ${repo} --body ${tenant_id}
+    gh variable set AZURE_SUBSCRIPTION_ID --env ${environment} --repo ${repo} --body ${subscription_id}
+    gh variable set AZURE_RESOURCE_GROUP  --env ${environment} --repo ${repo} --body ${resource_group}
 After the first Bicep deployment, also set (values from the deployment outputs, docs/github-setup.md):
   ACR_NAME, CONTAINER_APP_NAME, MIGRATE_JOB_NAME, CLEANUP_JOB_NAME, STATIC_WEB_APP_NAME,
   ENTRA_AUTHORITY, ENTRA_TENANT_ID, ENTRA_CLIENT_ID

@@ -7,10 +7,32 @@ Sign-in: `docs/entra-setup.md`.
 Commands are Bash (Git Bash or WSL on Windows). The same steps in Windows PowerShell are in
 `README.md` §9–§14.
 
-> **NOT VERIFIED — requires Azure credentials.** No Azure resource was created while writing
-> this. Every Bicep file builds and lints with zero warnings (`az bicep build`, `az bicep lint`,
-> strict `infrastructure/bicepconfig.json`) and the parameter files compile; `az deployment group
-> what-if` could not run because the only available subscription is disabled (read-only).
+## Verification status
+
+**dev was deployed with these steps on 2026-10-07/08 and is deployed by GitHub Actions since
+2026-10-09** (resource group `Medical_App`, uaenorth; Static Web App in eastasia, D140). Session
+logs: `docs/progress.md` Sessions 11–13. **staging and prod have never been deployed.**
+
+| Step / capability | dev | How it was checked |
+|---|---|---|
+| §3 first phase, §7 second phase (Bicep) | verified | what-if then `az deployment group create` Succeeded (6 min 14 s / 4 min 48 s); CI deploys since merge `8164960` |
+| §4 Key Vault secrets + Container Apps Key Vault references | verified | `django-secret-key` and `entra-client-secret` set; the app starts and completes the Entra code exchange with them |
+| §5 Entra app registration | verified | `create-entra-app.ps1`; real sign-in through the SWA host (Session 12) |
+| §6 PostgreSQL Entra admin + managed-identity role | verified | `/api/ready/` → `{"status": "ok", "database": "ok"}` through the SWA host (re-checked 2026-10-11) |
+| Migrate job | verified | executions Succeeded on every deploy; `grant_admin` run as a job execution |
+| SWA linked backend, same-origin `/api` | verified | `/api/health/`, `/api/ready/` 200 and the §46 401 envelope via the SWA host; the Container App FQDN answers 401 (SWA auth on the link) |
+| GitHub OIDC deploy identity, AcrPush, SWA token read | verified | `backend`, `infrastructure`, `frontend` deploy-dev jobs succeeded (runs `37990842638`, `37990842692`, `37988694152`) |
+| Blob upload + user-delegation SAS | **NOT VERIFIED** | needs a signed-in doctor (owner's Entra account) |
+| Full doctor → admin flow on Azure | **NOT VERIFIED** | same; covered locally by Playwright `e2e.yml` on every PR |
+| App Insights ingestion / Log Analytics queries | **NOT VERIFIED** | blocked by security defaults, see §"Telemetry verification" |
+| Admin sign-in with MFA (`amr`, Conditional Access) | **NOT VERIFIED** | dev runs with `ENTRA_ADMIN_REQUIRE_MFA=False` (D144) |
+| §10 OCR with Azure OpenAI | **NOT VERIFIED** | not deployed (legal decisions L2/L3) |
+| Private networking (`enablePrivateNetworking`) | **NOT VERIFIED** | dev uses public endpoints + Entra-only auth |
+| Restore drill (§"Backups and recovery") | **NOT VERIFIED** | never run |
+| Cleanup job (scheduled) | deployed; a run not checked | — |
+
+Static checks still apply to every environment: Bicep builds and lints with zero warnings (strict
+`infrastructure/bicepconfig.json`), and `check-template-security.py` passes in CI.
 
 ## What gets deployed (per environment, one resource group)
 
@@ -183,13 +205,37 @@ unset TOKEN
 
 ## 9. Granting the admin role
 
+The user must have signed in once (the account exists only after the first sign-in). Run
+`grant_admin <email-or-oid>` as a one-off command (below). The grant is audited
+(`ADMIN_ROLE_GRANTED`) and ends the user's sessions. `revoke_admin <email-or-oid>` is the audited
+reverse (`ADMIN_ROLE_REVOKED`); it refuses to remove the last active administrator. Add the person
+to (or remove them from) the `medical-admins-<env>` group so the MFA policy applies
+(`docs/entra-setup.md` §4).
+
+### One-off management commands
+
+`az containerapp exec` needs an interactive terminal (it fails from scripts and CI), so start an
+execution of the **migrate** job with only the container arguments replaced. The image, the
+environment and the secret references stay those of the job. `entrypoint.sh` runs any arguments
+that are not `web`/`migrate`/`cleanup` as given. The dev grant ran this way in Session 12
+(execution `caj-medsyn-dev-migrate-myfcr7j`); the script form below was not re-run.
+
 ```bash
-az containerapp exec -n "$APP" -g "$RG" --command "python manage.py grant_admin <email-or-oid>"
+JOB_ID=$(az containerapp job show -n "$MIGRATE" -g "$RG" --query id -o tsv)
+az rest --method get --url "https://management.azure.com${JOB_ID}?api-version=2025-01-01" \
+  --query "{containers: properties.template.containers}" -o json > start.json   # no secret values
+python -c "import json; b = json.load(open('start.json')); b['containers'][0]['args'] = ['python', 'manage.py', 'grant_admin', '<email-or-oid>']; json.dump(b, open('start.json', 'w'))"
+EXEC=$(az rest --method post --url "https://management.azure.com${JOB_ID}/start?api-version=2025-01-01" \
+  --body @start.json --query name -o tsv)
+az containerapp job execution show -n "$MIGRATE" -g "$RG" --job-execution-name "$EXEC" \
+  --query properties.status -o tsv            # repeat until Succeeded
+CONTAINER=$(az containerapp job show -n "$MIGRATE" -g "$RG" --query 'properties.template.containers[0].name' -o tsv)
+az containerapp job logs show -n "$MIGRATE" -g "$RG" --execution "$EXEC" --container "$CONTAINER"
+rm start.json
 ```
 
-The user must have signed in once (the account exists only after the first sign-in). The grant is
-audited. Add the person to the `medical-admins-<env>` group so the MFA policy applies
-(`docs/entra-setup.md` §4).
+`az containerapp job logs show` needs the `containerapp` CLI extension. Do not use `job start
+--image …` for this: overriding the image there can drop the job's environment.
 
 ## 10. Enabling OCR (only after legal decisions L2/L3)
 
@@ -236,9 +282,9 @@ restore the database (below) to a new server and repoint `DATABASE_URL`.
 
 ## Backups and recovery (§48)
 
-> **NOT VERIFIED — requires Azure credentials.** The protection settings are in the templates
-> (checked by `check-template-security.py`); no restore has been run against Azure yet. The
-> first restore drill (below) is part of going live.
+> **Restore NOT VERIFIED.** The protection settings below are deployed on dev and checked in the
+> templates by `check-template-security.py`, but no restore has been run against Azure yet. The
+> first restore drill (below, in staging) is part of going live.
 
 ### What is protected (configured by Bicep)
 
@@ -436,6 +482,80 @@ month** before private networking and OCR. This is an estimate, not a quote.
 `containerCpu/Memory` + `gunicornWorkers`; PostgreSQL `postgresSkuName` (D4ds_v5) and
 `postgresHighAvailabilityMode=ZoneRedundant` when the RTO requires it; storage auto-grows.
 Never trade away TLS, Entra auth, private containers or backups to save cost.
+
+## Telemetry verification
+
+**NOT VERIFIED** (2026-10-11). The app sends OpenTelemetry data when
+`APPLICATIONINSIGHTS_CONNECTION_STRING` is set (Bicep sets it), but no query has confirmed that
+data arrives.
+
+Blocker: the subscription's workforce tenant (`448ad25b-…`) has **security defaults** on, and the
+operator uses a personal (live.com) guest account. ARM tokens work after an interactive MFA
+`az login`, but the CLI's data-plane tokens are refused with `AADSTS530035` ("Access has been
+blocked by security defaults"): Log Analytics queries in Session 12, Key Vault and ACR in
+Session 11. CLI sessions also expire after about an hour without silent refresh (on 2026-10-11
+even ARM calls failed with `AADSTS530035` until a new interactive sign-in). Requesting the Key
+Vault token at sign-in fixed Key Vault, so try the same for Log Analytics:
+
+```bash
+az login --tenant <workforce-tenant-id> --scope https://api.loganalytics.io/.default   # 448ad25b-…
+WS=$(az monitor log-analytics workspace show -g Medical_App -n log-medsyn-dev-yoepoxdsywea2 --query customerId -o tsv)
+az monitor log-analytics query -w "$WS" -o table --analytics-query \
+  "AppRequests | where TimeGenerated > ago(1d) | summarize count() by ResultCode, bin(TimeGenerated, 1h)"
+az monitor log-analytics query -w "$WS" -o table --analytics-query \
+  "AppTraces | where TimeGenerated > ago(1d) | take 20 | project TimeGenerated, SeverityLevel, Message"
+```
+
+(`az monitor log-analytics query` needs the `log-analytics` CLI extension: `az extension add -n
+log-analytics`. The resource names follow `main.bicep`'s `log-<prefix>-<token>` /
+`appi-<prefix>-<token>` pattern with dev's token `yoepoxdsywea2`.) Fallbacks that need only an ARM token or a browser:
+
+- `az monitor metrics list --resource "$(az monitor app-insights component show -g Medical_App --app appi-medsyn-dev-yoepoxdsywea2 --query id -o tsv)" --metric requests/count --interval PT1H -o table`
+  (non-zero counts prove ingestion; needs the `application-insights` CLI extension);
+- Azure portal → `appi-medsyn-dev-yoepoxdsywea2` → **Logs**, signed in interactively with MFA.
+
+The lasting fix is a work account in the tenant (or Conditional Access instead of security
+defaults) for operators. Also check while there that no national ID appears unmasked:
+`AppTraces | where Message matches regex @"\d{14}"` must return nothing.
+
+## Retired plan identity — removed 2026-10-11
+
+D145 dropped the pull-request what-if, and `setup-github-oidc` no longer creates the plan identity.
+The leftovers of an earlier dev run were **deleted on 2026-10-11 with the owner's approval**
+(Session 13), after checking that no workflow referenced a `-plan` environment:
+
+| Deleted | Checked before | Checked after |
+|---|---|---|
+| GitHub environments `dev-plan` (9 variables, no rules), `staging-plan`, `prod-plan` (empty) | no `-plan` reference in `.github/workflows` | only `dev`, `staging`, `prod` remain, rules unchanged; `dev` still has its 13 variables |
+| role assignments of `id-github-medsyn-dev-plan`: Reader and *Deployment What-If Operator (Medical_App)* on `Medical_App` | exactly these two, subscription-wide | none left for that principal |
+| managed identity `id-github-medsyn-dev-plan` (with federated credential `github-dev-plan`, subject `…:environment:dev-plan`) | — | `ResourceNotFound`; only `id-medsyn-dev` and `id-github-medsyn-dev` remain |
+| custom role *Deployment What-If Operator (Medical_App)* | assigned only to the plan identity, then to nobody | only *Deployer (Medical_App)* remains at the resource-group scope |
+
+Runtime and deploy resources were not touched: after the cleanup the Container App revision
+`--gfee502b16c13-1` was Running on image `fee502b…`, `/api/ready/` returned `database: ok`, and the
+deploy identity still has its three assignments and its `environment:dev` federated credential.
+
+If another environment ever has the same leftovers, use the ARM-only form below. Under security
+defaults `--assignee` fails (it resolves the principal through Microsoft Graph). Delete the
+assignments **before** the identity, or they remain orphaned.
+
+```bash
+export MSYS_NO_PATHCONV=1                 # Git Bash only
+RG=<resource-group>; PLAN=id-github-medsyn-<env>-plan
+ROLE="Deployment What-If Operator (<resource-group>)"
+SCOPE="/subscriptions/<subscription-id>/resourceGroups/$RG"
+PRINCIPAL=$(az identity show -g "$RG" -n "$PLAN" --query principalId -o tsv)
+ROLE_ID=$(az role definition list --name "$ROLE" --custom-role-only true --scope "$SCOPE" --query "[0].name" -o tsv)
+az role assignment list --all --fill-principal-name false \
+  --query "[?principalId=='$PRINCIPAL'].{role:roleDefinitionName,id:id}" -o table      # inspect
+az role assignment list --all --fill-principal-name false \
+  --query "[?ends_with(roleDefinitionId,'$ROLE_ID')].principalId" -o tsv                # must be only $PRINCIPAL
+gh api -X DELETE "repos/<owner>/<repo>/environments/<env>-plan"
+az role assignment delete --ids $(az role assignment list --all --fill-principal-name false \
+  --query "[?principalId=='$PRINCIPAL'].id" -o tsv)
+az identity delete -g "$RG" -n "$PLAN"
+az role definition delete --name "$ROLE" --custom-role-only true --scope "$SCOPE"   # only when unassigned
+```
 
 ## Troubleshooting
 

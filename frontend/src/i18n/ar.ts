@@ -20,7 +20,6 @@ export const ar = {
     backHome: "العودة إلى الصفحة الرئيسية",
     required: "مطلوب",
     optional: "اختياري",
-    pageUnderConstruction: "هذه الصفحة قيد الإنشاء وستتوفر قريباً.",
     notFoundTitle: "الصفحة غير موجودة",
     notFoundBody: "تأكد من الرابط أو عد إلى الصفحة الرئيسية.",
     loadFailed: "تعذّر تحميل البيانات.",
@@ -341,6 +340,35 @@ export const ar = {
       invalidNumber: "أدخل رقماً صحيحاً غير سالب",
     },
   },
+  profile: {
+    identityTitle: "البيانات الأساسية",
+    identityHint: "تُعدَّل هذه البيانات مع الرقم القومي والمستندات من الاستمارة.",
+    editInForm: "تعديلها من استمارة الاشتراك",
+    contactTitle: "بيانات الاتصال والسكن",
+    notProvided: "لم يُدخل بعد",
+    fields: {
+      fullName: "الاسم",
+      email: "البريد الإلكتروني",
+      nationalId: "الرقم القومي",
+      syndicate: "النقابة",
+      subSyndicate: "النقابة الفرعية",
+      registrationNumber: "رقم قيد النقابة",
+      registrationYear: "سنة قيد النقابة",
+      treatmentCard: "رقم بطاقة العلاج",
+      phone: "الهاتف المحمول",
+      governorate: "المحافظة",
+      governoratePlaceholder: "اختر المحافظة",
+      neighborhood: "الحي / المركز",
+      address: "العنوان",
+    },
+    save: "حفظ التعديلات",
+    saving: "جارٍ الحفظ…",
+    saved: "تم حفظ التعديلات.",
+    errors: {
+      mobileInvalid: "رقم الهاتف المحمول غير صحيح",
+      tooLong: "النص أطول من المسموح ({max} حرفاً)",
+    },
+  },
   pages: {
     profile: "الملف الشخصي",
     newApplication: "طلب جديد",
@@ -513,6 +541,8 @@ export const ar = {
     back: "رجوع للاستمارة",
     title: "إيصال الدفع",
     instructionsTitle: "طريقة الدفع",
+    // PLACEHOLDER (D81, Q-B19): replace with the organization's payment details (bank / branch /
+    // e-payment). Shown on PaymentPage; a frontend deploy publishes the change.
     instructions:
       "ادفع قيمة الاشتراك الموضحة في ملخص الرسوم بالطريقة التي تعلنها إدارة المشروع، ثم ارفع صورة واضحة لإيصال الدفع. ستراجع الإدارة الإيصال وتؤكد الدفع.",
     drop: "اسحب صورة الإيصال هنا",

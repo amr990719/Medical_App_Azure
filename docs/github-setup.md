@@ -75,7 +75,8 @@ in that resource group only:
 |---|---|---|
 | `id-medsyn-<env-short>` (the **app** identity, also declared by `main.bicep`) | — | none here; Bicep grants its data-plane roles |
 | `id-github-medsyn-<env>` (deploy) | `<subject prefix>:environment:<env>`, where the prefix comes from `GET repos/<repo>/actions/oidc/customization/sub` (`repo:<owner>@<id>/<repo>@<id>` with immutable subjects) | custom **Deployer (&lt;rg&gt;)** = Contributor minus `federatedIdentityCredentials/write|delete` on managed identities (it cannot add a trust to the app identity and sign in as it) and minus storage `listKeys`, `regenerateKey`, `ListAccountSas`, `listServiceSas` (deploy Bicep, update the app and jobs, start the migrate job, read the SWA token); **AcrPush**; **Role Based Access Control Administrator** with an ABAC condition: create/delete only the six data-plane roles `main.bicep` grants (Blob Data Contributor, Blob Delegator, Key Vault Secrets User, AcrPull, OpenAI User, Monitoring Metrics Publisher) **and only for the app identity's principal id** — it cannot grant anything to itself or to any other identity |
-| `id-github-medsyn-<env>-plan` (preview, **unused since D145**; still created by the script) | `<subject prefix>:environment:<env>-plan` | **Reader** + custom role *Deployment What-If Operator (&lt;rg&gt;)* (`deployments/read`, `validate/action`, `whatIf/action`, `operationstatuses/read`) |
+
+The script no longer creates the retired `id-github-medsyn-<env>-plan` identity or the custom role *Deployment What-If Operator (&lt;rg&gt;)* (D145). dev's leftovers from an earlier run were deleted on 2026-10-11 (`docs/azure-deployment.md` §"Retired plan identity").
 
 Residual risk, accepted and mitigated by the `main`-only environments and reviews: whoever can
 deploy can run code as the app identity (deploying the app is exactly that), and the Deployer role
@@ -123,7 +124,7 @@ the operator's *Key Vault Secrets Officer* comes from the first-phase deployment
 | `PUBLIC_HOSTNAME` *(optional)* | custom domain bound to the Static Web App | infrastructure |
 | `STATIC_WEB_APP_LOCATION` *(optional)* | default `westeurope` | infrastructure |
 | `ENABLE_OCR` *(optional)* | `true` only after legal decisions L2/L3 | infrastructure |
-| `ENABLE_PRIVATE_NETWORKING` *(optional, prod)* | decide before the first prod deployment | infrastructure |
+| `ENABLE_PRIVATE_NETWORKING` *(optional)* | ignored in prod: `prod.bicepparam` pins `false` (D150); `ENABLE_OCR` likewise | infrastructure |
 | `POSTGRES_ENTRA_ADMIN_OBJECT_ID` / `_NAME` / `_TYPE` *(optional)* | Entra admin group of the PostgreSQL server | infrastructure |
 
 ```bash

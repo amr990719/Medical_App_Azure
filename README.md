@@ -11,10 +11,16 @@ reject, and print. Everything runs on Microsoft Azure.
 - Specification: [`PROMPT.md`](PROMPT.md). Conventions and non-negotiable rules: [`CLAUDE.md`](CLAUDE.md).
 - Final report (architecture, schema, endpoints, security, tests, open questions): [`docs/final-report.md`](docs/final-report.md).
 
-> **Azure status.** All code, Bicep, scripts and workflows exist and were verified locally (tests,
-> builds, `az bicep build`, `manage.py check --deploy` with the production environment). Nothing
-> was deployed to Azure and no Entra tenant was used: every Azure step below is
-> **NOT VERIFIED — requires Azure credentials**.
+> **Azure status (2026-10-11).** **dev is deployed and verified** in resource group `Medical_App`
+> (uaenorth; Static Web App in eastasia), deployed by GitHub Actions on every merge to `main`
+> (OIDC, no stored Azure credentials): https://victorious-meadow-0e5775b00.4.azurestaticapps.net.
+> Verified there: both Bicep phases, Key Vault references, managed-identity Entra sign-in to
+> PostgreSQL (`/api/ready/` → `database: ok`), the migrate job, the SWA linked backend, a real Entra
+> External ID sign-in (user created, re-sign-in matched by `oid`/`tid`) and `grant_admin`.
+> **Still NOT VERIFIED:** the full doctor → admin flow on Azure (draft, blob uploads, review,
+> payment confirmation, approval, print), App Insights ingestion, admin sign-in with MFA, OCR with
+> Azure OpenAI, private networking, staging and prod, and a backup restore drill. Details:
+> [`docs/azure-deployment.md`](docs/azure-deployment.md) §"Verification status".
 
 ## Contents
 
@@ -447,8 +453,10 @@ bash infrastructure/scripts/setup-postgres-entra.sh --resource-group $RG --serve
   --identity-name $IDENTITY --database medical --allow-current-ip
 ```
 
-Production: decide `ENABLE_PRIVATE_NETWORKING` **before** the first `prod` deployment (PostgreSQL
-networking cannot be changed later; recommended `true`, see `docs/security.md` §7).
+Production runs **without private networking** (owner decision 2026-10-11, D150):
+`prod.bicepparam` pins `enablePrivateNetworking = false` and `enableOcr = false`. PostgreSQL
+networking cannot be changed after creation, so revisit this before the first `prod` deployment,
+not after (`docs/security.md` §7 lists the accepted risk).
 
 ## 12. Application deployment
 
@@ -523,25 +531,26 @@ the identity *Cognitive Services OpenAI User*, and sets `OCR_ENABLED=true`,
 `az cognitiveservices model list -l <region> -o table`. Prompts, privacy and limits:
 [`docs/ocr.md`](docs/ocr.md).
 
-## 14. Granting the admin role
+## 14. Granting and revoking the admin role
 
-The user must have signed in once (the account is created at first sign-in). The grant is
-audited (`ADMIN_ROLE_GRANTED`) and ends the user's open sessions, so the next sign-in goes
-through the admin MFA check.
+The user must have signed in once (the account is created at first sign-in). Both commands are
+audited (`ADMIN_ROLE_GRANTED` / `ADMIN_ROLE_REVOKED`) and end the user's open sessions, so the next
+sign-in goes through the admin checks. `revoke_admin` refuses to remove the last active
+administrator (grant another one first).
 
 ```bash
-# local
-docker compose exec backend python manage.py grant_admin <email-or-entra-oid>
-# Azure
-az containerapp exec -n "$APP" -g "$RG" --command "python manage.py grant_admin <email-or-entra-oid>"
+docker compose exec backend python manage.py grant_admin <email-or-entra-oid>    # local
+docker compose exec backend python manage.py revoke_admin <email-or-entra-oid>
 ```
 
-```powershell
-az containerapp exec -n $APP -g $RG --command "python manage.py grant_admin <email-or-entra-oid>"
-```
+In Azure, `az containerapp exec` needs an interactive terminal, so run the command as an
+execution of the migrate job with only its arguments replaced (the procedure used for the dev
+grant in Session 12): [`docs/azure-deployment.md`](docs/azure-deployment.md) §"One-off management
+commands".
 
-Also add the person to the Entra group `medical-admins-<env>` (Conditional Access MFA). There is no
-self-service path to the admin role, and the SPA has no admin-granting screen.
+Also add the person to (or remove them from) the Entra group `medical-admins-<env>` (Conditional
+Access MFA). There is no self-service path to the admin role, and the SPA has no admin-granting
+screen.
 
 ## 15. Troubleshooting
 
@@ -572,12 +581,13 @@ More: [`docs/azure-deployment.md`](docs/azure-deployment.md), [`docs/entra-setup
 | [`docs/api.md`](docs/api.md) | endpoints, error codes, link to the OpenAPI schema |
 | [`docs/business-rules.md`](docs/business-rules.md) | fees, national ID, kinships, documents, statuses, open business questions |
 | [`docs/deployment-path.md`](docs/deployment-path.md) | end-to-end Azure and GitHub deployment map |
-| [`docs/azure-deployment.md`](docs/azure-deployment.md) | deployment steps, migrations, rollback, backups and restore, cost |
+| [`docs/azure-deployment.md`](docs/azure-deployment.md) | deployment steps, verification status, one-off commands, telemetry checks, retired-identity cleanup, migrations, rollback, backups and restore, cost |
+| [`docs/staging-checklist.md`](docs/staging-checklist.md) | ordered checklist to create staging and when to set `DEPLOY_STAGING=true` |
 | [`docs/entra-setup.md`](docs/entra-setup.md) | External ID tenant, user flow, app registration, admin MFA |
 | [`docs/github-setup.md`](docs/github-setup.md) | GitHub environments, OIDC, variables, branch protection |
 | [`docs/security.md`](docs/security.md) | controls, legal decisions, security review |
 | [`docs/ocr.md`](docs/ocr.md) | OCR flow, provider, privacy |
 | [`docs/local-development.md`](docs/local-development.md) | local stack, scripts, e2e, production image locally |
 | [`docs/verification.md`](docs/verification.md) | PROMPT.md §55 checklist with evidence |
-| [`docs/final-report.md`](docs/final-report.md) | PROMPT.md §56 final report |
+| [`docs/final-report.md`](docs/final-report.md) | PROMPT.md §56 final report, owner decisions (§16) |
 | [`docs/plan.md`](docs/plan.md), [`docs/progress.md`](docs/progress.md) | implementation plan and session log |

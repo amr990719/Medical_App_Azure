@@ -695,6 +695,94 @@ not part of it and is still open.
 - **Azure CLI sessions last about an hour:** with security defaults and a personal (live.com)
   account, the CLI cannot refresh tokens silently, so long sessions need repeated MFA `az login`.
 
+### Session 13 — 2026-10-11 — Re-verify dev, close application gaps, staging/prod preparation
+Scope set by the user: re-verify live state, update stale Azure/Entra docs, finish or document the
+remaining application gaps, dev smoke test, telemetry, plan-identity cleanup prep, staging
+checklist, production decision list. Branch `session-13/finish-dev` (not pushed).
+- **GitHub (verified live):** `main` protected (PR required, 0 approvals, dismiss stale reviews,
+  conversation resolution, admins included, no force-push/deletion, no required status checks).
+  Environments `dev`/`staging` protected-branches only; `prod` + required reviewer `amr990719`;
+  `dev-plan`/`staging-plan`/`prod-plan` without rules. Variables: `dev` 13 (as Session 12),
+  `dev-plan` 9, the others none; no secrets anywhere; no repository variables (`DEPLOY_STAGING`
+  unset). Latest runs on `main` (merge `fee502b`) all succeeded; merge `4917f06` (PR #3) only
+  touched `docs/progress.md`, so no workflow ran (path filters). No in-progress, queued or waiting
+  runs; no open PRs; local `main` = `origin/main`. GitHub `dev` deployments: last two (`fee502b`)
+  `success`.
+- **Azure (not re-read):** `az containerapp show` failed with `AADSTS530035`: the CLI token from
+  Session 12 had expired, and an interactive MFA sign-in was not possible in this session. The
+  Azure MCP server is signed in to another tenant (`8775661c-…`; `InvalidAuthenticationTokenTenant`).
+  Indirect evidence that dev is unchanged: no deploy since `fee502b`, and only docs changed since.
+- **Dev HTTP checks (through the SWA host):** `/`, `/doctor/form`, `/profile` 200 with
+  `lang="ar" dir="rtl"`; `/api/health/` 200; `/api/ready/` 200 `database: ok`;
+  `/api/v1/reference-data/`, `/auth/me/` → §46 `NOT_AUTHENTICATED`; `/api/v1/auth/login/` → 302 to
+  `medicalsyndicates.ciamlogin.com/…/authorize` (client id `f4bac467-…`, PKCE S256, nonce, SWA
+  callback, `sessionid` cookie `Secure; HttpOnly; SameSite=Lax`). Security headers served: CSP,
+  HSTS, nosniff, `X-Frame-Options: DENY`, COOP, Permissions-Policy, Referrer-Policy.
+- **Dev smoke test (Playwright):** the landing page rendered after a cold start of a few seconds;
+  `تسجيل الدخول` led to the Entra sign-in page, which is still **English** (Arabic not enabled on
+  the user flow). The 11 console errors were a Kaspersky script that this machine's antivirus
+  injects, blocked by the site's CSP (not app errors). **Not verified:** real sign-in, draft,
+  document and receipt upload, admin review, payment confirmation, approve/correction, print.
+  They need the owner's account and email OTP.
+- **App Insights:** NOT VERIFIED. Same expired token; Log Analytics queries were already refused
+  by security defaults in Session 12. The exact sign-in (`--scope https://api.loganalytics.io/.default`),
+  queries and an ARM-only metrics fallback are in `docs/azure-deployment.md` §"Telemetry verification".
+- **`revoke_admin` (test-first, `5a3ba94`):** audited `ADMIN_ROLE_REVOKED`; matches by email
+  (case-insensitive) or oid; idempotent for non-admins; refuses the last active admin, locking the
+  admin rows so concurrent revokes cannot both pass (D147). The role change ends the user's
+  sessions (existing session-hash behaviour, tested). Migration `audit 0003` only changes choices
+  (`sqlmigrate`: no-op). The audit coverage test now produces every action, including the new one.
+- **`/profile` page with React Hook Form + Zod (test-first, `b24ba3a`, D146):** replaces the
+  placeholder (`PlaceholderPage` and its string removed). Identity and syndicate data are shown
+  read-only, with a link to the form. Contact fields are edited with RHF + `contactSchema`
+  (mirrors `normalize_mobile` and the column lengths, normalizes Arabic digits, trims). Only the
+  edited fields are sent; §46 field errors map onto inputs, and the D49 lock (409) shows the
+  server message. 19 new tests (schema + page).
+- **Payment instructions:** no final text exists. `payment.instructions` in `ar.ts` is marked
+  `PLACEHOLDER (D81, Q-B19)`, and the location is documented in `docs/final-report.md` §13.
+- **`setup-github-oidc` (`442c952`, D148):** both scripts stop creating the plan identity, the
+  What-If Operator role and the `-plan` printout; they don't touch existing leftovers. The cleanup
+  commands and a risk note (keeping `dev-plan` is the bigger risk: no branch rule, Reader on
+  `Medical_App`) are in `docs/azure-deployment.md`. **Nothing was deleted.**
+- **Docs:** README, `final-report.md`, `azure-deployment.md`, `entra-setup.md`, `security.md`,
+  `github-setup.md`, `deployment-path.md` now say what dev verified and keep NOT VERIFIED only where
+  it is still true. New: `docs/staging-checklist.md`; `final-report.md` §16 owner decisions;
+  `azure-deployment.md` §"Verification status", §"One-off management commands" (migrate-job
+  execution; `az containerapp exec` needs a TTY, so the old instructions could not work),
+  §"Telemetry verification", §"Retired plan identity". Found while writing the checklist:
+  `DEPLOY_STAGING=true` also queues `deploy-prod` on every merge (`needs: deploy-staging` and no
+  other condition), so the prod reviewer must reject until prod exists (D149).
+- **Checks:** backend `apps/accounts apps/audit` 109 passed; ruff check + format clean;
+  `makemigrations --check` no changes. Frontend: ESLint, `tsc` clean; Vitest 300 passed in 43
+  files; `rtl_check` 0/0 in 128 files. `shellcheck` (container) clean on all `.sh`; PowerShell
+  parser 0 errors; all 39 bash blocks in the touched docs pass `bash -n`; `az … --help` confirms
+  the flags of the new cleanup and one-off commands (the `log-analytics` and `application-insights`
+  extension commands were not checked: extensions not installed). Full backend suite in the
+  container: 976 passed, 1 skipped (the known repository-root test).
+- **Owner decisions (same day, D150):** approved pushing the branch (PR #4) and deleting the plan
+  leftovers. Production keeps OCR off and malware scanning off and uses no private networking;
+  admin MFA is Conditional Access only. Applied in `c316f65`: staging and prod
+  `entraAdminRequireMfa = false`; prod pins `enableOcr = false` and
+  `enablePrivateNetworking = false`. `az bicep build-params` passes for all three files.
+- **PR #4** opened from `session-13/finish-dev`.
+- **Plan cleanup: done** (explicit owner approval, scoped to the retired plan access). A first
+  attempt to delete the GitHub environments was refused by the tool-permission classifier and was
+  not worked around. After the owner's second, explicit approval (and a fresh `az login`):
+  - *Before:* environments `dev-plan` (9 variables, no rules) and empty `staging-plan`/`prod-plan`,
+    none referenced by a workflow. Identity `id-github-medsyn-dev-plan` (principal `ac237684-…`)
+    with one federated credential (`environment:dev-plan`) and exactly two assignments on
+    `Medical_App` (Reader, *Deployment What-If Operator (Medical_App)*); the role was assigned to
+    nobody else. `az role assignment list --assignee` fails under security defaults (Graph lookup),
+    so assignments were listed with `--all --fill-principal-name false` and a JMESPath filter.
+  - *Deleted, in order:* the three GitHub environments; the two role assignments (by id); the
+    identity; the custom role (after re-checking 0 assignments).
+  - *After:* environments `dev`, `staging`, `prod` with unchanged rules (`dev` 13 variables);
+    identities `id-medsyn-dev` and `id-github-medsyn-dev` only; custom roles: *Deployer
+    (Medical_App)* only; the deploy identity keeps Deployer, AcrPush, RBAC Administrator and its
+    `environment:dev` credential. Runtime untouched: revision `ca-medsyn-dev-api--gfee502b16c13-1`
+    Running on image `fee502b…`, `/api/ready/` `database: ok`. This is also the Azure state re-read
+    that was blocked earlier in the session.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1057,6 +1145,29 @@ not part of it and is still open.
   had just completed email-OTP MFA (`MFA_REQUIRED`). The tenant's CA policy must cover every admin.
   Staging and prod still say `true` and would lock admins out the same way: decide before they
   exist (options: the same choice, or a CA authentication context checked via the `acrs` claim).
+- **D146 — `/profile` edits contact details only, with React Hook Form + Zod:** identity and
+  syndicate fields stay on the paper form, where the national-ID parsing, OCR suggestions and
+  uniqueness errors already live. Duplicating them would give two editors with different
+  behaviour. Contact details (phone, governorate, neighbourhood, address) are what changes between
+  cycles. RHF + Zod are used here for real (PROMPT.md §6/§41); the wizard keeps its autosave
+  controller (deviation 66 narrowed). Only dirty fields are PATCHed, so the page cannot overwrite a
+  concurrent form autosave of other fields.
+- **D147 — `revoke_admin` refuses to remove the last active administrator:** a CLI can always
+  re-grant, but a production with no admin stops reviews until an operator with Azure access
+  acts. The check locks every active admin row (`select_for_update`) so two concurrent revokes
+  cannot both pass.
+- **D148 — `setup-github-oidc` no longer creates plan identities** (follows D145). Existing
+  leftovers are left alone: deleting them is destructive and needs the owner's approval
+  (`docs/azure-deployment.md` §"Retired plan identity").
+- **D150 — Owner's production decisions (2026-10-11):** OCR off, malware scanning off, no private
+  networking, admin MFA by Conditional Access only. Prod pins `enableOcr` and
+  `enablePrivateNetworking` to `false` in `prod.bicepparam`, so a GitHub variable can no longer turn
+  them on; a reviewed commit is needed. Accepted risks are recorded in `docs/security.md` §6 L2/L8
+  and §7: PostgreSQL keeps the "Azure services" firewall rule, uploads are unscanned. Staging uses
+  the same MFA setting and should keep `ENABLE_OCR` / `ENABLE_PRIVATE_NETWORKING` unset to match prod.
+- **D149 — `DEPLOY_STAGING=true` queues prod too:** all three workflows' `deploy-prod` jobs need
+  only `deploy-staging`. Documented (staging checklist §10) rather than changed: once prod exists,
+  this is the intended promotion path, and the prod reviewer gate stops it until then.
 
 ## Deviations from PROMPT.md
 
@@ -1093,7 +1204,7 @@ not part of it and is still open.
 | 29 | plan 6.4 Playwright doctor flow | only `e2e/foundation.spec.ts` now | the doctor flow does not exist yet |
 | 30 | plan 5.1 `BeneficiaryRow.documents` in form state, `useApplicationDraft` holding the logic | documents read from the application query; logic in `draftController.ts` | D69, D76 |
 | 31 | plan 5.2 `useUploadDocument`/`useExtract`/`DocumentThumb`/`preCheck` as separate files | OCR mutation inside `SmartUpload`; `useUploadDocument` for compact slots (photo, checklist); thumbnail inline | fewer files, same behaviour |
-| 32 | plan 5.6 `ProfilePage` | `/profile` still a placeholder | user scope for this session; the form edits the profile fields |
+| 32 | plan 5.6 `ProfilePage` | resolved in Session 13: contact details editable, identity read-only (D146) | identity fields are edited on the form with the national-ID / OCR flow |
 | 33 | plan 6.4 (Session 6) Playwright doctor spec with `?reset=1` | built now; `create: true` dev login | user asked for it in Session 5; D68 |
 | 34 | user: "add WIFE and SON_MINOR" | WIFE, SON_MINOR **and DAUGHTER** | worked example 2 (§17.4/§42) totals 3025 only with the daughter |
 | 35 | §18 instructions "configurable by admins" | static placeholder text | D81, Q-B19 |
@@ -1127,7 +1238,7 @@ not part of it and is still open.
 | 63 | plan 9.3 `security-review` skill | manual review with the same scope | the skill needs a git remote (none, by design) |
 | 64 | §44 document viewer shows every document | images shown; PDF/HEIC offered as a download | D133 (security: no uploaded file is framed) |
 | 65 | §55 "README contains deployment commands" | done in Session 10 | — |
-| 66 | §6 / §41 React Hook Form + Zod for instant validation | installed, not used: custom form controller; instant feedback = server `/validation/` after each autosave + local hints | the server is authoritative either way; reported in `docs/final-report.md` §13 (adopt or remove the dependencies) |
+| 66 | §6 / §41 React Hook Form + Zod for instant validation | narrowed in Session 13: used by the profile page (D146); the wizard keeps its custom controller (server `/validation/` after each autosave + local hints) | rewriting every wizard step on RHF changes no behaviour; the server is authoritative either way |
 | 67 | plan Task 10.1/10.2: two commits (`docs: readme and documentation set`, `Session 10: documentation and final report`) | one commit `Phase 10: deployment readiness` | explicit user instruction |
 
 ## Open questions
@@ -1164,15 +1275,16 @@ confirmed by the organization). Technical/environment questions for the user:
   forward a sign-up hint (`prompt=create`); today both buttons use the combined flow (D61).
 - **Q-T6** Resolved (Session 8, D114): `CACHE_URL=dbcache://django_cache`, table created by the
   migrate job.
-- **Q-T7** Entra External ID is NOT VERIFIED against a real tenant. The tenant must emit the `email`
-  claim (optional claim) and, for admin MFA enforcement, `amr`; otherwise set
-  `ENTRA_ADMIN_REQUIRE_MFA=false` and rely on Conditional Access (Session 7/8 docs).
+- **Q-T7** Partly resolved (Sessions 12–13): `email` arrives from the real tenant. `amr` is not
+  usable with External ID v2.0 tokens (D144), so dev relies on Conditional Access. Open: admin
+  sign-in with MFA on dev, and the staging/prod choice (`docs/final-report.md` §16 #3).
 - **Q-B16** (business) Should admins see drafts before submission? Default: no (D36).
 - **Q-B17** (business) The receipt minimum is applied as width ≥ 400 AND height ≥ 300 (prototype
   rule), so a portrait 300×400 photo is refused. Confirm, or relax to "either orientation".
 - **Q-B19** (business) The payment instructions on the receipt page are placeholder text (D81).
   The organization must provide the real text (bank / branch / e-payment details); deciding whether
-  admins edit it in the UI adds a settings model in a later session.
+  admins edit it in the UI adds a settings model in a later session. Where to change it today:
+  `frontend/src/i18n/ar.ts` → `payment.instructions` (marked `PLACEHOLDER`), then merge to `main`.
 - **Q-T11** The e-mail row of the paper form has 26 boxes; longer Entra e-mails are shown with as
   many boxes as needed (wrapping), never truncated. Confirm this is acceptable on the printed form.
 
@@ -1186,7 +1298,9 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T13** Container Apps ingress / SWA linked backend: confirm the `Host` header Django sees,
   that `X-Forwarded-Proto: https` is set (ALLOWED_HOSTS, HTTPS redirect, CSRF origin), that each
   hop appends exactly one `X-Forwarded-For` entry (`TRUSTED_PROXY_COUNT=2`, D130) and the request
-  body limits of both hops. NOT VERIFIED — requires Azure credentials.
+  body limits of both hops. `Host` and `X-Forwarded-Proto` verified on dev (Session 12/13: the
+  OIDC redirect URI and the `Secure` cookie carry the SWA host over https). `X-Forwarded-For` count
+  and body limits NOT VERIFIED.
 - **Q-T14** Application Insights ingestion: connection string only, or Entra-authenticated
   (`APPLICATIONINSIGHTS_AUTHENTICATION=entra` + `Monitoring Metrics Publisher`, local auth disabled
   on the resource)? Default here: connection string; recommended: Entra.
@@ -1205,30 +1319,32 @@ confirmed by the organization). Technical/environment questions for the user:
   before relying on dev scale-to-zero savings (docs/azure-deployment.md cost table).
 - **Q-T17** Resolved (Session 9, D133): confirmed the iframe could never render; PDFs are now
   downloads and nothing is framed.
-- **Q-T18** Container Apps ingress must stay public for the SWA linked backend; whether the link
-  restricts direct calls to the Container App FQDN is NOT VERIFIED (also Q-T13). A direct caller
+- **Q-T18** Container Apps ingress must stay public for the SWA linked backend. On dev, direct
+  calls to the Container App FQDN answered 401 (Session 12: the link enables SWA auth on the app);
+  not tested for every path and method (also Q-T13). A direct caller
   could pick its own anonymous throttle bucket (docs/security.md §7).
 - **Q-T19** Production network isolation: without `ENABLE_PRIVATE_NETWORKING=true` PostgreSQL keeps
   the "Azure services" firewall rule (any tenant's Azure resources can reach the port; Entra-only
-  sign-in still applies). Recommended on for prod; it adds VNet / private endpoint cost.
+  sign-in still applies). **Decided (D150): accepted for prod, private networking off.**
 
 ## Next session starts with
 
-**dev is deployed by GitHub Actions** (Session 12): https://victorious-meadow-0e5775b00.4.azurestaticapps.net,
-image `fee502b…`, `main` protected (PR, 0 approvals), deploys on merge, backend and infrastructure
-serialized. `amr_ashraf55@hotmail.com` is ADMIN.
-1. User: try the admin sign-in (email OTP via Conditional Access; the app no longer checks `amr`
-   on dev, D144). Enable Arabic as the default language of the `signup-signin` user flow. Add the
-   admin to the Entra admin group the CA policy targets.
-2. Smoke-test on dev: a draft application, a document upload (private blob), the admin review
-   flow, App Insights ingestion (Log Analytics queries need a non-security-defaults sign-in).
-3. Owner decisions (destructive / design): delete the `dev-plan` GitHub environment, the
-   `id-github-medsyn-dev-plan` identity and the *Deployment What-If Operator (Medical_App)* role,
-   and stop `setup-github-oidc` creating them; admin MFA for staging/prod (D144); required status
-   checks given path filters (D143).
-4. Staging: resources, Entra app, GitHub `staging` variables, then `gh variable set DEPLOY_STAGING
-   --body true`.
-5. Local: fix host-run pytest (compose PostgreSQL rejects the `medical` password from the host).
-   `docker compose` now pulls `public.ecr.aws/docker/library/postgres:16-alpine`.
-6. Carry-over: business questions / legal L1–L8, `/profile` page (deviation 32), Q-B19,
-   deviation 66, `revoke_admin`.
+**Session 13 work is in PR #4 (`session-13/finish-dev`).** Merging deploys `revoke_admin`,
+migration `audit 0003` (no-op SQL) and the `/profile` page to dev. Check afterwards that the
+active revision runs the merge commit's image and that `/api/ready/` is 200.
+dev (unchanged since `fee502b`): https://victorious-meadow-0e5775b00.4.azurestaticapps.net.
+1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
+   `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
+   admin (email OTP via CA) and confirm payment, request correction, approve, print. Enable Arabic
+   on the `signup-signin` user flow. Add the admin to the CA group.
+2. **Telemetry:** `az login --tenant 448ad25b-… --scope https://api.loganalytics.io/.default`, then
+   the queries in `docs/azure-deployment.md` §"Telemetry verification" (or the portal's Logs blade).
+   Re-read the Azure resource state (`az containerapp show`, revisions, jobs) at the same time.
+3. Plan cleanup: done (Session 13).
+4. **Owner decisions still open** (`docs/final-report.md` §16): region / data residency,
+   retention, restore drill, custom domain, payment text. Decided (D150): OCR off, malware
+   scanning off, no private networking, Conditional Access for admin MFA.
+5. **Staging:** follow `docs/staging-checklist.md`; set `DEPLOY_STAGING=true` last (it also queues
+   prod deployments for the reviewer to reject, D149).
+6. Local: host-run pytest still fails against the compose PostgreSQL (container path works).
+   Carry-over: business questions / legal L1–L8, required status checks given path filters (D143).

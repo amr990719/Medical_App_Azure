@@ -3,7 +3,7 @@
 GitHub Actions -> Azure with OIDC federated credentials (PowerShell port of setup-github-oidc.sh).
 
 .DESCRIPTION
-Run once per environment; idempotent. Creates two GitHub identities in the environment's
+Run once per environment; idempotent. Creates the GitHub deploy identity in the environment's
 resource group:
   deploy  id-github-<base>-<env>, federated to environment <env>. The script first checks with
           `gh` (read-only) that the GitHub environment accepts protected branches only (and has
@@ -12,9 +12,10 @@ resource group:
           credential writes and storage key/SAS listing; AcrPush; Role Based Access Control
           Administrator with an ABAC condition: only the six data-plane roles main.bicep
           declares, only for the app identity id-<base>-<env> (created here).
-  plan    id-github-<base>-<env>-plan, federated to environment <env>-plan (pull requests and
-          what-if-only runs). Roles: Reader + a custom role allowing only deployment
-          validate/what-if.
+No -plan identity, what-if role or <env>-plan environment (D145): ARM what-if needs write
+permission on every resource in the template, so a read-only identity cannot preview it, and
+pull requests get no Azure credential. Earlier versions created them; this script no longer
+touches them (docs/azure-deployment.md lists the commands to delete the leftovers).
 Residual trust: whoever can deploy can run code as the app identity; the boundary is the
 reviewed, protected main branch. Prints the GitHub variables to set; changes nothing on GitHub.
 Works in Windows PowerShell 5.1 and PowerShell 7.
@@ -208,33 +209,15 @@ if ($oldContributor) {
     Invoke-Az role assignment delete --ids $oldContributor --output none | Out-Null
 }
 
-# --- Plan identity (pull requests, what-if only) ----------------------------------------------
-$planName = "id-github-$BaseName-$Environment-plan"
-$plan = Get-Identity $planName 'github-actions-plan'
-Set-Federation $planName "$Environment-plan"
-
-$whatIfRole = "Deployment What-If Operator ($ResourceGroup)"
-Set-CustomRole $whatIfRole 'Validate and preview (what-if) resource group deployments; no write access.' `
-    @('Microsoft.Resources/deployments/read',
-    'Microsoft.Resources/deployments/validate/action',
-    'Microsoft.Resources/deployments/whatIf/action',
-    'Microsoft.Resources/deployments/operationstatuses/read') `
-    @()
-Grant-Role $plan.PrincipalId 'Reader' 'Reader'
-Grant-Role $plan.PrincipalId $whatIfRole $whatIfRole
-
 $protection = 'deployment branches: protected branches only (main)'
 if ($Environment -eq 'prod') { $protection += '; required reviewers' }
 
 Write-Host ''
-Write-Host 'GitHub environments (none of these values is a secret):'
+Write-Host 'GitHub environment (none of these values is a secret):'
 Write-Host "  $Environment        $protection"
-Write-Host "    gh variable set AZURE_CLIENT_ID --env $Environment --repo $Repo --body $($deploy.ClientId)"
-Write-Host "  $Environment-plan   no branch restriction (pull requests); read + what-if only"
-Write-Host "    gh variable set AZURE_CLIENT_ID --env $Environment-plan --repo $Repo --body $($plan.ClientId)"
-Write-Host '  Both environments:'
-Write-Host "    gh variable set AZURE_TENANT_ID       --env <environment> --repo $Repo --body $tenantId"
-Write-Host "    gh variable set AZURE_SUBSCRIPTION_ID --env <environment> --repo $Repo --body $subscriptionId"
-Write-Host "    gh variable set AZURE_RESOURCE_GROUP  --env <environment> --repo $Repo --body $ResourceGroup"
+Write-Host "    gh variable set AZURE_CLIENT_ID       --env $Environment --repo $Repo --body $($deploy.ClientId)"
+Write-Host "    gh variable set AZURE_TENANT_ID       --env $Environment --repo $Repo --body $tenantId"
+Write-Host "    gh variable set AZURE_SUBSCRIPTION_ID --env $Environment --repo $Repo --body $subscriptionId"
+Write-Host "    gh variable set AZURE_RESOURCE_GROUP  --env $Environment --repo $Repo --body $ResourceGroup"
 Write-Host 'After the first Bicep deployment, also set ACR_NAME, CONTAINER_APP_NAME, MIGRATE_JOB_NAME,'
 Write-Host 'CLEANUP_JOB_NAME, STATIC_WEB_APP_NAME, ENTRA_AUTHORITY, ENTRA_TENANT_ID, ENTRA_CLIENT_ID.'
