@@ -453,8 +453,10 @@ bash infrastructure/scripts/setup-postgres-entra.sh --resource-group $RG --serve
   --identity-name $IDENTITY --database medical --allow-current-ip
 ```
 
-Production: decide `ENABLE_PRIVATE_NETWORKING` **before** the first `prod` deployment (PostgreSQL
-networking cannot be changed later; recommended `true`, see `docs/security.md` §7).
+Production runs **without private networking** (owner decision 2026-10-11, D150):
+`prod.bicepparam` pins `enablePrivateNetworking = false` and `enableOcr = false`. PostgreSQL
+networking cannot be changed after creation, so revisit this before the first `prod` deployment,
+not after (`docs/security.md` §7 lists the accepted risk).
 
 ## 12. Application deployment
 

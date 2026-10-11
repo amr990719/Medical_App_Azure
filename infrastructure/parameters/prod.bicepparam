@@ -13,10 +13,12 @@ param containerImage = image
 param deployApplication = !empty(image)
 param publicHostname = readEnvironmentVariable('PUBLIC_HOSTNAME', '')
 
-// OCR stays off until legal decisions L2/L3 are approved (docs/security.md).
-param enableOcr = bool(readEnvironmentVariable('ENABLE_OCR', 'false'))
-// Decide before the first prod deployment: PostgreSQL networking cannot be changed later.
-param enablePrivateNetworking = bool(readEnvironmentVariable('ENABLE_PRIVATE_NETWORKING', 'false'))
+// Owner decisions 2026-10-11 (D150): OCR stays off in production (no Azure OpenAI resource), and
+// production uses public endpoints with Entra-only auth (no VNet / private endpoints). Pinned here,
+// not read from GitHub variables, so changing either takes a reviewed commit. PostgreSQL and the
+// Container Apps environment cannot switch network mode after creation.
+param enableOcr = false
+param enablePrivateNetworking = false
 param enableDiagnostics = true
 
 param containerCpu = '1.0'
@@ -52,4 +54,7 @@ param appInsightsDisableLocalAuth = true
 param entraAuthority = readEnvironmentVariable('ENTRA_AUTHORITY', '')
 param entraTenantId = readEnvironmentVariable('ENTRA_TENANT_ID', '')
 param entraClientId = readEnvironmentVariable('ENTRA_CLIENT_ID', '')
-param entraAdminRequireMfa = true
+// External ID issues v2.0 ID tokens, which never carry `amr`, so the app cannot see MFA. Admin MFA
+// is enforced by the tenant's Conditional Access policy on `medical-admins-<env>` (owner decision
+// 2026-10-11, D150; same as dev, D144).
+param entraAdminRequireMfa = false

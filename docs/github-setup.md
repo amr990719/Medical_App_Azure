@@ -124,7 +124,7 @@ the operator's *Key Vault Secrets Officer* comes from the first-phase deployment
 | `PUBLIC_HOSTNAME` *(optional)* | custom domain bound to the Static Web App | infrastructure |
 | `STATIC_WEB_APP_LOCATION` *(optional)* | default `westeurope` | infrastructure |
 | `ENABLE_OCR` *(optional)* | `true` only after legal decisions L2/L3 | infrastructure |
-| `ENABLE_PRIVATE_NETWORKING` *(optional, prod)* | decide before the first prod deployment | infrastructure |
+| `ENABLE_PRIVATE_NETWORKING` *(optional)* | ignored in prod: `prod.bicepparam` pins `false` (D150); `ENABLE_OCR` likewise | infrastructure |
 | `POSTGRES_ENTRA_ADMIN_OBJECT_ID` / `_NAME` / `_TYPE` *(optional)* | Entra admin group of the PostgreSQL server | infrastructure |
 
 ```bash

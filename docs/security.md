@@ -33,13 +33,13 @@ legal decisions in the second table, which nobody has taken yet.
 | Decision that needs legal / organizational approval (§47) | Current technical default | Item |
 |---|---|---|
 | Religion field: collect it at all, who sees it, printed or not | collected (optional), visible to the doctor and admins | L1 |
-| OCR processing of identity documents by an AI service | `OCR_ENABLED=false` in production | L2 |
+| OCR processing of identity documents by an AI service | **decided 2026-10-11: off in production** (`enableOcr = false` pinned in `prod.bicepparam`, no Azure OpenAI resource) | L2 |
 | Data residency / region and cross-border transfer | region is a deployment parameter; not chosen | L3 |
 | Retention periods and deletion on request | nothing deleted automatically except orphan / soft-deleted blobs and expired sessions | L4 |
 | Admin access policy (who, MFA, reviews, unmasked printouts) | `grant_admin` by an operator; MFA required; reveals audited | L5 |
 | Breach procedure | not defined | L6 |
 | Production access (subscription, database, Key Vault, break-glass) | not defined beyond the CI/CD identities | L7 |
-| Malware scanning of uploads | off (`MALWARE_SCAN_ENABLED=false`), `scan_status` ready | L8 |
+| Malware scanning of uploads | **decided 2026-10-11: off in production** (`MALWARE_SCAN_ENABLED=false`, no Defender for Storage); `scan_status` ready if revisited | L8 |
 
 Details of each decision: §6.
 
@@ -169,13 +169,13 @@ and birth years, identity-document images, personal photos and payment receipts.
 | # | Decision | Current default | Owner |
 |---|---|---|---|
 | L1 | **Religion field.** The paper form asks for religion; it is sensitive data. Is collecting it necessary and lawful, who may see it, and must it be on the printed form? | Collected (optional in the API), shown to the doctor and admins, OCR may suggest it | Legal + syndicate management |
-| L2 | **OCR by an AI service.** Sending identity-document images to Azure OpenAI (abuse monitoring may retain them up to 30 days unless modified abuse monitoring is approved). | `OCR_ENABLED=false` in production until approved; manual entry always works | Legal / DPO |
+| L2 | **OCR by an AI service.** Sending identity-document images to Azure OpenAI (abuse monitoring may retain them up to 30 days unless modified abuse monitoring is approved). | **Decided 2026-10-11 (D150): OCR off in production.** `enableOcr = false` is pinned in `prod.bicepparam`; manual entry is the only path. Enabling it later needs this approval and a reviewed change | Legal / DPO |
 | L3 | **Data residency / region.** There is no Azure region in Egypt; choose the region(s) for PostgreSQL, Blob, Key Vault, Log Analytics and Azure OpenAI, and confirm cross-border transfer requirements under Law 151/2020. | Not decided for production. dev runs in uaenorth (Static Web App static files in eastasia, D140) with test data only; the region is a Bicep parameter | Legal + IT |
 | L4 | **Retention periods** for applications, documents, rejected/withdrawn applications, audit logs, telemetry (Log Analytics retention) and backups; deletion on request. | Nothing is deleted automatically except orphan/soft-deleted blobs (`cleanup_blobs`) | Legal + syndicate management |
 | L5 | **Admin access policy:** who may be granted the admin role, MFA, periodic access review, who may reveal full national IDs (audited) and print unmasked forms (Q-B20). | `grant_admin` by an operator with production access; reveal is audited | Syndicate management + IT |
 | L6 | **Breach procedure:** detection (Application Insights alerts, audit review), containment (revoke sessions, rotate Key Vault secrets, disable OCR/uploads by flag), notification duties and timelines, contacts. | Not defined | Legal / DPO + IT |
 | L7 | **Production access:** who may access the Azure subscription, database and Key Vault; break-glass accounts; separation of environments (§49). | Separate resource groups, identities, Key Vaults and Entra app registrations per environment (Bicep parameters, `setup-github-oidc`) | IT |
-| L8 | **Malware scanning** of uploads (Microsoft Defender for Storage malware scanning). | `scan_status` field exists, scanning off (`MALWARE_SCAN_ENABLED=false`) | IT (cost decision) |
+| L8 | **Malware scanning** of uploads (Microsoft Defender for Storage malware scanning). | **Decided 2026-10-11 (D150): off in production.** Accepted risk: uploads are stored unscanned. They are only served to their owner and admins through the authorized endpoint or ≤ 5-minute SAS, with the content type pinned, and PDFs/HEIC are downloads, never rendered inline. `scan_status` and `MALWARE_SCAN_ENABLED` remain for a later change | IT (cost decision) |
 
 ## 7. Known gaps (tracked in docs/progress.md)
 
@@ -192,8 +192,10 @@ and birth years, identity-document images, personal photos and payment receipts.
   (Q-T18).
 - PostgreSQL without `enablePrivateNetworking` keeps the "Azure services" firewall rule
   (0.0.0.0): any Azure-hosted client, of any tenant, can open a TCP connection; sign-in still
-  needs an Entra token mapped to a database role (password authentication off). Recommended for
-  production: `ENABLE_PRIVATE_NETWORKING=true` (§5.1). Accepted for the MVP (PROMPT.md §34).
+  needs an Entra token mapped to a database role (password authentication off). **Accepted for
+  production by the owner (2026-10-11, D150):** `prod.bicepparam` pins
+  `enablePrivateNetworking = false`, so Key Vault, Blob and PostgreSQL keep public endpoints
+  protected by Entra-only auth, RBAC and TLS. The network mode cannot be changed after creation.
 - Azure Policy deny rules for the deployer identity are not written: they need a subscription to
   test. The template guard checks the same properties at build time.
 - Client address: `TRUSTED_PROXY_COUNT=2` assumes the SWA linked backend and the Container Apps

@@ -13,9 +13,12 @@ changes trust, so each needs the owner's go-ahead.
 - [ ] **Region** (legal decision L3, `docs/final-report.md` §16 #1). Staging should match the
       intended prod region. The resource group's location is the region of every resource except
       the Static Web App.
-- [ ] **Admin MFA strategy** (D144). `staging.bicepparam` has `entraAdminRequireMfa = true`, which
-      refuses every admin with External ID v2.0 tokens. Either set it to `false` and rely on
-      Conditional Access (as dev), or implement an `acrs` authentication-context check first.
+- [x] **Admin MFA strategy** — decided 2026-10-11 (D150): Conditional Access only;
+      `staging.bicepparam` has `entraAdminRequireMfa = false`. The CA policy (§4) must exist
+      before the first staging admin is granted.
+- [x] **OCR, malware scanning, private networking** — decided for production 2026-10-11 (D150):
+      all off. Keep `ENABLE_OCR` and `ENABLE_PRIVATE_NETWORKING` unset on GitHub `staging` so
+      staging matches prod.
 - [ ] **Static Web App region**: the parameter defaults to `westeurope`, which refused new Static
       Web Apps in Session 11. Set `STATIC_WEB_APP_LOCATION` (dev uses `eastasia`).
 - [ ] **Operator account**: a work account in the subscription's tenant avoids the security-default

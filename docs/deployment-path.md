@@ -86,7 +86,7 @@ Staging and production
 | Azure region | Use the approved data-residency region. Static Web Apps must use a supported SWA region such as `westeurope`, `centralus`, `eastus2`, `westus2`, or `eastasia`. |
 | Git branch | `main` |
 | GitHub repo visibility | Private |
-| Production private networking | Decide before the first `prod` deployment. PostgreSQL networking cannot be changed later without rebuilding. |
+| Production private networking | Decided 2026-10-11 (D150): off; `prod.bicepparam` pins `enablePrivateNetworking = false`. PostgreSQL networking cannot be changed later without rebuilding. |
 | OCR | Keep off until legal/privacy approval. Enable later with `ENABLE_OCR=true`. |
 | Entra External ID | Required for deployed sign-in. Local dev sign-in is not used in Azure production settings. |
 
@@ -668,7 +668,7 @@ Set:
 | `PUBLIC_HOSTNAME` | Optional custom domain |
 | `STATIC_WEB_APP_LOCATION` | Optional, default is `westeurope` |
 | `ENABLE_OCR` | Optional, `true` only after approval |
-| `ENABLE_PRIVATE_NETWORKING` | Optional. Decide before first prod deployment. |
+| `ENABLE_PRIVATE_NETWORKING` | Leave unset. prod pins `false` in `prod.bicepparam` (D150), so this variable has no effect there. |
 | `POSTGRES_ENTRA_ADMIN_OBJECT_ID` | Optional group/user object id |
 | `POSTGRES_ENTRA_ADMIN_NAME` | Optional group/user display name |
 | `POSTGRES_ENTRA_ADMIN_TYPE` | Optional `Group` or `User` |

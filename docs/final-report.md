@@ -390,7 +390,7 @@ in this session.
 - OCR with Azure OpenAI, private networking, staging and prod: never deployed.
 - Azure CLI sessions with the personal guest account last about an hour and need an interactive MFA
   sign-in. Long or unattended Azure work needs a work account in the tenant.
-- PostgreSQL without `ENABLE_PRIVATE_NETWORKING` keeps the "Azure services" firewall rule (Q-T19).
+- PostgreSQL without private networking keeps the "Azure services" firewall rule (Q-T19); accepted for production by the owner (D150).
 - Container Apps environment management meter (Q-T16); Application Insights Entra vs.
   connection-string ingestion for dev (Q-T14).
 - No restore drill has been run; Azure Policy deny rules for the deployer identity are not
@@ -503,20 +503,21 @@ overrides the real environment (`backend/config/tests/test_envfile.py`, 5 tests)
 
 ## 16. Owner decisions (2026-10-11)
 
-These decisions block staging or production. The defaults in the code are safe but not decided.
+These decisions block staging or production. Rows 2, 3, 4, 6 and 10 were decided by the owner on
+2026-10-11 (D150); the others are still open.
 
 | # | Decision | Why it blocks | Current state / recommendation |
 |---|---|---|---|
 | 1 | **Region and data residency** (L3) | the region is fixed at resource creation; moving data later means migration | dev in uaenorth with test data only. Decide the production data region and the cross-border position under Law 151/2020 before staging, so staging matches prod |
-| 2 | **Private networking before the first prod deploy** (Q-T19) | the network mode of PostgreSQL Flexible Server and of the Container Apps environment is fixed at creation; switching later means re-creating them and migrating data | recommended: `ENABLE_PRIVATE_NETWORKING=true` for prod from day one; budget VNet + private endpoints + DNS |
-| 3 | **Admin MFA strategy for staging/prod** (D144) | `staging`/`prod.bicepparam` still say `entraAdminRequireMfa=true`, which locks admins out with External ID v2.0 tokens | either Conditional Access only (as dev) or a CA authentication context checked through the `acrs` claim (needs a small code change) |
-| 4 | **OCR legal approval** (L2, L3) | sends ID images to Azure OpenAI; abuse monitoring may retain them up to 30 days | off (`OCR_ENABLED=false`, no OpenAI resource); manual entry always works |
+| 2 | **Private networking** (Q-T19) | network mode is fixed at creation | **Decided 2026-10-11: no private networking.** `prod.bicepparam` pins `enablePrivateNetworking = false`; accepted risk in `docs/security.md` §7 |
+| 3 | **Admin MFA strategy for staging/prod** (D144) | the app cannot see MFA in External ID v2.0 tokens | **Decided 2026-10-11: Conditional Access.** `entraAdminRequireMfa = false` in staging and prod; the CA policy on `medical-admins-<env>` must exist before the first admin is granted |
+| 4 | **OCR in production** (L2, L3) | ID images would go to Azure OpenAI | **Decided 2026-10-11: off.** `enableOcr = false` pinned in `prod.bicepparam`; manual entry only |
 | 5 | **Retention policy** (L4) | applications, documents, audit, telemetry and backups have no deletion rule | nothing is deleted except orphan / soft-deleted blobs |
-| 6 | **Malware scanning** (L8) | uploads are stored unscanned (`scan_status` exists) | enable Defender for Storage malware scanning per environment (per-GB cost) and set `MALWARE_SCAN_ENABLED` |
+| 6 | **Malware scanning** (L8) | uploads stored unscanned | **Decided 2026-10-11: off in production**; accepted risk in `docs/security.md` §6 L8 |
 | 7 | **Backup / restore drill** (§48) | RPO/RTO are assumptions; no restore has been run | run drill A–C of `docs/azure-deployment.md` in staging before go-live; confirm RPO/RTO |
 | 8 | **Custom domain** | Entra redirect URIs, `PUBLIC_HOSTNAME`, CSRF origin and the printed URL depend on it | re-run `create-entra-app` with the new `--public-url`, set `PUBLIC_HOSTNAME`, redeploy (`docs/entra-setup.md` §3) |
 | 9 | Payment instructions text (Q-B19, business question 8) | doctors see placeholder text | provide bank / branch / e-payment wording |
-| 10 | Delete the retired plan identity and `-plan` environments (D145) | `dev-plan` has no branch restriction and still trusts an identity with Reader on `Medical_App` | approve the commands in `docs/azure-deployment.md` §"Retired plan identity" |
+| 10 | Delete the retired plan identity and `-plan` environments (D145) | `dev-plan` had no branch restriction and trusted an identity with Reader on `Medical_App` | **Approved 2026-10-11**; progress in `docs/progress.md` Session 13 |
 
 Business questions 1–21 (§14) and legal decisions L1–L8 (`docs/security.md` §6) remain open as
 well.

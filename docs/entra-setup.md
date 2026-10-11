@@ -116,8 +116,10 @@ commands").
    (verify with a test admin: a refused admin lands on `/?auth_error=MFA_REQUIRED`), set the parameter
    `entraAdminRequireMfa=false` and rely on the Conditional Access policy alone (Q-T7).
    **dev does exactly that** (D144): `ENTRA_ADMIN_REQUIRE_MFA=False`, with email one-time passcode
-   through Conditional Access. Which of the two applies to staging and prod is an open owner
-   decision (`docs/final-report.md` §"Owner decisions").
+   through Conditional Access. **staging and prod do the same** (owner decision 2026-10-11, D150):
+   `entraAdminRequireMfa = false` in all three parameter files, so the Conditional Access policy
+   on `medical-admins-<env>` is the only admin MFA control. It must exist before the first admin
+   of that environment is granted.
 
 ## 5. Rotating the client secret
 
