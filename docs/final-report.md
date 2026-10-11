@@ -15,8 +15,9 @@ number, admin review, payment confirmation, approval, correction loop, A4 print.
 deployed by GitHub Actions through OIDC on every merge to `main`. Verified: both Bicep phases, Key
 Vault references, managed-identity Entra auth to PostgreSQL, the migrate job, the SWA linked
 backend and security headers, the CI deploy identity, a real Entra External ID sign-in, and
-`grant_admin`. **NOT VERIFIED:** the full doctor → admin flow on Azure (blob uploads, review,
-payment confirmation, approval, print), App Insights ingestion, admin sign-in with MFA, OCR with
+`grant_admin`, CI deploys with migrations (latest: PR #4, `f23b710`) and App Insights ingestion.
+**NOT VERIFIED:** the full doctor → admin flow on Azure (blob uploads, review,
+payment confirmation, approval, print), admin sign-in with MFA, OCR with
 Azure OpenAI, private networking, a restore drill, and staging/prod, which have never been
 deployed. Step-by-step status: `docs/azure-deployment.md` §"Verification status".
 
@@ -378,9 +379,10 @@ in this session.
   Blob with user-delegation SAS, admin review, payment confirmation, approve / request
   correction, print). It needs the owner's Entra sign-in with email OTP. The same flow passes
   locally in Playwright on every PR.
-- NOT VERIFIED: Application Insights ingestion. Log Analytics queries are refused by the workforce
-  tenant's security defaults (`AADSTS530035`); the exact sign-in and queries are in
-  `docs/azure-deployment.md` §"Telemetry verification".
+- Application Insights ingestion: verified on dev (2026-10-11), including the masking check (0
+  unmasked 14-digit runs in 30 days). Direct Log Analytics tokens are still refused by security
+  defaults; queries go through the ARM endpoint (`docs/azure-deployment.md` §"Telemetry
+  verification").
 - Entra External ID: the `email` claim is verified. `amr` is not usable with v2.0 tokens (D144), so
   admin MFA relies on Conditional Access and admin sign-in with MFA is not verified. Arabic is not
   enabled on the user flow (the hosted page is English).
@@ -499,7 +501,8 @@ overrides the real environment (`backend/config/tests/test_envfile.py`, 5 tests)
 | Live dev, HTTP | `curl` through the SWA host: `/`, `/doctor/form`, `/profile`, `/api/health/`, `/api/ready/`, `/api/v1/reference-data/`, `/api/v1/auth/me/`, `/api/v1/auth/login/` | 200 SPA (`lang="ar" dir="rtl"`), health 200, ready `database: ok`, §46 401 envelopes, login 302 to `medicalsyndicates.ciamlogin.com` with client id, PKCE S256 and the SWA callback; security headers present |
 | Live dev, browser | Playwright: landing → `تسجيل الدخول` | Entra sign-in page rendered (English: Arabic not enabled); stopped there (no credentials) |
 | GitHub | `gh api …/branches/main/protection`, environments, variables, `gh run list` | as recorded in `docs/progress.md` Session 13; no failed or pending current runs |
-| Azure resource state, App Insights | `az containerapp show …` | **not run**: the CLI token had expired (`AADSTS530035`), and a new MFA sign-in was not possible in this session |
+| Azure resource state | `az containerapp show`, `revision list`, `job show`, `job execution list`, SWA `environment list` / `linkedBackends` (after the owner's `az login`, post-merge) | revision `ca-medsyn-dev-api--gf23b71016ad9-1` Healthy, 100% traffic, image `f23b710…`; both jobs on `f23b710…`; migrate execution `…-e8f7icb` Succeeded and applied `audit.0003`; SWA `default` Ready (13:25:34Z, `main`); linked backend `django-api` Succeeded; `/api/ready/` 200 |
+| App Insights | KQL through `az rest … /workspaces/<name>/api/query` (ARM) | ingestion verified (a new request queryable about 1 s after it was sent); no exceptions since the deploy; 0 unmasked 14-digit runs in 30 days |
 
 ## 16. Owner decisions (2026-10-11)
 

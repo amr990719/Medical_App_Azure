@@ -724,8 +724,8 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
   injects, blocked by the site's CSP (not app errors). **Not verified:** real sign-in, draft,
   document and receipt upload, admin review, payment confirmation, approve/correction, print.
   They need the owner's account and email OTP.
-- **App Insights:** NOT VERIFIED. Same expired token; Log Analytics queries were already refused
-  by security defaults in Session 12. The exact sign-in (`--scope https://api.loganalytics.io/.default`),
+- **App Insights (first attempt):** not possible: same expired token; Log Analytics queries were
+  already refused by security defaults in Session 12 (verified later this session, below). The exact sign-in (`--scope https://api.loganalytics.io/.default`),
   queries and an ARM-only metrics fallback are in `docs/azure-deployment.md` §"Telemetry verification".
 - **`revoke_admin` (test-first, `5a3ba94`):** audited `ADMIN_ROLE_REVOKED`; matches by email
   (case-insensitive) or oid; idempotent for non-admins; refuses the last active admin, locking the
@@ -782,6 +782,26 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
     `environment:dev` credential. Runtime untouched: revision `ca-medsyn-dev-api--gfee502b16c13-1`
     Running on image `fee502b…`, `/api/ready/` `database: ok`. This is also the Azure state re-read
     that was blocked earlier in the session.
+
+- **PR #4 merged** (`f23b710`, 13:23Z) after CI was green on the head `80b3093`. Deploys:
+  infrastructure 13:25:11–13:30:16Z (kept the running image `fee502b`), then backend
+  13:30:19–13:33:20Z (serialized, so no Q-D1 race), frontend at 13:25Z; all succeeded,
+  staging/prod skipped.
+- **Verified directly in Azure** (owner's fresh `az login`): Container App Running, revision
+  `ca-medsyn-dev-api--gf23b71016ad9-1` latest and latest-ready, Healthy, 100% traffic, image
+  `f23b710…`; migrate and cleanup jobs on `f23b710…`; migrate execution
+  `caj-medsyn-dev-migrate-e8f7icb` Succeeded and logged `Applying
+  audit.0003_admin_role_revoked_action... OK`; SWA environment `default` Ready (13:25:34Z, `main`);
+  linked backend `django-api` → `ca-medsyn-dev-api` Succeeded. `/api/ready/` 200 (about 23 s cold
+  start from zero replicas, then about 0.6 s); the deployed bundle contains the profile page's
+  strings.
+- **App Insights verified** (first time): Log Analytics queries work through the ARM endpoint
+  (`POST …/workspaces/<name>/api/query`, ARM token only), avoiding the `AADSTS530035` refusal of
+  `api.loganalytics.io` tokens. `AppRequests`/`AppTraces`/`AppDependencies` have data; a
+  `/api/v1/auth/me/` request at 13:44:24Z was queryable 1 s later from the new replica; no
+  exceptions after the deploy; 0 unmasked 14-digit runs in 30 days across traces, exceptions,
+  request URLs and console logs. Probes are not request telemetry (`HealthProbeMiddleware` runs
+  before OpenTelemetry). KQL quirk: columns named `first`/`last` gave `SyntaxError` there.
 
 ## Decisions
 
@@ -1329,22 +1349,16 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**Session 13 work is in PR #4 (`session-13/finish-dev`).** Merging deploys `revoke_admin`,
-migration `audit 0003` (no-op SQL) and the `/profile` page to dev. Check afterwards that the
-active revision runs the merge commit's image and that `/api/ready/` is 200.
-dev (unchanged since `fee502b`): https://victorious-meadow-0e5775b00.4.azurestaticapps.net.
+**dev runs `f23b710`** (PR #4: `revoke_admin`, `/profile`, owner decisions D150), verified in Azure
+on 2026-10-11, App Insights included: https://victorious-meadow-0e5775b00.4.azurestaticapps.net.
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve, print. Enable Arabic
-   on the `signup-signin` user flow. Add the admin to the CA group.
-2. **Telemetry:** `az login --tenant 448ad25b-… --scope https://api.loganalytics.io/.default`, then
-   the queries in `docs/azure-deployment.md` §"Telemetry verification" (or the portal's Logs blade).
-   Re-read the Azure resource state (`az containerapp show`, revisions, jobs) at the same time.
-3. Plan cleanup: done (Session 13).
-4. **Owner decisions still open** (`docs/final-report.md` §16): region / data residency,
-   retention, restore drill, custom domain, payment text. Decided (D150): OCR off, malware
-   scanning off, no private networking, Conditional Access for admin MFA.
-5. **Staging:** follow `docs/staging-checklist.md`; set `DEPLOY_STAGING=true` last (it also queues
+   on the `signup-signin` user flow. Add the admin to the CA group. Afterwards, check
+   `AppExceptions` and the masking query (`docs/azure-deployment.md` §"Telemetry verification").
+2. **Owner decisions still open** (`docs/final-report.md` §16): region / data residency,
+   retention, restore drill, custom domain, payment text.
+3. **Staging:** follow `docs/staging-checklist.md`; set `DEPLOY_STAGING=true` last (it also queues
    prod deployments for the reviewer to reject, D149).
-6. Local: host-run pytest still fails against the compose PostgreSQL (container path works).
+4. Local: host-run pytest still fails against the compose PostgreSQL (container path works).
    Carry-over: business questions / legal L1–L8, required status checks given path filters (D143).
