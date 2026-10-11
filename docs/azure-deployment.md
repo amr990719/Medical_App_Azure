@@ -19,12 +19,12 @@ logs: `docs/progress.md` Sessions 11–13. **staging and prod have never been de
 | §4 Key Vault secrets + Container Apps Key Vault references | verified | `django-secret-key` and `entra-client-secret` set; the app starts and completes the Entra code exchange with them |
 | §5 Entra app registration | verified | `create-entra-app.ps1`; real sign-in through the SWA host (Session 12) |
 | §6 PostgreSQL Entra admin + managed-identity role | verified | `/api/ready/` → `{"status": "ok", "database": "ok"}` through the SWA host (re-checked 2026-10-11) |
-| Migrate job | verified | executions Succeeded on every deploy; `grant_admin` run as a job execution |
+| Migrate job | verified | executions Succeeded on every deploy (latest `caj-medsyn-dev-migrate-e8f7icb` applied `audit.0003`, read from `ContainerAppConsoleLogs_CL`); `grant_admin` run as a job execution |
 | SWA linked backend, same-origin `/api` | verified | `/api/health/`, `/api/ready/` 200 and the §46 401 envelope via the SWA host; the Container App FQDN answers 401 (SWA auth on the link) |
 | GitHub OIDC deploy identity, AcrPush, SWA token read | verified | `backend`, `infrastructure`, `frontend` deploy-dev jobs succeeded (runs `37990842638`, `37990842692`, `37988694152`) |
 | Blob upload + user-delegation SAS | **NOT VERIFIED** | needs a signed-in doctor (owner's Entra account) |
 | Full doctor → admin flow on Azure | **NOT VERIFIED** | same; covered locally by Playwright `e2e.yml` on every PR |
-| App Insights ingestion / Log Analytics queries | **NOT VERIFIED** | blocked by security defaults, see §"Telemetry verification" |
+| App Insights ingestion / Log Analytics queries | verified (2026-10-11) | requests, traces and dependencies arrive; a request to the new revision was queryable about 1 s after it was sent; 0 unmasked 14-digit runs in 30 days. Queried through the ARM endpoint, see §"Telemetry verification" |
 | Admin sign-in with MFA (`amr`, Conditional Access) | **NOT VERIFIED** | dev runs with `ENTRA_ADMIN_REQUIRE_MFA=False` (D144) |
 | §10 OCR with Azure OpenAI | **NOT VERIFIED** | not deployed (legal decisions L2/L3) |
 | Private networking (`enablePrivateNetworking`) | **NOT VERIFIED** | dev uses public endpoints + Entra-only auth |
@@ -485,38 +485,56 @@ Never trade away TLS, Entra auth, private containers or backups to save cost.
 
 ## Telemetry verification
 
-**NOT VERIFIED** (2026-10-11). The app sends OpenTelemetry data when
-`APPLICATIONINSIGHTS_CONNECTION_STRING` is set (Bicep sets it), but no query has confirmed that
-data arrives.
+**Verified on dev, 2026-10-11** (after the `f23b710` deploy). Application Insights data arrives in
+the workspace `log-medsyn-dev-yoepoxdsywea2`: `AppRequests`, `AppTraces` and `AppDependencies`
+have rows, and a `GET /api/v1/auth/me/` (401) sent at 13:44:24Z appeared in `AppRequests` about
+1 s later (timestamp 13:44:25Z), tagged with the new revision's replica. There were no
+`AppExceptions` after the deploy. A 30-day scan of `AppTraces`, `AppExceptions`,
+`AppRequests` (URL) and `ContainerAppConsoleLogs_CL` for a standalone 14-digit run returned
+**0** hits, so no unmasked national ID was found.
 
-Blocker: the subscription's workforce tenant (`448ad25b-…`) has **security defaults** on, and the
-operator uses a personal (live.com) guest account. ARM tokens work after an interactive MFA
-`az login`, but the CLI's data-plane tokens are refused with `AADSTS530035` ("Access has been
-blocked by security defaults"): Log Analytics queries in Session 12, Key Vault and ACR in
-Session 11. CLI sessions also expire after about an hour without silent refresh (on 2026-10-11
-even ARM calls failed with `AADSTS530035` until a new interactive sign-in). Requesting the Key
-Vault token at sign-in fixed Key Vault, so try the same for Log Analytics:
+`/api/health/` and `/api/ready/` never appear in `AppRequests`: `HealthProbeMiddleware` answers
+them before the OpenTelemetry middleware (by design, so probes don't flood telemetry). Their
+database queries still show up in `AppDependencies`. To prove that a revision records requests,
+send a normal request (for example `/api/v1/auth/me/`) and query for it.
+
+**How to query under security defaults.** The workforce tenant (`448ad25b-…`) has security
+defaults on, and the operator is a personal (live.com) guest. Data-plane tokens are refused with
+`AADSTS530035`, which blocks `az monitor log-analytics query` (it requests an
+`api.loganalytics.io` token). Log Analytics also accepts queries through **Azure Resource
+Manager**, which needs only the ARM token from a normal interactive `az login`:
 
 ```bash
-az login --tenant <workforce-tenant-id> --scope https://api.loganalytics.io/.default   # 448ad25b-…
-WS=$(az monitor log-analytics workspace show -g Medical_App -n log-medsyn-dev-yoepoxdsywea2 --query customerId -o tsv)
-az monitor log-analytics query -w "$WS" -o table --analytics-query \
-  "AppRequests | where TimeGenerated > ago(1d) | summarize count() by ResultCode, bin(TimeGenerated, 1h)"
-az monitor log-analytics query -w "$WS" -o table --analytics-query \
-  "AppTraces | where TimeGenerated > ago(1d) | take 20 | project TimeGenerated, SeverityLevel, Message"
+export MSYS_NO_PATHCONV=1                      # Git Bash only
+SUB=$(az account show --query id -o tsv)
+WS="/subscriptions/$SUB/resourceGroups/Medical_App/providers/Microsoft.OperationalInsights/workspaces/log-medsyn-dev-yoepoxdsywea2"
+cat > query.json <<'JSON'
+{"query": "AppRequests | where TimeGenerated > ago(1d) | summarize requests=count(), latest=max(TimeGenerated) by ResultCode"}
+JSON
+az rest --method post --url "https://management.azure.com${WS}/api/query?api-version=2020-08-01" \
+  --body @query.json -o json            # response: {"Tables": [{"Columns": [...], "Rows": [...]}]}
+rm query.json
 ```
 
-(`az monitor log-analytics query` needs the `log-analytics` CLI extension: `az extension add -n
-log-analytics`. The resource names follow `main.bicep`'s `log-<prefix>-<token>` /
-`appi-<prefix>-<token>` pattern with dev's token `yoepoxdsywea2`.) Fallbacks that need only an ARM token or a browser:
+Notes from running it: write the query to a file (`--body @file`), since inline JSON with KQL
+pipes is fragile in shells; the response keys are capitalized (`Tables`, `Rows`); and naming a
+summarize column `first` or `last` returned `SyntaxError` here (use `earliest` / `latest`). The
+same route answers `ContainerAppConsoleLogs_CL`, which is how the migrate job's output is read
+once an execution has finished (`az containerapp job logs show` only streams running replicas).
 
-- `az monitor metrics list --resource "$(az monitor app-insights component show -g Medical_App --app appi-medsyn-dev-yoepoxdsywea2 --query id -o tsv)" --metric requests/count --interval PT1H -o table`
-  (non-zero counts prove ingestion; needs the `application-insights` CLI extension);
-- Azure portal → `appi-medsyn-dev-yoepoxdsywea2` → **Logs**, signed in interactively with MFA.
+Useful checks:
 
-The lasting fix is a work account in the tenant (or Conditional Access instead of security
-defaults) for operators. Also check while there that no national ID appears unmasked:
-`AppTraces | where Message matches regex @"\d{14}"` must return nothing.
+```text
+AppRequests | where TimeGenerated > ago(1d) | summarize count() by ResultCode, bin(TimeGenerated, 1h)
+union withsource=T AppRequests, AppTraces, AppDependencies, AppExceptions | where TimeGenerated > ago(1d) | summarize rows=count(), latest=max(TimeGenerated) by T
+AppExceptions | where TimeGenerated > ago(1d) | summarize count() by ProblemId
+ContainerAppConsoleLogs_CL | where ContainerGroupName_s startswith "<job-execution-name>" | project TimeGenerated, Log_s
+union AppTraces, AppExceptions, AppRequests, ContainerAppConsoleLogs_CL | where TimeGenerated > ago(30d) | extend text = strcat(tostring(column_ifexists('Message','')), ' ', tostring(column_ifexists('OuterMessage','')), ' ', tostring(column_ifexists('Url','')), ' ', tostring(column_ifexists('Log_s',''))) | where text matches regex @'(^|[^0-9])[0-9]{14}([^0-9]|$)' | summarize hits=count()
+```
+
+The last one must return `hits = 0`. The Azure portal's **Logs** blade (interactive MFA sign-in)
+works too. CLI sessions with the guest account still expire after about an hour, and the lasting
+fix is a work account in the tenant for operators.
 
 ## Retired plan identity — removed 2026-10-11
 

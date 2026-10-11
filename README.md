@@ -16,10 +16,11 @@ reject, and print. Everything runs on Microsoft Azure.
 > (OIDC, no stored Azure credentials): https://victorious-meadow-0e5775b00.4.azurestaticapps.net.
 > Verified there: both Bicep phases, Key Vault references, managed-identity Entra sign-in to
 > PostgreSQL (`/api/ready/` → `database: ok`), the migrate job, the SWA linked backend, a real Entra
-> External ID sign-in (user created, re-sign-in matched by `oid`/`tid`) and `grant_admin`.
-> **Still NOT VERIFIED:** the full doctor → admin flow on Azure (draft, blob uploads, review,
-> payment confirmation, approval, print), App Insights ingestion, admin sign-in with MFA, OCR with
-> Azure OpenAI, private networking, staging and prod, and a backup restore drill. Details:
+> External ID sign-in (user created, re-sign-in matched by `oid`/`tid`), `grant_admin`, CI deploys
+> with migrations (latest: PR #4, `f23b710`), and Application Insights ingestion with national IDs
+> masked. **Still NOT VERIFIED:** the full doctor → admin flow on Azure (draft, blob uploads,
+> review, payment confirmation, approval, print), admin sign-in with MFA, OCR with Azure OpenAI,
+> private networking, staging and prod, and a backup restore drill. Details:
 > [`docs/azure-deployment.md`](docs/azure-deployment.md) §"Verification status".
 
 ## Contents

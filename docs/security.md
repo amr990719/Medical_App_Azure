@@ -130,9 +130,9 @@ and birth years, identity-document images, personal photos and payment receipts.
   header capture is ever enabled, and masks span names, attributes and exception events before
   export. Free text in exception messages is only masked for 14+ digit runs. Ingestion can be
   authenticated with the managed identity (`APPLICATIONINSIGHTS_AUTHENTICATION=entra`).
-  **NOT VERIFIED:** dev sends telemetry, but no query has confirmed ingestion or the masking in
-  Log Analytics yet. Queries are blocked by security defaults (`docs/azure-deployment.md`
-  §"Telemetry verification").
+  **Verified on dev (2026-10-11):** telemetry arrives in Log Analytics, and a 30-day scan of
+  traces, exceptions, request URLs and container console logs found no unmasked 14-digit run
+  (`docs/azure-deployment.md` §"Telemetry verification").
 - Expired sessions (user ids, OIDC flow state) are deleted by the scheduled cleanup job
   (`entrypoint.sh cleanup` runs `clearsessions` before `cleanup_blobs`).
 - Audit log (append-only table) for submissions, status and payment changes, document
