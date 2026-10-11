@@ -759,6 +759,19 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
   the flags of the new cleanup and one-off commands (the `log-analytics` and `application-insights`
   extension commands were not checked: extensions not installed). Full backend suite in the
   container: 976 passed, 1 skipped (the known repository-root test).
+- **Owner decisions (same day, D150):** approved pushing the branch (PR #4) and deleting the plan
+  leftovers. Production keeps OCR off and malware scanning off and uses no private networking;
+  admin MFA is Conditional Access only. Applied in `c316f65`: staging and prod
+  `entraAdminRequireMfa = false`; prod pins `enableOcr = false` and
+  `enablePrivateNetworking = false`. `az bicep build-params` passes for all three files.
+- **PR #4** opened from `session-13/finish-dev`.
+- **Plan cleanup: not done.** The inspection showed `dev-plan` (9 variables, no rules) and empty
+  `staging-plan`/`prod-plan`, none referenced by a workflow. `gh api -X DELETE …/environments/<env>`
+  was refused by this session's tool-permission classifier. The Azure deletions (assignments,
+  identity, custom role) need an interactive MFA `az login` (token expired). Commands:
+  `docs/azure-deployment.md` §"Retired plan identity". Deleting only the GitHub environment does
+  not remove the risk: a workflow that names `environment: dev-plan` re-creates it, and the
+  federated credential still trusts that subject. The identity deletion is what closes it.
 
 ## Decisions
 
@@ -1136,6 +1149,12 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
 - **D148 — `setup-github-oidc` no longer creates plan identities** (follows D145). Existing
   leftovers are left alone: deleting them is destructive and needs the owner's approval
   (`docs/azure-deployment.md` §"Retired plan identity").
+- **D150 — Owner's production decisions (2026-10-11):** OCR off, malware scanning off, no private
+  networking, admin MFA by Conditional Access only. Prod pins `enableOcr` and
+  `enablePrivateNetworking` to `false` in `prod.bicepparam`, so a GitHub variable can no longer turn
+  them on; a reviewed commit is needed. Accepted risks are recorded in `docs/security.md` §6 L2/L8
+  and §7: PostgreSQL keeps the "Azure services" firewall rule, uploads are unscanned. Staging uses
+  the same MFA setting and should keep `ENABLE_OCR` / `ENABLE_PRIVATE_NETWORKING` unset to match prod.
 - **D149 — `DEPLOY_STAGING=true` queues prod too:** all three workflows' `deploy-prod` jobs need
   only `deploy-staging`. Documented (staging checklist §10) rather than changed: once prod exists,
   this is the intended promotion path, and the prod reviewer gate stops it until then.
@@ -1296,13 +1315,13 @@ confirmed by the organization). Technical/environment questions for the user:
   could pick its own anonymous throttle bucket (docs/security.md §7).
 - **Q-T19** Production network isolation: without `ENABLE_PRIVATE_NETWORKING=true` PostgreSQL keeps
   the "Azure services" firewall rule (any tenant's Azure resources can reach the port; Entra-only
-  sign-in still applies). Recommended on for prod; it adds VNet / private endpoint cost.
+  sign-in still applies). **Decided (D150): accepted for prod, private networking off.**
 
 ## Next session starts with
 
-**Session 13 work is on branch `session-13/finish-dev`, committed locally, not pushed.** Push it
-and open a PR when the owner agrees. CI then runs the full suites, and the merge deploys
-`revoke_admin`, migration `audit 0003` (no-op SQL) and the `/profile` page to dev.
+**Session 13 work is in PR #4 (`session-13/finish-dev`).** Merging deploys `revoke_admin`,
+migration `audit 0003` (no-op SQL) and the `/profile` page to dev. Check afterwards that the
+active revision runs the merge commit's image and that `/api/ready/` is 200.
 dev (unchanged since `fee502b`): https://victorious-meadow-0e5775b00.4.azurestaticapps.net.
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
@@ -1311,12 +1330,12 @@ dev (unchanged since `fee502b`): https://victorious-meadow-0e5775b00.4.azurestat
 2. **Telemetry:** `az login --tenant 448ad25b-… --scope https://api.loganalytics.io/.default`, then
    the queries in `docs/azure-deployment.md` §"Telemetry verification" (or the portal's Logs blade).
    Re-read the Azure resource state (`az containerapp show`, revisions, jobs) at the same time.
-3. **Owner approvals (destructive):** delete `dev-plan` (+ `staging-plan`, `prod-plan`),
-   `id-github-medsyn-dev-plan` and the *Deployment What-If Operator (Medical_App)* role with the
-   commands in `docs/azure-deployment.md` §"Retired plan identity".
-4. **Owner decisions** (`docs/final-report.md` §16): region, private networking for prod, admin MFA
-   for staging/prod (change `staging/prod.bicepparam` before creating them), OCR approval,
-   retention, malware scanning, restore drill, custom domain, payment text.
+3. **Plan cleanup (approved, not yet run):** the owner runs (or allows) the commands in
+   `docs/azure-deployment.md` §"Retired plan identity" after `az login`. The Azure identity
+   deletion is the step that closes the risk.
+4. **Owner decisions still open** (`docs/final-report.md` §16): region / data residency,
+   retention, restore drill, custom domain, payment text. Decided (D150): OCR off, malware
+   scanning off, no private networking, Conditional Access for admin MFA.
 5. **Staging:** follow `docs/staging-checklist.md`; set `DEPLOY_STAGING=true` last (it also queues
    prod deployments for the reviewer to reject, D149).
 6. Local: host-run pytest still fails against the compose PostgreSQL (container path works).

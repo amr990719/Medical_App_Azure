@@ -517,7 +517,7 @@ These decisions block staging or production. Rows 2, 3, 4, 6 and 10 were decided
 | 7 | **Backup / restore drill** (§48) | RPO/RTO are assumptions; no restore has been run | run drill A–C of `docs/azure-deployment.md` in staging before go-live; confirm RPO/RTO |
 | 8 | **Custom domain** | Entra redirect URIs, `PUBLIC_HOSTNAME`, CSRF origin and the printed URL depend on it | re-run `create-entra-app` with the new `--public-url`, set `PUBLIC_HOSTNAME`, redeploy (`docs/entra-setup.md` §3) |
 | 9 | Payment instructions text (Q-B19, business question 8) | doctors see placeholder text | provide bank / branch / e-payment wording |
-| 10 | Delete the retired plan identity and `-plan` environments (D145) | `dev-plan` had no branch restriction and trusted an identity with Reader on `Medical_App` | **Approved 2026-10-11**; progress in `docs/progress.md` Session 13 |
+| 10 | Delete the retired plan identity and `-plan` environments (D145) | `dev-plan` had no branch restriction and trusted an identity with Reader on `Medical_App` | **Approved 2026-10-11, not yet run**: the GitHub deletion was refused by the session's tool permissions and the Azure part needs an interactive sign-in (`docs/progress.md` Session 13) |
 
 Business questions 1–21 (§14) and legal decisions L1–L8 (`docs/security.md` §6) remain open as
 well.
