@@ -765,13 +765,23 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
   `entraAdminRequireMfa = false`; prod pins `enableOcr = false` and
   `enablePrivateNetworking = false`. `az bicep build-params` passes for all three files.
 - **PR #4** opened from `session-13/finish-dev`.
-- **Plan cleanup: not done.** The inspection showed `dev-plan` (9 variables, no rules) and empty
-  `staging-plan`/`prod-plan`, none referenced by a workflow. `gh api -X DELETE …/environments/<env>`
-  was refused by this session's tool-permission classifier. The Azure deletions (assignments,
-  identity, custom role) need an interactive MFA `az login` (token expired). Commands:
-  `docs/azure-deployment.md` §"Retired plan identity". Deleting only the GitHub environment does
-  not remove the risk: a workflow that names `environment: dev-plan` re-creates it, and the
-  federated credential still trusts that subject. The identity deletion is what closes it.
+- **Plan cleanup: done** (explicit owner approval, scoped to the retired plan access). A first
+  attempt to delete the GitHub environments was refused by the tool-permission classifier and was
+  not worked around. After the owner's second, explicit approval (and a fresh `az login`):
+  - *Before:* environments `dev-plan` (9 variables, no rules) and empty `staging-plan`/`prod-plan`,
+    none referenced by a workflow. Identity `id-github-medsyn-dev-plan` (principal `ac237684-…`)
+    with one federated credential (`environment:dev-plan`) and exactly two assignments on
+    `Medical_App` (Reader, *Deployment What-If Operator (Medical_App)*); the role was assigned to
+    nobody else. `az role assignment list --assignee` fails under security defaults (Graph lookup),
+    so assignments were listed with `--all --fill-principal-name false` and a JMESPath filter.
+  - *Deleted, in order:* the three GitHub environments; the two role assignments (by id); the
+    identity; the custom role (after re-checking 0 assignments).
+  - *After:* environments `dev`, `staging`, `prod` with unchanged rules (`dev` 13 variables);
+    identities `id-medsyn-dev` and `id-github-medsyn-dev` only; custom roles: *Deployer
+    (Medical_App)* only; the deploy identity keeps Deployer, AcrPush, RBAC Administrator and its
+    `environment:dev` credential. Runtime untouched: revision `ca-medsyn-dev-api--gfee502b16c13-1`
+    Running on image `fee502b…`, `/api/ready/` `database: ok`. This is also the Azure state re-read
+    that was blocked earlier in the session.
 
 ## Decisions
 
@@ -1330,9 +1340,7 @@ dev (unchanged since `fee502b`): https://victorious-meadow-0e5775b00.4.azurestat
 2. **Telemetry:** `az login --tenant 448ad25b-… --scope https://api.loganalytics.io/.default`, then
    the queries in `docs/azure-deployment.md` §"Telemetry verification" (or the portal's Logs blade).
    Re-read the Azure resource state (`az containerapp show`, revisions, jobs) at the same time.
-3. **Plan cleanup (approved, not yet run):** the owner runs (or allows) the commands in
-   `docs/azure-deployment.md` §"Retired plan identity" after `az login`. The Azure identity
-   deletion is the step that closes the risk.
+3. Plan cleanup: done (Session 13).
 4. **Owner decisions still open** (`docs/final-report.md` §16): region / data residency,
    retention, restore drill, custom domain, payment text. Decided (D150): OCR off, malware
    scanning off, no private networking, Conditional Access for admin MFA.

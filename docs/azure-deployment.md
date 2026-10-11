@@ -518,58 +518,44 @@ The lasting fix is a work account in the tenant (or Conditional Access instead o
 defaults) for operators. Also check while there that no national ID appears unmasked:
 `AppTraces | where Message matches regex @"\d{14}"` must return nothing.
 
-## Retired plan identity — cleanup (owner approval required)
+## Retired plan identity — removed 2026-10-11
 
-D145 dropped the pull-request what-if. `setup-github-oidc` no longer creates the plan identity,
-but dev still has what an earlier run created. **Nothing below has been run.**
+D145 dropped the pull-request what-if, and `setup-github-oidc` no longer creates the plan identity.
+The leftovers of an earlier dev run were **deleted on 2026-10-11 with the owner's approval**
+(Session 13), after checking that no workflow referenced a `-plan` environment:
 
-| Leftover | Where |
-|---|---|
-| GitHub environment `dev-plan` (also the empty `staging-plan`, `prod-plan`) | `amr990719/Medical_App_Azure` |
-| managed identity `id-github-medsyn-dev-plan` + its federated credential (`…:environment:dev-plan`) | resource group `Medical_App` |
-| role assignments of that identity: **Reader** and **Deployment What-If Operator (Medical_App)** | scope `Medical_App` |
-| custom role **Deployment What-If Operator (Medical_App)** | assignable scope `Medical_App` |
+| Deleted | Checked before | Checked after |
+|---|---|---|
+| GitHub environments `dev-plan` (9 variables, no rules), `staging-plan`, `prod-plan` (empty) | no `-plan` reference in `.github/workflows` | only `dev`, `staging`, `prod` remain, rules unchanged; `dev` still has its 13 variables |
+| role assignments of `id-github-medsyn-dev-plan`: Reader and *Deployment What-If Operator (Medical_App)* on `Medical_App` | exactly these two, subscription-wide | none left for that principal |
+| managed identity `id-github-medsyn-dev-plan` (with federated credential `github-dev-plan`, subject `…:environment:dev-plan`) | — | `ResourceNotFound`; only `id-medsyn-dev` and `id-github-medsyn-dev` remain |
+| custom role *Deployment What-If Operator (Medical_App)* | assigned only to the plan identity, then to nobody | only *Deployer (Medical_App)* remains at the resource-group scope |
 
-**Risk note.** No workflow uses a `-plan` environment (checked with `grep` over
-`.github/workflows` on 2026-10-11; `reusable-infrastructure.yml` uses `<env>` only). Keeping
-them is the larger risk: `dev-plan` has **no branch restriction** and the identity trusts it, so
-a workflow on any pushed branch can get a Reader token on `Medical_App`. That token reads resource
-configuration, including non-secret app settings, but not Key Vault secrets or blob data.
-Deleting is irreversible: a re-created identity gets a new client id. Delete the role
-assignments **before** the identity, or they are left orphaned as "Identity not found". The
-custom role can only be deleted once nothing is assigned to it.
+Runtime and deploy resources were not touched: after the cleanup the Container App revision
+`--gfee502b16c13-1` was Running on image `fee502b…`, `/api/ready/` returned `database: ok`, and the
+deploy identity still has its three assignments and its `environment:dev` federated credential.
+
+If another environment ever has the same leftovers, use the ARM-only form below. Under security
+defaults `--assignee` fails (it resolves the principal through Microsoft Graph). Delete the
+assignments **before** the identity, or they remain orphaned.
 
 ```bash
-RG=Medical_App
-SUB=<subscription-id>          # "Azure subscription 1", 247d882f-… (GitHub variable AZURE_SUBSCRIPTION_ID)
-REPO=amr990719/Medical_App_Azure
-PLAN=id-github-medsyn-dev-plan
-ROLE="Deployment What-If Operator (Medical_App)"
-SCOPE="/subscriptions/$SUB/resourceGroups/$RG"
-
-# 1. Inspect (read-only)
-gh api "repos/$REPO/environments/dev-plan" --jq '{name, protection_rules}'
+export MSYS_NO_PATHCONV=1                 # Git Bash only
+RG=<resource-group>; PLAN=id-github-medsyn-<env>-plan
+ROLE="Deployment What-If Operator (<resource-group>)"
+SCOPE="/subscriptions/<subscription-id>/resourceGroups/$RG"
 PRINCIPAL=$(az identity show -g "$RG" -n "$PLAN" --query principalId -o tsv)
-az role assignment list --assignee "$PRINCIPAL" --all -o table   # expect Reader + $ROLE
-az role assignment list --role "$ROLE" --all -o table            # expect only $PLAN
-
-# 2. GitHub: remove the environment (its variables go with it)
-gh api -X DELETE "repos/$REPO/environments/dev-plan"
-gh api -X DELETE "repos/$REPO/environments/staging-plan"         # optional, empty
-gh api -X DELETE "repos/$REPO/environments/prod-plan"            # optional, empty
-
-# 3. Azure: assignments first, then the identity (its federated credential goes with it)
-az role assignment delete --assignee "$PRINCIPAL" --role "Reader" --scope "$SCOPE"
-az role assignment delete --assignee "$PRINCIPAL" --role "$ROLE" --scope "$SCOPE"
+ROLE_ID=$(az role definition list --name "$ROLE" --custom-role-only true --scope "$SCOPE" --query "[0].name" -o tsv)
+az role assignment list --all --fill-principal-name false \
+  --query "[?principalId=='$PRINCIPAL'].{role:roleDefinitionName,id:id}" -o table      # inspect
+az role assignment list --all --fill-principal-name false \
+  --query "[?ends_with(roleDefinitionId,'$ROLE_ID')].principalId" -o tsv                # must be only $PRINCIPAL
+gh api -X DELETE "repos/<owner>/<repo>/environments/<env>-plan"
+az role assignment delete --ids $(az role assignment list --all --fill-principal-name false \
+  --query "[?principalId=='$PRINCIPAL'].id" -o tsv)
 az identity delete -g "$RG" -n "$PLAN"
-
-# 4. The custom role, only when nothing is assigned to it any more
-az role assignment list --role "$ROLE" --all --query "length(@)" -o tsv   # must print 0
-az role definition delete --name "$ROLE" --custom-role-only true --scope "$SCOPE"
+az role definition delete --name "$ROLE" --custom-role-only true --scope "$SCOPE"   # only when unassigned
 ```
-
-In Windows PowerShell the same `az` / `gh` commands work with `$RG = 'Medical_App'` and so on.
-Git Bash needs `MSYS_NO_PATHCONV=1` for the `--scope` arguments (Session 11).
 
 ## Troubleshooting
 
