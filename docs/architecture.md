@@ -110,6 +110,8 @@ sequenceDiagram
 ```
 
 Browser never holds tokens. `DEV_AUTH_ENABLED` replaces Entra only in development/test settings.
+The login URL may add `&prompt=select_account` (sign-in: always show the account picker) or
+`&prompt=create` (create account: open sign-up); Django forwards only those two values (D151).
 
 ### 3.2 Upload → OCR suggestion → autosave
 

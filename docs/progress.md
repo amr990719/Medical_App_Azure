@@ -1188,6 +1188,14 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
 - **D149 — `DEPLOY_STAGING=true` queues prod too:** all three workflows' `deploy-prod` jobs need
   only `deploy-staging`. Documented (staging checklist §10) rather than changed: once prod exists,
   this is the intended promotion path, and the prod reviewer gate stops it until then.
+- **D151 — Separate sign-in and create-account intents (2026-10-14):** `GET /auth/login/` takes an
+  optional `prompt`, whitelisted to `select_account` and `create` (`oidc/views.py::safe_prompt`);
+  any other value is dropped (Entra default), not rejected, because the browser is mid-navigation
+  and a JSON error would strand it. `OidcClient.begin` hands it to MSAL
+  (`initiate_auth_code_flow(prompt=...)`, which omits it when None). Landing "Sign in" and the
+  signed-out page use `select_account`, so a returning user is never silently signed in with the
+  previous Entra account; "Create account" uses `create` (OpenID Connect Prompt Create, MSAL's
+  `Prompt.CREATE`). Logout is unchanged (Django session flushed, then Entra logout URL).
 
 ## Deviations from PROMPT.md
 
@@ -1346,6 +1354,11 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T19** Production network isolation: without `ENABLE_PRIVATE_NETWORKING=true` PostgreSQL keeps
   the "Azure services" firewall rule (any tenant's Azure resources can reach the port; Entra-only
   sign-in still applies). **Decided (D150): accepted for prod, private networking off.**
+- **Q-T20** `prompt=create` / `prompt=select_account` against the real External ID tenant (D151):
+  **NOT VERIFIED — requires Azure credentials.** Unit tests prove the authorize URL carries the
+  value; whether the hosted page opens on "Create account" depends on the `signup-signin` user flow
+  having self-service sign-up enabled. If the tenant ignores `prompt=create`, the button still lands
+  on the sign-in page, where the "No account? Create one" link remains.
 
 ## Next session starts with
 
