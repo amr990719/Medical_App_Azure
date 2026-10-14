@@ -26,6 +26,9 @@ logger = logging.getLogger("apps.accounts.oidc")
 
 FLOW_KEY = "oidc_flow"
 NEXT_KEY = "oidc_next"
+# The only `prompt` values the SPA may request: `select_account` (sign-in never silently reuses
+# the last Entra account) and `create` (open the sign-up page, OpenID Connect Prompt Create).
+AUTH_PROMPTS = ("select_account", "create")
 
 
 class AuthUnavailable(DomainError):
@@ -47,6 +50,11 @@ def safe_next(value: str | None) -> str:
     return value
 
 
+def safe_prompt(value: str | None) -> str | None:
+    """Whitelisted prompt or None (Entra default); anything else is dropped, never forwarded."""
+    return value if value in AUTH_PROMPTS else None
+
+
 def error_redirect(code: str) -> HttpResponseRedirect:
     return HttpResponseRedirect("/?" + urlencode({"auth_error": code}))
 
@@ -56,14 +64,25 @@ class LoginView(APIView):
     authentication_classes: list = []
 
     @extend_schema(
-        parameters=[OpenApiParameter("next", str, description="relative SPA path")],
+        parameters=[
+            OpenApiParameter("next", str, description="relative SPA path"),
+            OpenApiParameter(
+                "prompt",
+                str,
+                enum=list(AUTH_PROMPTS),
+                description="Entra prompt; other values are ignored",
+            ),
+        ],
         responses={302: OpenApiResponse(description="redirect to Entra External ID")},
         operation_id="auth_login",
     )
     def get(self, request):
         if not is_configured():
             raise AuthUnavailable()
-        flow = get_oidc_client().begin(redirect_uri=settings.ENTRA_REDIRECT_URI)
+        flow = get_oidc_client().begin(
+            redirect_uri=settings.ENTRA_REDIRECT_URI,
+            prompt=safe_prompt(request.query_params.get("prompt")),
+        )
         request.session[FLOW_KEY] = flow
         request.session[NEXT_KEY] = safe_next(request.query_params.get("next"))
         return HttpResponseRedirect(flow["auth_uri"])

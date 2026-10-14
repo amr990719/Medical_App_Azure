@@ -83,6 +83,15 @@ describe("sign-out", () => {
     expect(await screen.findByRole("heading", { name: "تم تسجيل الخروج" })).toBeInTheDocument();
   });
 
+  it("signs in again through the Entra account picker so another account can be chosen", async () => {
+    server.use(handlers.me(null), handlers.devUsersDisabled());
+    renderApp("/signed-out");
+    expect(await screen.findByRole("link", { name: "تسجيل الدخول" })).toHaveAttribute(
+      "href",
+      "/api/v1/auth/login/?next=%2Fdashboard&prompt=select_account",
+    );
+  });
+
   it("continues to the Entra logout page when the server returns one", async () => {
     const assign = vi.spyOn(browser, "assign").mockImplementation(() => {});
     server.use(

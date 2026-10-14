@@ -26,7 +26,9 @@ export function LandingPage() {
   if (user) return <Navigate to={homeFor(user.role)} replace />;
 
   // Registration, verification and password reset all live on the Entra External ID pages.
-  const signIn = loginUrl("/dashboard");
+  // select_account: never silently reuse the last Entra account; create: open the sign-up page.
+  const signIn = loginUrl("/dashboard", { prompt: "select_account" });
+  const createAccount = loginUrl("/dashboard", { prompt: "create" });
 
   return (
     <>
@@ -51,7 +53,7 @@ export function LandingPage() {
             <a href={signIn} className={buttonClasses("primary", "lg")}>
               {ar.auth.signIn}
             </a>
-            <a href={signIn} className={buttonClasses("outline", "lg")}>
+            <a href={createAccount} className={buttonClasses("outline", "lg")}>
               {ar.auth.createAccount}
             </a>
           </div>

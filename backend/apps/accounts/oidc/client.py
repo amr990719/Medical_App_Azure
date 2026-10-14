@@ -33,9 +33,12 @@ class OidcClient:
             authority=settings.ENTRA_AUTHORITY,
         )
 
-    def begin(self, *, redirect_uri: str) -> dict:
+    def begin(self, *, redirect_uri: str, prompt: str | None = None) -> dict:
+        """`prompt` must already be whitelisted by the caller; MSAL omits it when None."""
         scopes = [s for s in settings.ENTRA_SCOPES if s not in RESERVED_SCOPES]
-        return self._app.initiate_auth_code_flow(scopes=scopes, redirect_uri=redirect_uri)
+        return self._app.initiate_auth_code_flow(
+            scopes=scopes, redirect_uri=redirect_uri, prompt=prompt
+        )
 
     def complete(self, flow: dict, params: dict) -> dict:
         try:

@@ -11,7 +11,7 @@ export function SignedOutPage() {
       </span>
       <h1 className="mt-5 text-2xl font-extrabold text-charcoal">{ar.auth.signedOutTitle}</h1>
       <p className="mt-3 text-slate">{ar.auth.signedOutBody}</p>
-      <a href={loginUrl("/dashboard")} className={`${buttonClasses("primary", "lg")} mt-8`}>
+      <a href={loginUrl("/dashboard", { prompt: "select_account" })} className={`${buttonClasses("primary", "lg")} mt-8`}>
         {ar.auth.signIn}
       </a>
     </section>
