@@ -14,7 +14,11 @@ test("landing page is Arabic RTL with Cairo and offers Entra sign-in", async ({ 
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await expect(page.getByRole("link", { name: "تسجيل الدخول" })).toHaveAttribute(
     "href",
-    "/api/v1/auth/login/?next=%2Fdashboard",
+    "/api/v1/auth/login/?next=%2Fdashboard&prompt=select_account",
+  );
+  await expect(page.getByRole("link", { name: "إنشاء حساب" })).toHaveAttribute(
+    "href",
+    "/api/v1/auth/login/?next=%2Fdashboard&prompt=create",
   );
   const font = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
   expect(font).toContain("Cairo");

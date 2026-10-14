@@ -30,7 +30,12 @@ export async function devLogin(email: string): Promise<Me> {
   );
 }
 
+/** Entra `prompt` intent; the BFF forwards only these values and ignores anything else. */
+export type LoginPrompt = "select_account" | "create";
+
 /** Production sign-in is a full-page navigation to the BFF (Entra External ID). */
-export function loginUrl(next: string): string {
-  return `/api/v1/auth/login/?next=${encodeURIComponent(next)}`;
+export function loginUrl(next: string, options: { prompt?: LoginPrompt } = {}): string {
+  const params = new URLSearchParams({ next });
+  if (options.prompt) params.set("prompt", options.prompt);
+  return `/api/v1/auth/login/?${params.toString()}`;
 }

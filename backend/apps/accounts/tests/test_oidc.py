@@ -82,8 +82,10 @@ class FakeOidcClient:
         self.token = token
         self.error = error
         self.completed_with = None
+        self.begun_with_prompt = "not-called"
 
-    def begin(self, *, redirect_uri: str) -> dict:
+    def begin(self, *, redirect_uri: str, prompt: str | None = None) -> dict:
+        self.begun_with_prompt = prompt
         return {
             "auth_uri": f"{ENTRA['ENTRA_AUTHORITY']}/oauth2/v2.0/authorize?client_id={CLIENT_ID}"
             f"&code_challenge=abc&code_challenge_method=S256&state=state-1&nonce={NONCE_CLAIM}",
@@ -135,6 +137,80 @@ def test_login_replaces_unsafe_next_with_root(unsafe):
     with mock.patch("apps.accounts.oidc.views.get_oidc_client", return_value=FakeOidcClient()):
         client.get(LOGIN, {"next": unsafe})
     assert client.session["oidc_next"] == "/"
+
+
+@pytest.mark.parametrize("prompt", ["select_account", "create"])
+def test_login_forwards_whitelisted_prompt_to_oidc_client(prompt):
+    """Sign-in forces the account picker; create-account opens the Entra sign-up page."""
+    fake = FakeOidcClient()
+    with mock.patch("apps.accounts.oidc.views.get_oidc_client", return_value=fake):
+        response = APIClient().get(LOGIN, {"next": "/dashboard", "prompt": prompt})
+    assert response.status_code == 302
+    assert fake.begun_with_prompt == prompt
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "",
+        "none",  # silent SSO would reuse the previous account
+        "login",
+        "consent",
+        "SELECT_ACCOUNT",
+        "select_account create",
+        "create&domain_hint=evil.example",
+    ],
+)
+def test_login_ignores_prompt_outside_whitelist(prompt):
+    """Unknown values fall back to Entra's default instead of reaching the authority (a JSON
+    error would strand a browser that is mid-navigation)."""
+    fake = FakeOidcClient()
+    with mock.patch("apps.accounts.oidc.views.get_oidc_client", return_value=fake):
+        response = APIClient().get(LOGIN, {"next": "/dashboard", "prompt": prompt})
+    assert response.status_code == 302
+    assert fake.begun_with_prompt is None
+
+
+def test_login_without_prompt_uses_default():
+    fake = FakeOidcClient()
+    with mock.patch("apps.accounts.oidc.views.get_oidc_client", return_value=fake):
+        APIClient().get(LOGIN, {"next": "/dashboard"})
+    assert fake.begun_with_prompt is None
+
+
+@pytest.mark.parametrize("unsafe", ["https://evil.example", "//evil.example", "/\\evil.example"])
+def test_login_with_prompt_still_replaces_unsafe_next(unsafe):
+    client = APIClient()
+    with mock.patch("apps.accounts.oidc.views.get_oidc_client", return_value=FakeOidcClient()):
+        client.get(LOGIN, {"next": unsafe, "prompt": "create"})
+    assert client.session["oidc_next"] == "/"
+
+
+@pytest.mark.parametrize("prompt", [None, "select_account", "create"])
+def test_oidc_client_passes_prompt_to_msal(prompt):
+    """`OidcClient.begin` hands the prompt to MSAL, which omits it from the URL when None."""
+    from apps.accounts.oidc.client import OidcClient
+
+    with mock.patch("apps.accounts.oidc.client.msal.ConfidentialClientApplication") as app_class:
+        OidcClient().begin(redirect_uri=ENTRA["ENTRA_REDIRECT_URI"], prompt=prompt)
+    kwargs = app_class.return_value.initiate_auth_code_flow.call_args.kwargs
+    assert kwargs["prompt"] == prompt
+    assert kwargs["redirect_uri"] == ENTRA["ENTRA_REDIRECT_URI"]
+
+
+@pytest.mark.parametrize("prompt", ["select_account", "create"])
+def test_msal_sends_prompt_in_authorization_request(prompt):
+    """Contract with MSAL itself (no network): the prompt reaches the authorize URL verbatim."""
+    from msal.oauth2cli.oidc import Client
+
+    msal_client = Client(
+        {"authorization_endpoint": "https://example.test/authorize", "token_endpoint": "x"},
+        CLIENT_ID,
+    )
+    flow = msal_client.initiate_auth_code_flow(
+        redirect_uri=ENTRA["ENTRA_REDIRECT_URI"], prompt=prompt
+    )
+    assert parse_qs(urlparse(flow["auth_uri"]).query)["prompt"] == [prompt]
 
 
 @override_settings(ENTRA_AUTHORITY="", ENTRA_CLIENT_ID="")

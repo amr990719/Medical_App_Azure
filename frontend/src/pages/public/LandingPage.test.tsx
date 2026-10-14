@@ -5,14 +5,15 @@ import { API, handlers, meDoctor } from "@/test/fixtures";
 import { renderApp } from "@/test/render";
 import { server } from "@/test/server";
 
-const LOGIN = "/api/v1/auth/login/?next=%2Fdashboard";
+const SIGN_IN = "/api/v1/auth/login/?next=%2Fdashboard&prompt=select_account";
+const CREATE_ACCOUNT = "/api/v1/auth/login/?next=%2Fdashboard&prompt=create";
 
 describe("LandingPage", () => {
-  it("offers sign-in and account creation through Entra External ID", async () => {
+  it("sign-in forces the Entra account picker and create-account opens Entra sign-up", async () => {
     server.use(handlers.me(null), handlers.devUsersDisabled());
     renderApp("/");
-    expect(await screen.findByRole("link", { name: "تسجيل الدخول" })).toHaveAttribute("href", LOGIN);
-    expect(screen.getByRole("link", { name: "إنشاء حساب" })).toHaveAttribute("href", LOGIN);
+    expect(await screen.findByRole("link", { name: "تسجيل الدخول" })).toHaveAttribute("href", SIGN_IN);
+    expect(screen.getByRole("link", { name: "إنشاء حساب" })).toHaveAttribute("href", CREATE_ACCOUNT);
     expect(screen.queryByRole("textbox", { name: /كلمة المرور/ })).toBeNull();
   });
 

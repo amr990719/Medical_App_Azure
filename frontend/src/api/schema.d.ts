@@ -2053,6 +2053,8 @@ export interface operations {
             query?: {
                 /** @description relative SPA path */
                 next?: string;
+                /** @description Entra prompt; other values are ignored */
+                prompt?: "create" | "select_account";
             };
             header?: never;
             path?: never;
