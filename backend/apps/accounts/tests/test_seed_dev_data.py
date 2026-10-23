@@ -78,15 +78,17 @@ def test_seed_ensures_the_fy2026_fee_schedule():
         "member": 825, "spouse": 1100, "child": 605, "grad_son": 1650, "parent": 1430,
     }  # fmt: skip
     assert schedule.tier_fees["0"]["grad_son"] is None
-    assert schedule.admin_fee_formula == "PER_BENEFICIARY"
     assert (schedule.admin_fee_base, schedule.admin_fee_per_beneficiary) == (200, 175)
+    # Even on an empty table the removed version 1 is never recreated.
+    assert schedule.version == 2
     assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 1
 
 
 def test_seed_keeps_an_existing_active_schedule():
     seed()
     assert FeeSchedule.objects.get(fiscal_year=2026, is_active=True).version == 2
-    assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 2
+    assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 1
+    assert not FeeSchedule.objects.filter(fiscal_year=2026, version=1).exists()
 
 
 def test_seed_is_idempotent():
@@ -95,7 +97,7 @@ def test_seed_is_idempotent():
     seed()
     assert User.objects.filter(email__endswith="@dev.local").count() == 4
     assert {a.pk: a.reference_number for a in InsuranceApplication.objects.all()} == first
-    assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 2  # v1 (inactive) + v2
+    assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 1  # v2 only
 
 
 @override_settings(DEV_AUTH_ENABLED=False)

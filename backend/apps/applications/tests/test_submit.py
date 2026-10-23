@@ -56,7 +56,6 @@ def test_submit_locks_the_fee_schedule():
     app = build_submittable_application()
     submit(app, actor=app.doctor.user)
     assert FeeSchedule.objects.get(fiscal_year=2026, version=2).is_locked is True
-    assert FeeSchedule.objects.get(fiscal_year=2026, version=1).is_locked is False
 
 
 def test_submit_writes_snapshot_and_audit():

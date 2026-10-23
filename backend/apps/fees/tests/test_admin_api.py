@@ -38,21 +38,17 @@ def fy2026_payload(**overrides) -> dict:
     return payload
 
 
-def test_list_and_detail_show_the_active_version_and_the_legacy_one():
+def test_list_and_detail_show_version_2_only():
     admin = client_for(AdminUserFactory())
     rows = [r for r in admin.get(URL).json()["results"] if r["fiscal_year"] == 2026]
-    assert [(r["version"], r["is_active"]) for r in rows] == [(2, True), (1, False)]
+    assert [(r["version"], r["is_active"]) for r in rows] == [(2, True)]
     current = admin.get(f"{URL}{rows[0]['id']}/").json()
+    assert sorted(current["tier_fees"]) == ["0", "1", "2", "3", "4"]
     assert current["tier_fees"]["3"]["spouse"] == 1100
     assert current["tier_fees"]["0"]["grad_son"] is None
-    assert current["admin_fee_formula"] == "PER_BENEFICIARY"
     assert (current["admin_fee_base"], current["admin_fee_per_beneficiary"]) == (200, 175)
-    assert current["admin_fee_member_only"] is None
-    legacy = admin.get(f"{URL}{rows[1]['id']}/").json()
-    assert sorted(legacy["tier_fees"]) == ["1", "2", "3", "4"]
-    assert legacy["admin_fee_formula"] == "FLAT"
-    assert (legacy["admin_fee_member_only"], legacy["admin_fee_with_beneficiaries"]) == (150, 175)
-    assert (legacy["admin_fee_base"], legacy["admin_fee_per_beneficiary"]) == (None, None)
+    removed = {"admin_fee_formula", "admin_fee_member_only", "admin_fee_with_beneficiaries"}
+    assert removed.isdisjoint(current)
 
 
 def test_new_fee_schedule_version_deactivates_previous_and_keeps_its_amounts():
@@ -65,7 +61,7 @@ def test_new_fee_schedule_version_deactivates_previous_and_keeps_its_amounts():
     assert response.status_code == 201, response.json()
     body = response.json()
     assert (body["version"], body["is_active"], body["locked_at"]) == (3, True, None)
-    assert (body["admin_fee_formula"], body["admin_fee_base"]) == ("PER_BENEFICIARY", 250)
+    assert (body["admin_fee_base"], body["admin_fee_per_beneficiary"]) == (250, 175)
     assert body["tier_fees"]["0"]["grad_son"] is None
     v2 = FeeSchedule.objects.get(fiscal_year=2026, version=2)
     assert v2.is_active is False
@@ -76,13 +72,15 @@ def test_new_fee_schedule_version_deactivates_previous_and_keeps_its_amounts():
     assert entry.metadata["version"] == 3
 
 
-def test_formula_and_legacy_amounts_are_not_writable():
+def test_removed_legacy_fields_are_ignored_on_write():
     payload = fy2026_payload(
         admin_fee_formula="FLAT", admin_fee_member_only=1, admin_fee_with_beneficiaries=2
     )
-    body = client_for(AdminUserFactory()).post(URL, payload, format="json").json()
-    assert body["admin_fee_formula"] == "PER_BENEFICIARY"
-    assert (body["admin_fee_member_only"], body["admin_fee_with_beneficiaries"]) == (None, None)
+    response = client_for(AdminUserFactory()).post(URL, payload, format="json")
+    assert response.status_code == 201
+    body = response.json()
+    assert (body["admin_fee_base"], body["admin_fee_per_beneficiary"]) == (200, 175)
+    assert "admin_fee_formula" not in body
 
 
 def test_new_version_drives_live_quotes_but_not_snapshots():
@@ -107,7 +105,7 @@ def test_new_version_drives_live_quotes_but_not_snapshots():
         lambda p: p["tier_fees"]["1"].update(member="600"),
         lambda p: p["tier_fees"]["1"].pop("spouse"),
         lambda p: p["tier_fees"].pop("4"),
-        lambda p: p["tier_fees"].pop("0"),  # new versions must define tier 0
+        lambda p: p["tier_fees"].pop("0"),  # every version defines tier 0
         lambda p: p["tier_fees"]["1"].update(grad_son=None),
         lambda p: p["tier_fees"]["0"].update(member=None),
         lambda p: p.update(tier_boundaries=[10, 5, 15]),
@@ -126,7 +124,7 @@ def test_invalid_schedule_rejected(mutate):
     response = client_for(AdminUserFactory()).post(URL, payload, format="json")
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
-    assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 2
+    assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 1
 
 
 def test_tier_0_grad_son_may_be_an_amount():

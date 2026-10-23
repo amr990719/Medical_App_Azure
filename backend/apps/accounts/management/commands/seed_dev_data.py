@@ -93,11 +93,18 @@ MEMBER_DOCUMENTS = ("NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PA
 MOTHER_MEMBER_DOCUMENTS = ("MEMBER_BIRTH_CERTIFICATE",)
 
 
+# The current FY 2026 schedule is version 2; version 1 was removed (fees.0005) and is never
+# recreated, even on an empty table.
+FY2026_VERSION = 2
+
+
 def _fy2026_schedule() -> dict:
     """The one definition of the CURRENT FY 2026 amounts lives in the fees migration that
-    introduced version 2 — never the obsolete version 1 seed."""
+    introduced version 2. It also set the legacy administrative-fee columns that fees.0006
+    removed, so only the model's current fields are kept."""
     migration = importlib.import_module("apps.fees.migrations.0004_fy2026_v2_schedule")
-    return dict(migration.FY2026_V2)
+    fields = {f.name for f in FeeSchedule._meta.concrete_fields}
+    return {k: v for k, v in migration.FY2026_V2.items() if k in fields}
 
 
 def _image(label: str) -> SimpleUploadedFile:
@@ -154,7 +161,8 @@ class Command(BaseCommand):
         if versions.filter(is_active=True).exists():
             return
         latest = versions.order_by("-version").values_list("version", flat=True).first() or 0
-        FeeSchedule.objects.create(**values, version=latest + 1, is_active=True)
+        version = max(latest + 1, FY2026_VERSION)
+        FeeSchedule.objects.create(**values, version=version, is_active=True)
 
     def _user(self, email: str, name: str, role: str) -> User:
         user = User.objects.filter(email=email).first()

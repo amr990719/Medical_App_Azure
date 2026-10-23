@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 
 from apps.reference.constants import KINSHIP_FEE_KEY, SPOUSE_KINSHIPS, Kinship, WorkStatus
 
-from .models import AdminFeeFormula, FeeSchedule
+from .models import FeeSchedule
 
 MEMBER_LABEL = "العضو الأصلي"
 ADMIN_FEE_LABEL = "رسوم إدارية"
@@ -72,14 +72,13 @@ def get_tier(
 ) -> int:
     """Tier 0-4 from years since registration; pensioners are always tier 4.
 
-    Registered in the schedule's own fiscal year → tier 0 (when the schedule defines it; legacy
-    four-tier schedules price that year as tier 1). DECEASED (and a missing work status) is
-    priced like WORKING — open question 2.
+    Registered in the schedule's own fiscal year → tier 0. DECEASED (and a missing work status)
+    is priced like WORKING — open question 2.
     """
     if work_status == WorkStatus.PENSIONER:
         return 4
     years = schedule.fiscal_year - registration_year
-    if years == 0 and "0" in schedule.tier_fees:
+    if years == 0:
         return 0
     for tier, upper in enumerate(schedule.tier_boundaries, start=1):
         if years <= upper:
@@ -110,10 +109,7 @@ def beneficiary_ineligibility_message(
 
 
 def admin_fee_for(schedule: FeeSchedule, active_beneficiaries: int) -> int:
-    if schedule.admin_fee_formula == AdminFeeFormula.FLAT:  # schedules before FY2026 v2
-        if active_beneficiaries:
-            return schedule.admin_fee_with_beneficiaries
-        return schedule.admin_fee_member_only
+    """`admin_fee_base + admin_fee_per_beneficiary × active beneficiaries` (200 + 175 × n)."""
     return schedule.admin_fee_base + schedule.admin_fee_per_beneficiary * active_beneficiaries
 
 
@@ -199,7 +195,7 @@ def quote_for_application(application, *, schedule: FeeSchedule | None = None) -
     )
 
 
-# Fields an admin sets on a new version. New versions always use the PER_BENEFICIARY formula.
+# Fields an admin sets on a new version.
 SCHEDULE_FIELDS = (
     "tier_fees", "tier_boundaries", "admin_fee_base", "admin_fee_per_beneficiary",
     "age_cap_threshold", "age_cap_amount", "registration_year_min",
@@ -231,7 +227,6 @@ def create_schedule_version(*, fiscal_year: int, actor, request=None, **values) 
             version=latest + 1,
             is_active=True,
             created_by=actor,
-            admin_fee_formula=AdminFeeFormula.PER_BENEFICIARY,
             **{k: v for k, v in values.items() if k in SCHEDULE_FIELDS},
         )
         try:

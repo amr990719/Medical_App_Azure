@@ -218,6 +218,37 @@ def test_detail_masks_ids_lists_transitions_and_is_audited(admin):
     assert viewed.object_id == app.pk
 
 
+# A FY 2026 version 1 quote as frozen at submission; fees.0005 removed that version and cleared
+# the reference, the snapshot stays the record of what was charged.
+V1_SNAPSHOT = {
+    "fiscal_year": 2026, "tier": 3, "admin_fee": 175, "total": 3025, "is_valid": True,
+    "error_message": "", "schedule_id": "6f1c2d1e-0000-4000-8000-000000000001",
+    "breakdown": [
+        {"label": "العضو الأصلي", "fee": 750, "note": ""},
+        {"label": "سارة", "fee": 1000, "note": ""},
+        {"label": "عمر", "fee": 550, "note": ""},
+        {"label": "مريم", "fee": 550, "note": ""},
+        {"label": "رسوم إدارية", "fee": 175, "note": ""},
+    ],
+}  # fmt: skip
+
+
+def test_application_of_a_removed_schedule_still_shows_its_snapshot(admin):
+    app = submitted(status=S.APPROVED, payment=P.CONFIRMED)
+    InsuranceApplication.objects.filter(pk=app.pk).update(
+        fee_snapshot=V1_SNAPSHOT, fee_schedule=None
+    )
+    body = admin.get(app_url(app)).json()
+    assert (body["fee_schedule"], body["fee_snapshot"]) == (None, V1_SNAPSHOT)
+    rows = admin.get(f"{ADMIN}applications/").json()["results"]
+    assert next(r["total"] for r in rows if r["id"] == str(app.pk)) == 3025
+    doctor = client_for(app.doctor.user)
+    own = doctor.get(f"/api/v1/applications/{app.pk}/").json()
+    assert (own["fee_schedule"], own["fee_snapshot"]) == (None, V1_SNAPSHOT)
+    # Never re-priced with the current schedule (v2 would give 3,860).
+    assert doctor.get(f"/api/v1/applications/{app.pk}/fees/").json() == V1_SNAPSHOT
+
+
 def test_approve_is_offered_only_with_confirmed_payment(admin):
     pending = submitted(S.UNDER_REVIEW)
     confirmed = submitted(S.UNDER_REVIEW, payment=P.CONFIRMED)

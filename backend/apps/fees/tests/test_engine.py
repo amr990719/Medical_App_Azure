@@ -1,5 +1,5 @@
-"""Fee engine — worked examples (FY 2026 version 2), tier 0, eligibility, administrative fee,
-boundaries, and legacy (version 1) schedules.
+"""Fee engine — worked examples (FY 2026 version 2), tier 0, eligibility, administrative fee
+and boundaries.
 
 Pure functions: the schedule is an unsaved FeeSchedule instance, no database needed.
 """
@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from apps.fees.factories import fy2026_legacy_schedule, fy2026_schedule
+from apps.fees.factories import fy2026_schedule
 from apps.fees.services import (
     ADMIN_FEE_LABEL,
     INVALID_REGISTRATION_YEAR_MESSAGE,
@@ -22,7 +22,6 @@ from apps.fees.services import (
 from apps.reference.constants import Kinship, WorkStatus
 
 SCHEDULE = fy2026_schedule()
-LEGACY = fy2026_legacy_schedule()
 W, P, D = WorkStatus.WORKING, WorkStatus.PENSIONER, WorkStatus.DECEASED
 
 
@@ -326,25 +325,6 @@ def test_money_is_integer_never_float():
     q = quote(2014, 1985, [(Kinship.WIFE, "سارة", 1988)])
     assert all(type(line.fee) is int for line in q.breakdown)
     assert type(q.total) is int
-
-
-# --- Legacy four-tier FLAT schedules (version 1) stay readable and priced as before ----------
-
-
-@pytest.mark.parametrize(
-    ("reg", "born", "bens", "tier", "total"),
-    [
-        (2023, 1995, [], 1, 750),
-        (2026, 1995, [], 1, 750),  # no tier 0 in a legacy schedule
-        (2014, 1985, [(Kinship.WIFE, "سارة", 1988), (Kinship.SON_MINOR, "عمر", 2015),
-                      (Kinship.DAUGHTER, "مريم", 2018)], 3, 3025),
-        (2023, 1995, [(Kinship.FATHER, "محمود", 1950)], 1, 1825),
-    ],
-)  # fmt: skip
-def test_legacy_schedule_keeps_its_pricing(reg, born, bens, tier, total):
-    q = quote(reg, born, bens, schedule=LEGACY)
-    assert (q.is_valid, q.tier, q.total) == (True, tier, total)
-    assert q.admin_fee == (175 if bens else 150)
 
 
 # --- Output shape (PROMPT.md §17.3) -----------------------------------------------------------
