@@ -93,9 +93,18 @@ def test_retrieve_includes_nested_beneficiaries_and_documents():
     body = client_for(app.doctor.user).get(url(app)).json()
     assert [b["row_number"] for b in body["beneficiaries"]] == [1, 2, 3]
     assert body["beneficiaries"][0]["kinship"] == "WIFE"
-    required = {r["type"] for r in body["beneficiaries"][0]["required_documents"]}
-    assert required == {"BENEFICIARY_NATIONAL_ID", "MARRIAGE_CERTIFICATE", "INSURANCE_PRINT"}
-    assert len(body["documents"]) == 9
+    slots = body["beneficiaries"][0]["required_documents"]
+    assert {r["type"] for r in slots if r["required"]} == {
+        "BENEFICIARY_NATIONAL_ID", "BENEFICIARY_NATIONAL_ID_BACK", "MARRIAGE_CERTIFICATE",
+        "INSURANCE_PRINT",
+    }  # fmt: skip
+    assert {r["type"] for r in slots if not r["required"]} == {"BENEFICIARY_PERSONAL_PHOTO"}
+    assert body["beneficiaries"][0]["is_first_time"] is False
+    assert [r["type"] for r in body["member_required_documents"]] == [
+        "NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PERSONAL_PHOTO",
+        "PAYMENT_RECEIPT",
+    ]  # fmt: skip
+    assert len(body["documents"]) == 10
     doc = body["documents"][0]
     assert doc["content_url"] == f"/api/v1/documents/{doc['id']}/content/"
     assert "blob_name" not in doc
@@ -239,11 +248,11 @@ def test_patch_requires_csrf_for_session_clients():
 def test_fees_endpoint_matches_example_2():
     app = build_submittable_application()
     body = client_for(app.doctor.user).get(url(app, "fees")).json()
-    assert body["total"] == 3025
+    assert body["total"] == 3860
     assert body["tier"] == 3
     assert body["is_valid"] is True
-    assert [line["fee"] for line in body["breakdown"]] == [750, 1000, 550, 550, 175]
-    assert body["schedule_id"] == str(FeeSchedule.objects.get(fiscal_year=2026, version=1).pk)
+    assert [line["fee"] for line in body["breakdown"]] == [825, 1100, 605, 605, 725]
+    assert body["schedule_id"] == str(FeeSchedule.objects.get(fiscal_year=2026, is_active=True).pk)
 
 
 def test_fees_invalid_registration_year_is_reported_not_raised():
@@ -295,7 +304,7 @@ def test_submit_happy_path_returns_reference():
     body = response.json()
     assert body["status"] == "SUBMITTED"
     assert body["reference_number"] == "MED-2026-000001"
-    assert body["fee_snapshot"]["total"] == 3025
+    assert body["fee_snapshot"]["total"] == 3860
     assert body["is_editable"] is False
 
 
@@ -355,3 +364,38 @@ def test_detail_query_count_does_not_grow_with_beneficiaries(django_assert_max_n
     with django_assert_max_num_queries(10) as big_ctx:
         client.get(url(big))
     assert len(big_ctx.captured_queries) == len(small_ctx.captured_queries)
+
+
+# --- application-specific member requirements (member birth certificate with a MOTHER) -------
+
+
+def _member_slots(body) -> dict:
+    return {r["type"]: r for r in body["member_required_documents"]}
+
+
+def test_member_requirements_follow_the_beneficiaries():
+    from apps.documents.factories import DocumentFactory
+    from apps.reference.constants import DocumentType, Kinship
+
+    app = build_submittable_application()
+    client = client_for(app.doctor.user)
+    assert "MEMBER_BIRTH_CERTIFICATE" not in _member_slots(client.get(url(app)).json())
+
+    mother = BeneficiaryFactory(application=app, row_number=4, kinship=Kinship.MOTHER,
+                                full_name="فاطمة", birth_year=1960)  # fmt: skip
+    slot = _member_slots(client.get(url(app)).json())["MEMBER_BIRTH_CERTIFICATE"]
+    assert slot["required"] is True
+    assert slot["label"] == "شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم"
+    assert slot["ocr_capable"] is False
+
+    DocumentFactory(application=app, document_type=DocumentType.MEMBER_BIRTH_CERTIFICATE)
+    mother.full_name = ""  # the mother row is no longer active
+    mother.save()
+    slot = _member_slots(client.get(url(app)).json())["MEMBER_BIRTH_CERTIFICATE"]
+    assert slot["required"] is False  # still shown: the upload is kept, not deleted
+
+
+def test_reference_member_list_stays_global():
+    reference = client_for(DoctorFactory().user).get("/api/v1/reference-data/").json()
+    types = [r["type"] for r in reference["document_rules"]["member"]]
+    assert "MEMBER_BIRTH_CERTIFICATE" not in types

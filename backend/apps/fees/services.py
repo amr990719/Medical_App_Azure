@@ -9,12 +9,17 @@ from dataclasses import asdict, dataclass, field
 
 from apps.reference.constants import KINSHIP_FEE_KEY, SPOUSE_KINSHIPS, Kinship, WorkStatus
 
-from .models import FeeSchedule
+from .models import AdminFeeFormula, FeeSchedule
 
 MEMBER_LABEL = "العضو الأصلي"
 ADMIN_FEE_LABEL = "رسوم إدارية"
 AGE_CAP_NOTE = "تم تطبيق سقف {amount} ج (عمر {age} سنة)"
 INVALID_REGISTRATION_YEAR_MESSAGE = "يرجى إدخال سنة قيد النقابة بشكل صحيح لحساب الاشتراك."
+# A null tier amount means "not eligible" (tier 0 grad_son): never free, never zero.
+NOT_ELIGIBLE_MESSAGE = (
+    "المستفيد {name}: لا يمكن الاشتراك بدرجة القرابة «{kinship}» للأعضاء المقيدين "
+    "في نفس سنة الاشتراك."
+)
 
 
 class NoActiveFeeSchedule(LookupError):
@@ -65,13 +70,17 @@ def is_valid_registration_year(schedule: FeeSchedule, registration_year: int | N
 def get_tier(
     schedule: FeeSchedule, registration_year: int, work_status: WorkStatus | str | None
 ) -> int:
-    """Tier 1-4 from years since registration; pensioners are always tier 4.
+    """Tier 0-4 from years since registration; pensioners are always tier 4.
 
-    DECEASED (and a missing work status) is priced like WORKING — open question 2.
+    Registered in the schedule's own fiscal year → tier 0 (when the schedule defines it; legacy
+    four-tier schedules price that year as tier 1). DECEASED (and a missing work status) is
+    priced like WORKING — open question 2.
     """
     if work_status == WorkStatus.PENSIONER:
         return 4
     years = schedule.fiscal_year - registration_year
+    if years == 0 and "0" in schedule.tier_fees:
+        return 0
     for tier, upper in enumerate(schedule.tier_boundaries, start=1):
         if years <= upper:
             return tier
@@ -86,6 +95,26 @@ def _capped(schedule: FeeSchedule, fee: int, birth_year: int | None) -> tuple[in
     if age >= schedule.age_cap_threshold and fee > schedule.age_cap_amount:
         return schedule.age_cap_amount, AGE_CAP_NOTE.format(amount=schedule.age_cap_amount, age=age)
     return fee, ""
+
+
+def beneficiary_ineligibility_message(
+    schedule: FeeSchedule, tier: int, kinship: Kinship | str | None, name: str
+) -> str:
+    """Arabic error when this kinship has no amount (null) at this tier, otherwise ""."""
+    if not kinship:
+        return ""
+    kinship = Kinship(kinship)
+    if schedule.tier_fees[str(tier)][KINSHIP_FEE_KEY[kinship]] is not None:
+        return ""
+    return NOT_ELIGIBLE_MESSAGE.format(name=(name or "").strip(), kinship=kinship.label)
+
+
+def admin_fee_for(schedule: FeeSchedule, active_beneficiaries: int) -> int:
+    if schedule.admin_fee_formula == AdminFeeFormula.FLAT:  # schedules before FY2026 v2
+        if active_beneficiaries:
+            return schedule.admin_fee_with_beneficiaries
+        return schedule.admin_fee_member_only
+    return schedule.admin_fee_base + schedule.admin_fee_per_beneficiary * active_beneficiaries
 
 
 def calculate_fees(
@@ -109,11 +138,24 @@ def calculate_fees(
 
     tier = get_tier(schedule, registration_year, work_status)
     fees = schedule.tier_fees[str(tier)]
+    active = [b for b in beneficiaries if b.is_active]
+
+    for beneficiary in active:
+        message = beneficiary_ineligibility_message(
+            schedule, tier, beneficiary.kinship, beneficiary.name
+        )
+        if message:  # an invalid quote — never skip the row or price it at 0
+            return FeeQuote(
+                fiscal_year=schedule.fiscal_year,
+                tier=tier,
+                is_valid=False,
+                error_message=message,
+                schedule_id=schedule_id,
+            )
 
     member_fee, member_note = _capped(schedule, fees["member"], birth_year)
     breakdown = [FeeLine(MEMBER_LABEL, member_fee, member_note)]
 
-    active = [b for b in beneficiaries if b.is_active]
     for beneficiary in active:
         kinship = Kinship(beneficiary.kinship)
         fee, note = fees[KINSHIP_FEE_KEY[kinship]], ""
@@ -121,7 +163,7 @@ def calculate_fees(
             fee, note = _capped(schedule, fee, beneficiary.birth_year)
         breakdown.append(FeeLine(beneficiary.name.strip(), fee, note))
 
-    admin_fee = schedule.admin_fee_with_beneficiaries if active else schedule.admin_fee_member_only
+    admin_fee = admin_fee_for(schedule, len(active))
     breakdown.append(FeeLine(ADMIN_FEE_LABEL, admin_fee))
     return FeeQuote(
         fiscal_year=schedule.fiscal_year,
@@ -157,8 +199,9 @@ def quote_for_application(application, *, schedule: FeeSchedule | None = None) -
     )
 
 
+# Fields an admin sets on a new version. New versions always use the PER_BENEFICIARY formula.
 SCHEDULE_FIELDS = (
-    "tier_fees", "tier_boundaries", "admin_fee_member_only", "admin_fee_with_beneficiaries",
+    "tier_fees", "tier_boundaries", "admin_fee_base", "admin_fee_per_beneficiary",
     "age_cap_threshold", "age_cap_amount", "registration_year_min",
 )  # fmt: skip
 
@@ -188,6 +231,7 @@ def create_schedule_version(*, fiscal_year: int, actor, request=None, **values) 
             version=latest + 1,
             is_active=True,
             created_by=actor,
+            admin_fee_formula=AdminFeeFormula.PER_BENEFICIARY,
             **{k: v for k, v in values.items() if k in SCHEDULE_FIELDS},
         )
         try:

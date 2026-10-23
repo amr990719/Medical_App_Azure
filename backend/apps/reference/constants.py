@@ -34,9 +34,9 @@ class Kinship(models.TextChoices):
 
     MOTHER = "MOTHER", "أم"
     FATHER = "FATHER", "أب"
-    SON_MINOR = "SON_MINOR", "ابن (18 سنة أو أقل)"
-    SON_UNIVERSITY = "SON_UNIVERSITY", "ابن (طالب جامعي)"
-    SON_GRADUATE = "SON_GRADUATE", "ابن (خريج)"
+    SON_MINOR = "SON_MINOR", "ابن/ابنة (18 سنة أو أقل)"
+    SON_UNIVERSITY = "SON_UNIVERSITY", "ابن/ابنة (طالب جامعي)"
+    SON_GRADUATE = "SON_GRADUATE", "ابن/ابنة (خريج)"
     DAUGHTER = "DAUGHTER", "ابنة"
     HUSBAND = "HUSBAND", "زوج"
     WIFE = "WIFE", "زوجة"
@@ -48,8 +48,22 @@ class DocumentType(models.TextChoices):
     SYNDICATE_ID = "SYNDICATE_ID", "كارنيه النقابة"
     PERSONAL_PHOTO = "PERSONAL_PHOTO", "صورة العضو الأصلي"
     PAYMENT_RECEIPT = "PAYMENT_RECEIPT", "إيصال الدفع"
-    BENEFICIARY_NATIONAL_ID = "BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي"
-    BIRTH_CERTIFICATE = "BIRTH_CERTIFICATE", "شهادة الميلاد"
+    # Member-owned, required only while an active MOTHER beneficiary exists (proves the relation).
+    MEMBER_BIRTH_CERTIFICATE = (
+        "MEMBER_BIRTH_CERTIFICATE",
+        "شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم",
+    )
+    # The value predates the back slot; it stays the FRONT so existing uploads remain valid.
+    BENEFICIARY_NATIONAL_ID = "BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي للمستفيد (وجه)"
+    BENEFICIARY_NATIONAL_ID_BACK = (
+        "BENEFICIARY_NATIONAL_ID_BACK",
+        "بطاقة الرقم القومي للمستفيد (ظهر)",
+    )
+    BENEFICIARY_PERSONAL_PHOTO = (
+        "BENEFICIARY_PERSONAL_PHOTO",
+        "صورة شخصية للمستفيد بخلفية بيضاء",
+    )
+    BIRTH_CERTIFICATE = "BIRTH_CERTIFICATE", "شهادة ميلاد المستفيد"
     MARRIAGE_CERTIFICATE = "MARRIAGE_CERTIFICATE", "شهادة الزواج"
     INSURANCE_PRINT = "INSURANCE_PRINT", "برينت تأميني"
     UNIVERSITY_ID = "UNIVERSITY_ID", "كارنيه الجامعة"

@@ -22,7 +22,7 @@ from apps.documents.storage import get_storage
 from apps.reference.constants import ApplicationStatus as S
 from apps.reference.constants import DocumentType as T
 from apps.reference.constants import Kinship, PaymentStatus
-from tests.files import EXE_BYTES, png_upload, upload
+from tests.files import EXE_BYTES, pdf_bytes, png_upload, upload
 
 pytestmark = pytest.mark.django_db
 
@@ -230,3 +230,133 @@ def test_content_by_admin_is_audited_with_the_admin_as_actor():
     admin = AdminUserFactory()
     document_content(doc, actor=admin)
     assert AuditLog.objects.get(action=AuditAction.DOCUMENT_VIEWED).user == admin
+
+
+# --- beneficiary national ID: separate front and back slots -----------------------------------
+
+
+def _store(app, doc_type, beneficiary=None, file=None):
+    return store_document(
+        app, document_type=doc_type, upload=file or png_upload(), actor=app.doctor.user,
+        beneficiary_id=beneficiary.pk if beneficiary else None,
+    )  # fmt: skip
+
+
+def test_id_front_and_back_are_independent_slots():
+    app = ApplicationFactory()
+    wife = BeneficiaryFactory(application=app, kinship=Kinship.WIFE, birth_year=1988)
+    front = _store(app, T.BENEFICIARY_NATIONAL_ID, wife)
+    back = _store(app, T.BENEFICIARY_NATIONAL_ID_BACK, wife)
+    assert set(Document.objects.filter(beneficiary=wife)) == {front, back}
+    assert front.blob_name.startswith(f"applications/{app.pk}/beneficiaries/{wife.pk}/national-id-")
+    assert back.blob_name.startswith(
+        f"applications/{app.pk}/beneficiaries/{wife.pk}/national-id-back-"
+    )
+    assert not AuditLog.objects.filter(action=AuditAction.DOCUMENT_REPLACED).exists()
+
+
+def test_replacing_the_back_keeps_an_existing_front_upload():
+    app = ApplicationFactory()
+    mother = BeneficiaryFactory(application=app, kinship=Kinship.MOTHER, birth_year=1960)
+    front = _store(app, T.BENEFICIARY_NATIONAL_ID, mother)  # e.g. uploaded before the back slot
+    old_back = _store(app, T.BENEFICIARY_NATIONAL_ID_BACK, mother)
+    new_back = _store(app, T.BENEFICIARY_NATIONAL_ID_BACK, mother)
+    old_back.refresh_from_db()
+    front.refresh_from_db()
+    assert old_back.deleted_at is not None
+    assert front.deleted_at is None
+    assert set(Document.objects.filter(beneficiary=mother)) == {front, new_back}
+    replaced = AuditLog.objects.get(action=AuditAction.DOCUMENT_REPLACED)
+    assert replaced.object_id == old_back.pk
+    assert replaced.metadata["document_type"] == "BENEFICIARY_NATIONAL_ID_BACK"
+
+
+def test_replacing_the_front_keeps_the_back():
+    app = ApplicationFactory()
+    wife = BeneficiaryFactory(application=app, kinship=Kinship.WIFE, birth_year=1988)
+    old_front = _store(app, T.BENEFICIARY_NATIONAL_ID, wife)
+    back = _store(app, T.BENEFICIARY_NATIONAL_ID_BACK, wife)
+    new_front = _store(app, T.BENEFICIARY_NATIONAL_ID, wife)
+    assert set(Document.objects.filter(beneficiary=wife)) == {new_front, back}
+    old_front.refresh_from_db()
+    assert old_front.deleted_at is not None
+
+
+def test_deleting_one_side_leaves_the_other():
+    app = ApplicationFactory()
+    wife = BeneficiaryFactory(application=app, kinship=Kinship.WIFE, birth_year=1988)
+    front = _store(app, T.BENEFICIARY_NATIONAL_ID, wife)
+    back = _store(app, T.BENEFICIARY_NATIONAL_ID_BACK, wife)
+    delete_document(back, actor=app.doctor.user)
+    assert list(Document.objects.filter(beneficiary=wife)) == [front]
+    assert AuditLog.objects.get(action=AuditAction.DOCUMENT_DELETED).object_id == back.pk
+
+
+@pytest.mark.parametrize("doc_type", [T.BENEFICIARY_NATIONAL_ID_BACK, T.BENEFICIARY_PERSONAL_PHOTO])
+def test_new_beneficiary_slots_require_a_beneficiary(doc_type):
+    app = ApplicationFactory()
+    with pytest.raises(ValidationFailed) as exc:
+        _store(app, doc_type)
+    assert "beneficiary_id" in exc.value.fields
+    assert blobs() == []
+
+
+# --- member birth certificate (proof of the relation to the mother) -------------------------
+
+
+def test_member_birth_certificate_is_member_owned():
+    app = ApplicationFactory()
+    doc = _store(app, T.MEMBER_BIRTH_CERTIFICATE)
+    assert doc.beneficiary is None
+    assert doc.blob_name.startswith(f"applications/{app.pk}/doctor/member-birth-certificate-")
+    mother = BeneficiaryFactory(application=app, kinship=Kinship.MOTHER)
+    with pytest.raises(ValidationFailed):
+        _store(app, T.MEMBER_BIRTH_CERTIFICATE, mother)
+
+
+def test_member_birth_certificate_survives_when_the_mother_is_removed():
+    from apps.beneficiaries.services import delete_beneficiary, update_beneficiary
+
+    app = ApplicationFactory()
+    mother = BeneficiaryFactory(application=app, kinship=Kinship.MOTHER, birth_year=1960)
+    certificate = _store(app, T.MEMBER_BIRTH_CERTIFICATE)
+    update_beneficiary(mother, actor=app.doctor.user, changes={"kinship": Kinship.FATHER})
+    assert Document.objects.filter(pk=certificate.pk).exists()
+    delete_beneficiary(mother, actor=app.doctor.user)
+    assert Document.objects.filter(pk=certificate.pk).exists()  # no longer required, kept
+
+
+# --- personal photos: images only, even when PDFs are enabled --------------------------------
+
+
+@pytest.mark.parametrize("doc_type", [T.PERSONAL_PHOTO, T.BENEFICIARY_PERSONAL_PHOTO])
+def test_photos_refuse_pdf_even_when_pdfs_are_enabled(settings, doc_type):
+    settings.ALLOW_PDF_DOCUMENTS = True
+    app = ApplicationFactory()
+    son = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR)
+    owner = son if doc_type == T.BENEFICIARY_PERSONAL_PHOTO else None
+    with pytest.raises(UnsupportedFileType):
+        _store(app, doc_type, owner, file=upload(pdf_bytes(), "photo.pdf", "application/pdf"))
+    assert _store(app, doc_type, owner).content_type == "image/png"
+
+
+def test_pdf_still_accepted_for_other_beneficiary_documents(settings):
+    settings.ALLOW_PDF_DOCUMENTS = True
+    app = ApplicationFactory()
+    wife = BeneficiaryFactory(application=app, kinship=Kinship.WIFE, birth_year=1988)
+    doc = _store(app, T.BENEFICIARY_NATIONAL_ID_BACK, wife,
+                 file=upload(pdf_bytes(), "back.pdf", "application/pdf"))  # fmt: skip
+    assert doc.content_type == "application/pdf"
+
+
+def test_member_and_beneficiary_photos_are_distinct_slots():
+    app = ApplicationFactory()
+    son = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR)
+    member_photo = _store(app, T.PERSONAL_PHOTO)
+    son_photo = _store(app, T.BENEFICIARY_PERSONAL_PHOTO, son)
+    assert member_photo.beneficiary is None and son_photo.beneficiary == son
+    assert son_photo.blob_name.startswith(
+        f"applications/{app.pk}/beneficiaries/{son.pk}/personal-photo-"
+    )
+    with pytest.raises(ValidationFailed):
+        _store(app, T.PERSONAL_PHOTO, son)

@@ -97,6 +97,8 @@ CURRENT_FISCAL_YEAR: int = env.int("CURRENT_FISCAL_YEAR", default=2026)
 MAX_BENEFICIARIES: int = env.int("MAX_BENEFICIARIES", default=10)
 REQUIRE_MEMBER_PHOTO: bool = env.bool("REQUIRE_MEMBER_PHOTO", default=False)
 CHILD_NATIONAL_ID_AGE: int = env.int("CHILD_NATIONAL_ID_AGE", default=16)
+# First-time beneficiaries need a personal photo, except children younger than this age.
+PHOTO_EXEMPT_CHILD_AGE: int = env.int("PHOTO_EXEMPT_CHILD_AGE", default=3)
 ENFORCE_SPOUSE_GENDER: bool = env.bool("ENFORCE_SPOUSE_GENDER", default=True)
 ENFORCE_SON_MINOR_AGE: bool = env.bool("ENFORCE_SON_MINOR_AGE", default=True)
 SON_MINOR_MAX_AGE: int = env.int("SON_MINOR_MAX_AGE", default=18)

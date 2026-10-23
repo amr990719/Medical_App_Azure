@@ -19,6 +19,7 @@ from PIL import Image
 
 from apps.common.exceptions import FileTooLarge, ImageTooSmall, UnsupportedFileType
 from apps.reference.constants import DocumentType
+from apps.reference.document_rules import IMAGE_ONLY_TYPES
 
 IMAGE_CONTENT_TYPES = ("image/jpeg", "image/png", "image/webp")
 PDF_CONTENT_TYPE = "application/pdf"
@@ -36,7 +37,6 @@ PILLOW_FORMATS = {
     "WEBP": "image/webp",
     "HEIF": "image/heic",
 }
-IMAGE_ONLY_TYPES = frozenset({DocumentType.PERSONAL_PHOTO})
 
 # Signatures refused before anything else: PE/DOS, ELF, Mach-O (32/64/fat), scripts, archives.
 EXECUTABLE_SIGNATURES = (

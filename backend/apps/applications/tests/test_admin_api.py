@@ -212,7 +212,7 @@ def test_detail_masks_ids_lists_transitions_and_is_audited(admin):
     assert wife["national_id"] is None
     assert wife["masked_national_id"] == "28•••••••••242"
     assert body["fee_snapshot"] == {"total": 3025, "tier": 3}
-    assert len(body["documents"]) == 9
+    assert len(body["documents"]) == 10
     assert set(body["allowed_transitions"]) == {"UNDER_REVIEW", "NEEDS_CORRECTION", "REJECTED"}
     viewed = AuditLog.objects.get(action=AuditAction.ADMIN_APPLICATION_VIEWED)
     assert viewed.object_id == app.pk
@@ -403,3 +403,22 @@ def test_admin_doctor_list_and_detail(admin):
 
 def test_payment_status_value_labels_are_stable():
     assert PaymentStatus.CONFIRMED.label == "مؤكد"
+
+
+def test_detail_shows_first_time_answers_and_conditional_member_requirements(admin):
+    from apps.beneficiaries.factories import BeneficiaryFactory
+    from apps.reference.constants import Kinship
+
+    app = submitted()
+    BeneficiaryFactory(application=app, row_number=4, kinship=Kinship.MOTHER,
+                       full_name="فاطمة", birth_year=1960, is_first_time=True)  # fmt: skip
+    body = admin.get(app_url(app)).json()
+    answers = {b["kinship"]: b["is_first_time"] for b in body["beneficiaries"]}
+    assert answers == {"WIFE": False, "SON_MINOR": False, "DAUGHTER": False, "MOTHER": True}
+    member = {r["type"]: r["required"] for r in body["member_required_documents"]}
+    assert member["MEMBER_BIRTH_CERTIFICATE"] is True
+    mother = next(b for b in body["beneficiaries"] if b["kinship"] == "MOTHER")
+    required = {r["type"] for r in mother["required_documents"] if r["required"]}
+    assert required == {
+        "BENEFICIARY_NATIONAL_ID", "BENEFICIARY_NATIONAL_ID_BACK", "BENEFICIARY_PERSONAL_PHOTO",
+    }  # fmt: skip

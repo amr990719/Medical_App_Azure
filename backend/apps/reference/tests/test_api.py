@@ -30,10 +30,16 @@ def test_reference_data_shape_and_27_governorates():
     assert {"value": "PENSIONER", "label": "معاش"} in data["work_statuses"]
     assert {"value": "MUSLIM", "label": "مسلم"} in data["religions"]
     assert {"value": "FEMALE", "label": "أنثى"} in data["genders"]
-    assert {"value": "SON_UNIVERSITY", "label": "ابن (طالب جامعي)", "fee_key": "grad_son"} in data[
-        "kinships"
+    assert [(k["value"], k["label"], k["fee_key"]) for k in data["kinships"]] == [
+        ("MOTHER", "أم", "parent"),
+        ("FATHER", "أب", "parent"),
+        ("SON_MINOR", "ابن/ابنة (18 سنة أو أقل)", "child"),
+        ("SON_UNIVERSITY", "ابن/ابنة (طالب جامعي)", "grad_son"),
+        ("SON_GRADUATE", "ابن/ابنة (خريج)", "grad_son"),
+        ("DAUGHTER", "ابنة", "child"),
+        ("HUSBAND", "زوج", "spouse"),
+        ("WIFE", "زوجة", "spouse"),
     ]
-    assert len(data["kinships"]) == 8
     assert {"value": "ADDITION", "label": "إضافة"} in data["application_types"]
     assert {"value": "NEEDS_CORRECTION", "label": "يحتاج تصحيح"} in data["statuses"]
     assert {"value": "PENDING_REVIEW", "label": "بانتظار التأكيد"} in data["payment_statuses"]
@@ -48,6 +54,7 @@ def test_reference_data_shape_and_27_governorates():
         "receipt_min_width": 400,
         "receipt_min_height": 300,
         "accepted_content_types": ["image/jpeg", "image/png", "image/webp"],
+        "image_content_types": ["image/jpeg", "image/png", "image/webp"],
     }
 
 
@@ -55,7 +62,9 @@ def test_document_rules_come_from_the_single_rules_table():
     from apps.reference.document_rules import rules_as_reference_data
 
     data = get(UserFactory()).json()
-    assert data["document_rules"] == rules_as_reference_data(require_photo=False, child_id_age=16)
+    assert data["document_rules"] == rules_as_reference_data(
+        require_photo=False, child_id_age=16, photo_exempt_child_age=3
+    )
     ocr = {t["type"] for t in data["document_rules"]["document_types"] if t["ocr_capable"]}
     assert ocr == {
         "NATIONAL_ID_FRONT",
@@ -73,3 +82,5 @@ def test_reference_data_follows_settings():
     assert data["ocr_enabled"] is True
     assert data["features"]["allow_pdf"] is True
     assert "application/pdf" in data["upload"]["accepted_content_types"]
+    # Photos stay image-only even when PDF documents are enabled.
+    assert data["upload"]["image_content_types"] == ["image/jpeg", "image/png", "image/webp"]

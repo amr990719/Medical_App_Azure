@@ -27,9 +27,10 @@ class ApplicationFactory(factory.django.DjangoModelFactory):
 
 def build_submittable_application(**application_fields) -> InsuranceApplication:
     """Worked example 2 (PROMPT.md §17.4), complete and valid for submission:
-    male member born 1985, registered 2014, WIFE 1988, SON_MINOR 2015, DAUGHTER 2018,
-    every required document and the receipt uploaded, declaration signed and accepted.
-    Expected fee: 3025."""
+    male member born 1985, registered 2014, WIFE 1988, SON_MINOR 2015, DAUGHTER 2018 (none of
+    them first-time, so no photos), every required document — both national-ID sides — and the
+    receipt uploaded, declaration signed and accepted.
+    Expected fee (FY 2026 v2, tier 3): 825 + 1100 + 605 + 605 + (200 + 3 × 175) = 3860."""
     from apps.beneficiaries.factories import BeneficiaryFactory
     from apps.documents.factories import DocumentFactory
 
@@ -52,18 +53,19 @@ def build_submittable_application(**application_fields) -> InsuranceApplication:
 
     wife = BeneficiaryFactory(
         application=app, row_number=1, kinship=Kinship.WIFE, full_name="سارة محمود علي",
-        birth_year=1988, national_id="28803150101242",
+        birth_year=1988, national_id="28803150101242", is_first_time=False,
     )  # fmt: skip
     son = BeneficiaryFactory(
         application=app, row_number=2, kinship=Kinship.SON_MINOR, full_name="عمر أحمد محمد",
-        birth_year=2015,
+        birth_year=2015, is_first_time=False,
     )  # fmt: skip
     daughter = BeneficiaryFactory(
         application=app, row_number=3, kinship=Kinship.DAUGHTER, full_name="مريم أحمد محمد",
-        birth_year=2018,
+        birth_year=2018, is_first_time=False,
     )  # fmt: skip
     for doc_type in (
         DocumentType.BENEFICIARY_NATIONAL_ID,
+        DocumentType.BENEFICIARY_NATIONAL_ID_BACK,
         DocumentType.MARRIAGE_CERTIFICATE,
         DocumentType.INSURANCE_PRINT,
     ):

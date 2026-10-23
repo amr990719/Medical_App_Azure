@@ -28,9 +28,9 @@ def test_kinship_labels_are_exact():
     assert dict(Kinship.choices) == {
         "MOTHER": "أم",
         "FATHER": "أب",
-        "SON_MINOR": "ابن (18 سنة أو أقل)",
-        "SON_UNIVERSITY": "ابن (طالب جامعي)",
-        "SON_GRADUATE": "ابن (خريج)",
+        "SON_MINOR": "ابن/ابنة (18 سنة أو أقل)",
+        "SON_UNIVERSITY": "ابن/ابنة (طالب جامعي)",
+        "SON_GRADUATE": "ابن/ابنة (خريج)",
         "DAUGHTER": "ابنة",
         "HUSBAND": "زوج",
         "WIFE": "زوجة",
@@ -65,6 +65,12 @@ def test_enum_labels():
 
 
 def test_document_types_and_labels():
-    assert len(DocumentType.values) == 11
+    assert len(DocumentType.values) == 14
+    # BENEFICIARY_NATIONAL_ID keeps its value (existing uploads) and is now the FRONT side.
+    assert DocumentType.BENEFICIARY_NATIONAL_ID.label == "بطاقة الرقم القومي للمستفيد (وجه)"
+    assert DocumentType.BENEFICIARY_NATIONAL_ID_BACK.label == "بطاقة الرقم القومي للمستفيد (ظهر)"
+    assert DocumentType.MEMBER_BIRTH_CERTIFICATE.label == (
+        "شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم"
+    )
     assert DocumentType.INSURANCE_PRINT.label == "برينت تأميني"
     assert DocumentType.OTHER.label == "مستند آخر"

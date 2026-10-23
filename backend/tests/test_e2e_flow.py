@@ -91,9 +91,11 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
 
     beneficiaries = [
         {"kinship": "WIFE", "full_name": "سارة محمود علي", "birth_year": "١٩٨٨",
-         "national_id": "28803150101242"},
-        {"kinship": "SON_MINOR", "full_name": "عمر أحمد محمد", "birth_year": 2015},
-        {"kinship": "DAUGHTER", "full_name": "مريم أحمد محمد", "birth_year": 2018},
+         "national_id": "28803150101242", "is_first_time": True},
+        {"kinship": "SON_MINOR", "full_name": "عمر أحمد محمد", "birth_year": 2015,
+         "is_first_time": False},
+        {"kinship": "DAUGHTER", "full_name": "مريم أحمد محمد", "birth_year": 2018,
+         "is_first_time": False},
     ]  # fmt: skip
     rows = []
     for data in beneficiaries:
@@ -115,8 +117,14 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
     for doc_type in ("NATIONAL_ID_BACK", "SYNDICATE_ID"):
         upload(doc_type)
     wife, son, daughter = rows
-    for doc_type in ("BENEFICIARY_NATIONAL_ID", "MARRIAGE_CERTIFICATE", "INSURANCE_PRINT"):
-        upload(doc_type, wife["id"])
+    for doc_type in (
+        "BENEFICIARY_NATIONAL_ID",
+        "BENEFICIARY_NATIONAL_ID_BACK",
+        "MARRIAGE_CERTIFICATE",
+        "INSURANCE_PRINT",
+        "BENEFICIARY_PERSONAL_PHOTO",
+    ):
+        upload(doc_type, wife["id"])  # first time: white-background photo
     for child in (son, daughter):
         upload("BIRTH_CERTIFICATE", child["id"])
     blob_name = Document.objects.get(pk=front["id"]).blob_name
@@ -126,7 +134,7 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
     assert re.fullmatch(
         rf"applications/{app_id}/doctor/national-id-front-[0-9a-f-]{{36}}\.png", blob_name
     )
-    step("POST /documents/ x8", f"stored in Azurite container {settings.BLOB_CONTAINER}")
+    step("POST /documents/ x10", f"stored in Azurite container {settings.BLOB_CONTAINER}")
 
     response = browser.get(f"/api/v1/documents/{front['id']}/content/")
     assert response.status_code == 200 and response.content[:4] == b"\x89PNG"
@@ -138,8 +146,8 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
     step("POST /documents/{id}/extract/", "mock OCR suggestions (nothing saved)")
 
     fees = browser.get(f"{base}fees/").json()
-    assert (fees["tier"], fees["total"]) == (3, 3025)
-    step("GET /fees/", f"tier {fees['tier']}, total {fees['total']} EGP (worked example 2)")
+    assert (fees["tier"], fees["total"]) == (3, 3860)
+    step("GET /fees/", f"tier {fees['tier']}, total {fees['total']} EGP (worked example 2, v2)")
 
     validation = browser.get(f"{base}validation/").json()
     assert [e["field"] for e in validation["errors"]] == ["declaration.name"]
@@ -167,5 +175,5 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
     body = response.json()
     assert body["status"] == "SUBMITTED"
     assert re.fullmatch(r"MED-2026-\d{6}", body["reference_number"])
-    assert body["fee_snapshot"]["total"] == 3025
+    assert body["fee_snapshot"]["total"] == 3860
     step("POST /submit/", f"SUBMITTED, reference number {body['reference_number']}")

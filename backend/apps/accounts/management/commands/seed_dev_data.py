@@ -2,12 +2,14 @@
 Refuses to run unless DEV_AUTH_ENABLED (development/test settings only — production refuses
 that flag).
 
-* FY 2026 fee schedule  ensured (normally already created by the fees seed migration)
+* FY 2026 fee schedule  ensured (normally already created by the fees migrations: version 2)
 * admin@dev.local       ADMIN role
-* doctor@dev.local      complete profile, worked example 2 (WIFE, SON_MINOR, DAUGHTER) —
-                        application SUBMITTED, receipt waiting for confirmation (3,025 EGP)
-* doctor2@dev.local     female member with her MOTHER — application NEEDS_CORRECTION with
-                        review notes from the admin (2,075 EGP)
+* doctor@dev.local      complete profile, registered 2014 (tier 3), WIFE, SON_MINOR (first time,
+                        with photo), DAUGHTER — application SUBMITTED, receipt waiting for
+                        confirmation (825 + 1,100 + 605 + 605 + 200 + 3 × 175 = 3,860 EGP)
+* doctor2@dev.local     female member registered 2018 (tier 2) with her MOTHER (first time) and
+                        her own birth certificate — application NEEDS_CORRECTION with review
+                        notes from the admin (770 + 1,320 + 375 = 2,465 EGP)
 * new.doctor@dev.local  empty profile, no application (first sign-in experience)
 
 Every step goes through the domain services with the real actor (doctor or admin), so the
@@ -52,12 +54,14 @@ DOCTOR_PROFILE = {
 }
 DOCTOR_BENEFICIARIES = [
     {"kinship": "WIFE", "full_name": "سارة محمود علي", "birth_year": 1988,
-     "national_id": "28803150199982",
-     "documents": ["BENEFICIARY_NATIONAL_ID", "MARRIAGE_CERTIFICATE", "INSURANCE_PRINT"]},
+     "national_id": "28803150199982", "is_first_time": False,
+     "documents": ["BENEFICIARY_NATIONAL_ID", "BENEFICIARY_NATIONAL_ID_BACK",
+                   "MARRIAGE_CERTIFICATE", "INSURANCE_PRINT"]},
     {"kinship": "SON_MINOR", "full_name": "عمر أحمد محمد", "birth_year": 2015,
-     "national_id": None, "documents": ["BIRTH_CERTIFICATE"]},
+     "national_id": None, "is_first_time": True,
+     "documents": ["BIRTH_CERTIFICATE", "BENEFICIARY_PERSONAL_PHOTO"]},
     {"kinship": "DAUGHTER", "full_name": "مريم أحمد محمد", "birth_year": 2018,
-     "national_id": None, "documents": ["BIRTH_CERTIFICATE"]},
+     "national_id": None, "is_first_time": False, "documents": ["BIRTH_CERTIFICATE"]},
 ]  # fmt: skip
 
 DOCTOR2_PROFILE = {
@@ -78,17 +82,22 @@ DOCTOR2_PROFILE = {
 }
 DOCTOR2_BENEFICIARIES = [
     {"kinship": "MOTHER", "full_name": "فاطمة علي أحمد", "birth_year": 1962,
-     "national_id": "26205120199984", "documents": ["BENEFICIARY_NATIONAL_ID"]},
+     "national_id": "26205120199984", "is_first_time": True,
+     "documents": ["BENEFICIARY_NATIONAL_ID", "BENEFICIARY_NATIONAL_ID_BACK",
+                   "BENEFICIARY_PERSONAL_PHOTO"]},
 ]  # fmt: skip
 CORRECTION_NOTES = "صورة بطاقة الأم غير واضحة، يرجى رفع صورة أوضح ثم إعادة التقديم."
 
 MEMBER_DOCUMENTS = ("NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PAYMENT_RECEIPT")
+# Only while an active MOTHER is listed (the member's OWN birth certificate).
+MOTHER_MEMBER_DOCUMENTS = ("MEMBER_BIRTH_CERTIFICATE",)
 
 
 def _fy2026_schedule() -> dict:
-    """The one definition of the FY 2026 amounts lives in the fees seed migration."""
-    migration = importlib.import_module("apps.fees.migrations.0002_seed_fy2026")
-    return dict(migration.FY2026)
+    """The one definition of the CURRENT FY 2026 amounts lives in the fees migration that
+    introduced version 2 — never the obsolete version 1 seed."""
+    migration = importlib.import_module("apps.fees.migrations.0004_fy2026_v2_schedule")
+    return dict(migration.FY2026_V2)
 
 
 def _image(label: str) -> SimpleUploadedFile:
@@ -141,9 +150,11 @@ class Command(BaseCommand):
 
     def _ensure_schedule(self) -> None:
         values = _fy2026_schedule()
-        if FeeSchedule.objects.filter(fiscal_year=values["fiscal_year"], is_active=True).exists():
+        versions = FeeSchedule.objects.filter(fiscal_year=values["fiscal_year"])
+        if versions.filter(is_active=True).exists():
             return
-        FeeSchedule.objects.create(**values)
+        latest = versions.order_by("-version").values_list("version", flat=True).first() or 0
+        FeeSchedule.objects.create(**values, version=latest + 1, is_active=True)
 
     def _user(self, email: str, name: str, role: str) -> User:
         user = User.objects.filter(email=email).first()
@@ -175,7 +186,10 @@ class Command(BaseCommand):
                 app,
                 row_number=row_number,
                 actor=actor,
-                **{k: row[k] for k in ("kinship", "full_name", "birth_year", "national_id")},
+                **{
+                    k: row[k]
+                    for k in ("kinship", "full_name", "birth_year", "national_id", "is_first_time")
+                },
             )
             for document_type in row["documents"]:
                 store_document(
@@ -185,7 +199,8 @@ class Command(BaseCommand):
                     beneficiary_id=beneficiary.pk,
                     actor=actor,
                 )
-        for document_type in MEMBER_DOCUMENTS:
+        has_mother = any(row["kinship"] == "MOTHER" for row in beneficiaries)
+        for document_type in MEMBER_DOCUMENTS + (MOTHER_MEMBER_DOCUMENTS if has_mother else ()):
             store_document(app, document_type=document_type, upload=_image(document_type),
                            actor=actor)  # fmt: skip
         applications.update_draft(

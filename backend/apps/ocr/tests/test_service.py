@@ -14,6 +14,7 @@ from apps.ocr.providers.base import OcrProviderError
 from apps.ocr.providers.mock import MockOcrProvider
 from apps.ocr.services import extract_document
 from apps.reference.constants import DocumentType as T
+from apps.reference.constants import Kinship
 from tests.files import pdf_bytes, png_upload, upload
 
 pytestmark = pytest.mark.django_db
@@ -150,3 +151,26 @@ def test_provider_receives_the_document_bytes_and_type():
     assert kwargs["image"][:4] == b"\x89PNG"
     assert kwargs["content_type"] == "image/png"
     assert kwargs["document_type"] == T.NATIONAL_ID_BACK
+
+
+@pytest.mark.parametrize("doc_type", [T.BENEFICIARY_NATIONAL_ID_BACK, T.BENEFICIARY_PERSONAL_PHOTO])
+def test_new_beneficiary_slots_have_no_extraction(doc_type):
+    app = ApplicationFactory()
+    son = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR)
+    doc = stored(doc_type, app, beneficiary_id=son.pk)
+    with pytest.raises(ValidationFailed):
+        extract_document(doc, actor=app.doctor.user)
+
+
+def test_member_birth_certificate_is_never_read_into_beneficiary_fields():
+    # The applicant's own certificate must not fill the mother's row: no extraction at all.
+    doc = stored(T.MEMBER_BIRTH_CERTIFICATE)
+    with pytest.raises(ValidationFailed):
+        extract_document(doc, actor=doc.application.doctor.user)
+
+
+def test_front_of_beneficiary_national_id_is_still_read():
+    app = ApplicationFactory()
+    wife = BeneficiaryFactory(application=app, kinship=Kinship.WIFE, birth_year=1988)
+    doc = stored(T.BENEFICIARY_NATIONAL_ID, app, beneficiary_id=wife.pk)
+    assert extract_document(doc, actor=app.doctor.user).fields["name"]

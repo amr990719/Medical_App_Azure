@@ -264,6 +264,7 @@ def _submitted_snapshot(app: InsuranceApplication) -> dict:
                 "full_name": b.full_name,
                 "birth_year": b.birth_year,
                 "national_id": b.national_id,
+                "is_first_time": b.is_first_time,
             }
             for b in app.beneficiaries.all()
         ],
