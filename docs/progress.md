@@ -865,6 +865,57 @@ Nothing pushed or deployed.
   re-run green). Regenerated screenshots were restored, not committed.
   **NOT VERIFIED — requires Azure credentials:** the migrate job and v2 activation on dev.
 
+### Session 15 — 2026-10-24 — FY 2026 version 1 and the legacy pricing support removed
+
+Owner instruction of 2026-10-24 (removal of v1 explicitly authorized). Local only, on the same
+branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
+
+- **`fees.0005_remove_fy2026_v1` (data, D161):** refuses — changing nothing — while any schedule
+  other than FY 2026 v1 still has the legacy format (tiers 1–4 or the FLAT fee) or while v1 is the
+  active FY 2026 version; otherwise clears `fee_schedule` on the applications that used v1 with a
+  queryset UPDATE (no other column, not even `updated_at`, changes), then deletes the row found by
+  `fiscal_year=2026, version=1`. `fee_snapshot`, `submitted_snapshot`, beneficiaries, documents and
+  audit entries are untouched; the snapshot's `schedule_id` and audit metadata keep the removed id
+  as history. Never re-priced, never pointed at v2. Idempotent; reverse is a no-op.
+- **`fees.0006_remove_legacy_admin_fee` (schema, D162):** drops `admin_fee_formula`,
+  `admin_fee_member_only`, `admin_fee_with_beneficiaries` and the formula CHECK; `admin_fee_base` /
+  `admin_fee_per_beneficiary` become NOT NULL (defaults 200 / 175). `0002_seed_fy2026` and every
+  earlier migration are unchanged (history).
+- **Runtime:** `validate_tier_fees` accepts tiers 0–4 only (null only for tier 0 `grad_son`);
+  `AdminFeeFormula`, `LEGACY_TIERS`, the FLAT branch of `admin_fee_for` and the "tier 0 if defined"
+  branch of `get_tier` are gone (tier selection, pensioner override, 70+ cap and tier-0 eligibility
+  unchanged). Admin API: the three fields removed, base / per-beneficiary required non-null.
+  Factories: `FY2026_V1_TIER_FEES` / `fy2026_legacy_schedule()` removed. `seed_dev_data` keeps only
+  the model's current fields from `FY2026_V2` and never creates a version below 2 (D164).
+- **Frontend:** `TierFees` is a full 0–4 record; `tiersOf`, the `hasTierZero` tier-range branch, the
+  FLAT `adminFeeRule` branch, the legacy-base handling of the new-version form and the strings
+  `tierRange.first` / `adminFeeFormulaFlat` removed; schema regenerated; fee-schedule fixture = the
+  live API response (v2 only, compared key by key); the admin-detail fixture now has
+  `fee_schedule: null` with its v1-era snapshot (the historical display is covered by that test).
+- **Checked first:** the compose database held only v1 (FLAT, tiers 1–4, locked, 61 applications)
+  and v2 (19 applications) — no other legacy schedule, so no conversion was needed. Azure dev is at
+  `fees.0002` and cannot be checked from here (D163).
+- **Verification (all local):**
+  - existing database (compose, fees at 0004; pg_dump backup first): a fingerprint of every
+    application row except `fee_schedule_id` (82), both snapshots, beneficiaries (271), documents
+    (852), audit entries (1775) and the v2 row was identical before and after `migrate`; 61 v1
+    references cleared, 19 v2 references kept, v1 absent, v2 active and locked; the doctor `/fees/`
+    and admin detail endpoints return the stored snapshot for all 60 submitted v1-priced
+    applications (the 61st is NEEDS_CORRECTION and gets a live quote, as before);
+  - fresh database (`medical_fresh`, migrated from zero, then `seed_dev_data`): only FY 2026 v2,
+    active, amounts exact; seeded totals 3,860 / 2,465 on v2; database dropped afterwards;
+  - real-schema migration tests (`MigrationExecutor`, transactional): fees rolled back to 0002 →
+    v1 seeded as 0002 did, locked and used → forward through 0003–0006 keeps every record; refusal
+    with another legacy schedule and with an active v1 leaves the data unchanged;
+  - the PostgreSQL "pending trigger events" error that forces the 0005 / 0006 split was reproduced
+    in a scratch database;
+  - fee examples on the migrated v2 row: 600, 1,325, 3,080; tier-0 university son still invalid;
+  - backend `pytest` **1179 passed, 1 skipped** (container), `ruff check` / `ruff format --check`,
+    `manage.py check`, `makemigrations --check --dry-run`, `spectacular --validate --fail-on-warn`;
+    frontend `gen:api`, `typecheck`, `lint`, `vitest` **322 passed** (the legacy-version test
+    removed), `rtl:check` 0 errors, `build` OK; Playwright **11 passed, 5 skipped**.
+  **NOT VERIFIED — requires Azure credentials:** the migrate job on dev (D163 pre-deploy query).
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1290,6 +1341,27 @@ Nothing pushed or deployed.
 - **D160 — Rule guidance comes from the rules table:** the photo, exemption, mother-child and
   member-certificate guidance are `hints` on each requirement (like the document labels), so the
   rule and its text cannot drift; UI chrome strings stay in `ar.ts` (deviation 68).
+- **D161 — FY 2026 v1 removal keeps history in the snapshots:** the application's
+  `fee_schedule` FK was already nullable (PROTECT), so only the reference is cleared; the frozen
+  `fee_snapshot` / `submitted_snapshot` remain the record of what was charged. Re-pricing or
+  re-pointing at v2 would misrepresent the schedule used. The migration refuses instead of guessing
+  a conversion for any other legacy schedule (it would need invented tier-0 amounts or a different
+  administrative fee) and refuses to delete an active v1. Reverse = no-op (v1 is not recreated;
+  cleared references cannot be told apart from never-submitted applications).
+- **D162 — Data and schema in separate migrations:** deleting a row whose deferred FK checks are
+  pending and then `ALTER TABLE` in one transaction fails on PostgreSQL ("pending trigger events",
+  reproduced), so 0005 (data) and 0006 (schema) each run in their own transaction.
+- **D163 — Expand and contract ship together (deviation 70); wider deploy window:** 0003 added the
+  formula columns and 0006 drops them before either was deployed. The old dev revision (`fees` at
+  0002) selects `admin_fee_member_only` / `admin_fee_with_beneficiaries`, so between the migrate job
+  and the new revision **every** FeeSchedule read fails there (quotes, submission, admin
+  جداول الرسوم), not only quotes/submissions (D158). Still fail-closed: no wrong snapshot can be
+  frozen. Pre-deploy check on dev, read-only: `SELECT fiscal_year, version FROM fees_feeschedule
+  WHERE NOT (fiscal_year = 2026 AND version = 1);` — at `fees.0002` every row is four-tier FLAT, so
+  any row returned would make 0005 refuse (an admin-created version needs an owner decision first).
+- **D164 — Seeding never recreates v1:** `seed_dev_data` creates FY 2026 only when no version is
+  active, as `max(latest + 1, 2)`, with the `FY2026_V2` amounts of `fees.0004` filtered to the
+  model's current fields.
 
 ## Deviations from PROMPT.md
 
@@ -1363,7 +1435,8 @@ Nothing pushed or deployed.
 | 66 | §6 / §41 React Hook Form + Zod for instant validation | narrowed in Session 13: used by the profile page (D146); the wizard keeps its custom controller (server `/validation/` after each autosave + local hints) | rewriting every wizard step on RHF changes no behaviour; the server is authoritative either way |
 | 67 | plan Task 10.1/10.2: two commits (`docs: readme and documentation set`, `Session 10: documentation and final report`) | one commit `Phase 10: deployment readiness` | explicit user instruction |
 | 68 | CLAUDE.md "every UI string lives in `ar.ts`" | rule-bound document guidance (`hints`) comes from the server rules table, like document labels | D160: the text must follow the rule (e.g. only SON_MINOR shows the under-3 note) |
-| 69 | PROMPT.md §17.1 FY 2026 amounts / §17.2 admin fee 150/175 | FY 2026 version 2, tier 0, `200 + 175 × active` | owner requirements 2026-10-23 (PROMPT.md updated; v1 kept as legacy) |
+| 69 | PROMPT.md §17.1 FY 2026 amounts / §17.2 admin fee 150/175 | FY 2026 version 2, tier 0, `200 + 175 × active` | owner requirements 2026-10-23 (PROMPT.md updated); v1 removed 2026-10-24 (D161) |
+| 70 | CLAUDE.md "migrations … expand/contract only" | `fees.0003` (expand) and `fees.0006` (contract) in the same, not yet deployed release | owner instruction 2026-10-24 to remove the legacy fields; D163 (old revision fails closed during the deploy window) |
 
 ## Open questions
 
@@ -1462,17 +1535,20 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B25** Applications submitted before 2026-10-23 have unanswered first-time questions and may
   lack the ID back side / mother proof. They are not re-validated; if one is sent back for
   correction, the doctor must complete them before resubmitting. Confirm this is wanted.
-- **Q-T21** Deploy window (D158): quotes/submissions on the old revision fail closed between the
-  migrate job and the new revision. Acceptable, or should the rollout be gated (maintenance banner)?
+- **Q-T21** Deploy window (D158, widened by D163): between the migrate job and the new revision the
+  old revision fails closed on every fee-schedule read (quotes, submission, admin fee schedules).
+  Acceptable, or should the rollout be gated (maintenance banner)?
 
 ## Next session starts with
 
-**Local branch `feat/beneficiary-docs-tier0-fees`** (Session 14, owner rule changes) is committed,
-not pushed: owner review, then push / PR on confirmation. On deploy, the migrate job applies
-`beneficiaries.0002`, `documents.0003`, `fees.0003`, `fees.0004`; afterwards confirm in dev that
-FY 2026 v2 is the only active schedule (admin → جداول الرسوم) and run the smoke list with: a tier-0
-member (600 / 1325 EGP), a university son at tier 0 (refused), a mother (member certificate), a
-first-time child aged 2 vs 3, both ID sides. Answer Q-B23–Q-B25 and Q-T21.
+**Local branch `feat/beneficiary-docs-tier0-fees`** (Sessions 14–15: owner rule changes, then FY
+2026 v1 removed) is committed, not pushed: owner review, then push / PR on confirmation. Before the
+deploy, run the read-only D163 query on dev (expect no rows). On deploy, the migrate job applies
+`beneficiaries.0002`, `documents.0003`, `fees.0003`–`fees.0006`; afterwards confirm in dev that FY
+2026 v2 is the only schedule (admin → جداول الرسوم), that applications submitted under v1 still show
+their original fees, and run the smoke list with: a tier-0 member (600 / 1325 EGP), a university son
+at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides.
+Answer Q-B23–Q-B25 and Q-T21.
 
 **dev runs `f23b710`** (PR #4: `revoke_admin`, `/profile`, owner decisions D150), verified in Azure
 on 2026-10-11, App Insights included: https://victorious-meadow-0e5775b00.4.azurestaticapps.net.

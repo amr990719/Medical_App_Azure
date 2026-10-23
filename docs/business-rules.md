@@ -170,9 +170,12 @@ FY 2026 schedule, **version 2** (active since 2026-10-23; whole Egyptian pounds)
 - Age cap: a member or spouse aged 70 or more in the fiscal year pays 500 instead of a higher tier
   fee (note `تم تطبيق سقف 500 ج (عمر N سنة)`). Parents and children are never capped.
 - Pensioners (معاش) are always tier 4. Deceased members' families are priced like working members.
-- Version 1 (the original seed: tiers 1–4 600…1750, administrative fee 150 / 175) stays stored,
-  inactive and locked; it is still displayed and priced as before for the applications that used it.
-  Their `fee_snapshot`s are never recomputed.
+- Version 2 is the only FY 2026 version. **Version 1** (the original four-tier seed with a flat
+  150 / 175 administrative fee) **was removed on 2026-10-24** (owner; migration `fees.0005`), and
+  `fees.0006` removed the four-tier and flat-fee support. Applications priced with it keep their
+  `fee_snapshot` and `submitted_snapshot` unchanged — their `fee_schedule` reference is `null` — and
+  are shown from the snapshot; they are never re-priced or attached to version 2. Every schedule
+  (and every new admin version) defines tiers 0–4 and `admin_fee_base` / `admin_fee_per_beneficiary`.
 - An invalid registration year (missing, <1950, > fiscal year) makes the quote invalid with
   `يرجى إدخال سنة قيد النقابة بشكل صحيح لحساب الاشتراك.`
 - `ADDITION` applications are priced like `FIRST_TIME`.

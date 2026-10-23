@@ -809,7 +809,7 @@ reference_number         nullable until first submission, UNIQUE
 declaration_name
 declaration_accepted_at
 fee_snapshot             JSON (tier, breakdown, admin fee, total, schedule id) — set at submission
-fee_schedule_id          → FeeSchedule used for the snapshot
+fee_schedule_id          → FeeSchedule used for the snapshot (null once that version was removed; the snapshot stays)
 submitted_snapshot       JSON copy of member + beneficiaries at submission (for audit and print)
 review_notes             doctor-visible reviewer message
 reviewed_by, reviewed_at
@@ -855,7 +855,7 @@ The server is authoritative. Port `CalculationService.js` into `backend/apps/fee
 
 Create a `FeeSchedule` model per fiscal year (admin-editable, audited). Once an application has been submitted with a schedule, that schedule version becomes read-only (create a new version to change it).
 
-**FY 2026 version 2 (active since 2026-10-23, owner decision; migration `fees.0004`):**
+**FY 2026 version 2 (active since 2026-10-23, owner decision; migration `fees.0004`) — the only FY 2026 version:**
 
 | Tier | member | spouse | child | gradSon | parent |
 |---|---|---|---|---|---|
@@ -866,27 +866,25 @@ Create a `FeeSchedule` model per fiscal year (admin-editable, audited). Once an 
 | 4 | 935 | 1155 | 660 | 1925 | 1540 |
 
 ```text
-admin_fee_formula             PER_BENEFICIARY
 admin_fee_base                200 EGP
 admin_fee_per_beneficiary     175 EGP   (× number of ACTIVE beneficiaries)
 age_cap_threshold             70 years
 age_cap_amount                500 EGP
-tier_boundaries               [5, 10, 15] — years since registration: 0 → tier 0 (when the schedule
-                              defines it), 1–5 → 1, 6–10 → 2, 11–15 → 3, otherwise 4
+tier_boundaries               [5, 10, 15] — years since registration: 0 → tier 0, 1–5 → 1,
+                              6–10 → 2, 11–15 → 3, otherwise 4
 registration_year_min         1950
 ```
 
 `null` is allowed ONLY for tier 0 `grad_son` and means "not eligible" — never free, never zero.
-Every other amount is a non-negative integer. New versions created by an admin define tiers 0–4 and
-the `PER_BENEFICIARY` fee (`admin_fee_base`, `admin_fee_per_beneficiary`); all of these are locked
-with the version once a submission uses it.
+Every other amount is a non-negative integer. Every version defines tiers 0–4 and the administrative
+fee amounts (`admin_fee_base`, `admin_fee_per_beneficiary`); all of these are locked with the
+version once a submission uses it.
 
-**FY 2026 version 1 (legacy, kept read-only and inactive):** the original seed — tiers 1–4
-(600/800/500/1200/1050 · 700/950/550/1400/1200 · 750/1000/550/1500/1300 · 850/1050/600/1750/1400)
-with the `FLAT` administrative fee (`admin_fee_member_only` 150, `admin_fee_with_beneficiaries`
-175). Legacy four-tier `FLAT` schedules stay valid (they can be read, displayed and deactivated) and
-are priced exactly as before: no tier 0 (year 0 → tier 1), flat admin fee. Submitted applications
-keep their `fee_snapshot` and `fee_schedule` reference.
+**FY 2026 version 1 was removed (owner, 2026-10-24; migration `fees.0005`).** It was the original
+four-tier seed of `fees.0002` (which stays as migration history) with a flat administrative fee;
+`fees.0006` then dropped the flat-fee columns and the four-tier support. Applications priced with it
+keep their `fee_snapshot` and `submitted_snapshot` exactly — the record of what was charged — and
+their `fee_schedule` reference is `null`. They are never re-priced or pointed at version 2.
 
 Amounts are whole Egyptian pounds; use `Decimal`/integers, never floats.
 
@@ -894,11 +892,11 @@ Amounts are whole Egyptian pounds; use `Decimal`/integers, never floats.
 
 1. Registration year missing / not 4 digits / < 1950 / > fiscal year → `is_valid = false` with message `يرجى إدخال سنة قيد النقابة بشكل صحيح لحساب الاشتراك.`
 2. `work_status = PENSIONER` (معاش) → always tier 4 (even when registered this year).
-3. Otherwise `years = fiscal_year − syndicate_registration_year` (the application/schedule fiscal year, never the machine clock): `years == 0` → tier 0 (if the schedule defines it), then the boundaries above.
+3. Otherwise `years = fiscal_year − syndicate_registration_year` (the application/schedule fiscal year, never the machine clock): `years == 0` → tier 0, then the boundaries above.
 4. Member fee = tier `member` fee, but `age_cap_amount` if member age ≥ 70 and the fee is higher (age = fiscal_year − birth_year). Note: `تم تطبيق سقف 500 ج (عمر {age} سنة)`.
 5. Each active beneficiary (has kinship AND a non-empty name) adds the fee for its fee key (section 14). If that amount is `null` (tier 0 university/graduate child) the quote is INVALID: `is_valid = false`, `breakdown = []`, `total = 0`, `error_message = "المستفيد {name}: لا يمكن الاشتراك بدرجة القرابة «{kinship label}» للأعضاء المقيدين في نفس سنة الاشتراك."` — the row is never skipped or priced at 0. Drafts may still be saved; submission validation reports the same message (step 2, code `NOT_ELIGIBLE_FOR_TIER`) and submission is refused.
 6. The age cap applies to the spouse (HUSBAND/WIFE) when the spouse is ≥ 70. It does NOT apply to parents or children.
-7. Admin fee (`رسوم إدارية`): `PER_BENEFICIARY` → `admin_fee_base + admin_fee_per_beneficiary × active beneficiaries` (200 / 375 / 550 … for 0 / 1 / 2 …); legacy `FLAT` → 175 if any active beneficiary, else 150.
+7. Admin fee (`رسوم إدارية`): `admin_fee_base + admin_fee_per_beneficiary × active beneficiaries` (200 / 375 / 550 … for 0 / 1 / 2 …).
 8. Total = sum of the breakdown.
 9. `DECEASED` (متوفى) is calculated like `WORKING` (as in the prototype) — open question.
 10. A valid tier-0 quote and an invalid quote both report `tier: 0`; clients tell them apart by `is_valid`, never by the truthiness of `tier`.
@@ -940,8 +938,6 @@ Amounts are whole Egyptian pounds; use `Decimal`/integers, never floats.
 | 9 | 2023 / WORKING | 1995 | FATHER 1950 (age 76) | tier 1: 660 + 1155 (no cap for parents) + 375 = **2190** |
 | 10 | 2026 / WORKING | 1990 | SON_UNIVERSITY or SON_GRADUATE | tier 0: **invalid** (not eligible), submission refused |
 | 11 | 2026 / PENSIONER | 1960 | SON_UNIVERSITY | tier 4 (override): valid, 1925 for the son |
-
-Version 1 (legacy) examples stay valid for that version: 750, 3025, 2925, 3475, 1825.
 
 ## 17.5 API
 

@@ -120,8 +120,8 @@ OCR-capable types (only those with a working extraction): `NATIONAL_ID_FRONT`, `
 
 ## 4. Fee engine (`backend/apps/fees/services.py`) — server authoritative, integers/Decimal only
 
-FY 2026 **version 2** (`FeeSchedule`, DB-stored, versioned, read-only once used by a submission; migration
-`fees.0004_fy2026_v2_schedule` activates it and only deactivates v1):
+FY 2026 **version 2** — the only FY 2026 version (`FeeSchedule`, DB-stored, versioned, read-only once used
+by a submission; created by `fees.0004_fy2026_v2_schedule`):
 
 | Tier | member | spouse | child | grad_son | parent |
 |---|---|---|---|---|---|
@@ -131,18 +131,19 @@ FY 2026 **version 2** (`FeeSchedule`, DB-stored, versioned, read-only once used 
 | 3 | 825 | 1100 | 605 | 1650 | 1430 |
 | 4 | 935 | 1155 | 660 | 1925 | 1540 |
 
-`admin_fee_formula=PER_BENEFICIARY` · `admin_fee_base=200` · `admin_fee_per_beneficiary=175` ·
+`admin_fee_base=200` · `admin_fee_per_beneficiary=175` ·
 `age_cap_threshold=70` · `age_cap_amount=500` · `tier_boundaries=[5, 10, 15]` · `registration_year_min=1950`.
-`null` is valid ONLY for tier "0" `grad_son`. Legacy v1 (tiers 1–4: 600/800/500/1200/1050 ·
-700/950/550/1400/1200 · 750/1000/550/1500/1300 · 850/1050/600/1750/1400, `FLAT` 150/175) stays valid,
-readable, deactivatable and priced as before (no tier 0).
+`null` is valid ONLY for tier "0" `grad_son`. Every schedule defines tiers 0–4 (a four-tier `tier_fees`
+is rejected). Version 1 (four tiers, flat 150/175 admin fee) was **removed** by `fees.0005` and the flat
+formula columns by `fees.0006` (2026-10-24): applications priced with it keep `fee_snapshot` and
+`submitted_snapshot` exactly, `fee_schedule = null`; never re-price them or point them at v2.
 
 Rules, in order:
 1. Registration year missing / not 4 digits / < 1950 / > fiscal year → `is_valid=false`, `tier=0`,
    `breakdown=[]`, `total=0`, `error_message="يرجى إدخال سنة قيد النقابة بشكل صحيح لحساب الاشتراك."`.
 2. `work_status == PENSIONER` (معاش) → tier 4 regardless of years. `DECEASED` is treated like `WORKING`.
-3. `years = schedule.fiscal_year − registration_year` (never the clock): `0` → tier 0 when the schedule defines
-   "0", then `≤5→1, ≤10→2, ≤15→3, else 4`.
+3. `years = schedule.fiscal_year − registration_year` (never the clock): `0` → tier 0, then
+   `≤5→1, ≤10→2, ≤15→3, else 4`.
 4. Any ACTIVE beneficiary whose tier amount is `null` → invalid quote (`tier` kept, `breakdown=[]`, `total=0`,
    `المستفيد {name}: لا يمكن الاشتراك بدرجة القرابة «{kinship label}» للأعضاء المقيدين في نفس سنة الاشتراك.`).
    Never skip the row, never price it 0. Validation adds the same message (step 2, `NOT_ELIGIBLE_FOR_TIER`).
@@ -150,8 +151,8 @@ Rules, in order:
    higher), note `تم تطبيق سقف 500 ج (عمر {age} سنة)`. Missing birth year → no cap.
 6. One line per **active** beneficiary (kinship + non-empty name), label = name, fee by fee key.
 7. Age cap (≥70 → 500 + same note) applies to **spouse only**; never to parents or children.
-8. `رسوم إدارية`: `PER_BENEFICIARY` → `200 + 175 × active` (0 → 200, 1 → 375, 2 → 550); legacy `FLAT` → 175 if
-   any active beneficiary else 150.
+8. `رسوم إدارية` = `admin_fee_base + admin_fee_per_beneficiary × active` = `200 + 175 × active`
+   (0 → 200, 1 → 375, 2 → 550).
 9. `total` = sum of lines. `ADDITION` applications are priced exactly like `FIRST_TIME`.
 10. Tell valid tier 0 from invalid quotes by `is_valid`, never by the truthiness of `tier`.
 
@@ -176,11 +177,10 @@ Worked examples (FY 2026 v2) — table-driven tests (`apps/fees/tests/test_engin
 | 10 | 2026 / WORKING | 1990 | SON_UNIVERSITY / SON_GRADUATE | tier 0: **invalid** (not eligible) |
 | 11 | 2026 / PENSIONER | 1960 | SON_UNIVERSITY | tier 4 override: valid, son 1925 |
 
-Legacy v1 examples (still tested against `fy2026_legacy_schedule()`): 750, 3025, 1825.
-
-At submission: recompute, store `fee_snapshot` + `fee_schedule_id`; admins always see the snapshot.
-New admin versions: tiers 0–4, `admin_fee_base` + `admin_fee_per_beneficiary` (formula and legacy FLAT
-amounts read-only); all of them are protected by the version lock.
+At submission: recompute, store `fee_snapshot` + `fee_schedule_id`; admins always see the snapshot
+(also when `fee_schedule_id` is null because the version was removed).
+New admin versions: tiers 0–4, `admin_fee_base` + `admin_fee_per_beneficiary`; all of them are protected
+by the version lock.
 
 ## 5. Application statuses and transitions (`applications/services.py::transition`)
 
