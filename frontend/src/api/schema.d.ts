@@ -527,10 +527,11 @@ export interface components {
          *     * `ADMIN_NOTE_ADDED` - Admin Note Added
          *     * `FEE_SCHEDULE_CHANGED` - Fee Schedule Changed
          *     * `ADMIN_ROLE_GRANTED` - Admin Role Granted
+         *     * `ADMIN_ROLE_REVOKED` - Admin Role Revoked
          *     * `NATIONAL_ID_REVEALED` - National Id Revealed
          * @enum {string}
          */
-        ActionEnum: "APPLICATION_CREATED" | "APPLICATION_SUBMITTED" | "APPLICATION_RESUBMITTED" | "APPLICATION_STATUS_CHANGED" | "PAYMENT_STATUS_CHANGED" | "FEE_SNAPSHOT_CREATED" | "DOCUMENT_UPLOADED" | "DOCUMENT_REPLACED" | "DOCUMENT_DELETED" | "DOCUMENT_VIEWED" | "OCR_REQUESTED" | "ADMIN_APPLICATION_VIEWED" | "ADMIN_NOTE_ADDED" | "FEE_SCHEDULE_CHANGED" | "ADMIN_ROLE_GRANTED" | "NATIONAL_ID_REVEALED";
+        ActionEnum: "APPLICATION_CREATED" | "APPLICATION_SUBMITTED" | "APPLICATION_RESUBMITTED" | "APPLICATION_STATUS_CHANGED" | "PAYMENT_STATUS_CHANGED" | "FEE_SNAPSHOT_CREATED" | "DOCUMENT_UPLOADED" | "DOCUMENT_REPLACED" | "DOCUMENT_DELETED" | "DOCUMENT_VIEWED" | "OCR_REQUESTED" | "ADMIN_APPLICATION_VIEWED" | "ADMIN_NOTE_ADDED" | "FEE_SCHEDULE_CHANGED" | "ADMIN_ROLE_GRANTED" | "ADMIN_ROLE_REVOKED" | "NATIONAL_ID_REVEALED";
         AdminApplicationDetail: {
             /** Format: uuid */
             readonly id: string;
@@ -563,6 +564,9 @@ export interface components {
             readonly documents: components["schemas"]["DocumentSummary"][];
             readonly allowed_transitions: string[];
             readonly beneficiary_warnings: string[];
+            readonly member_required_documents: {
+                [key: string]: unknown;
+            }[];
         };
         AdminApplicationDoctor: {
             /** Format: uuid */
@@ -615,6 +619,7 @@ export interface components {
             readonly birth_year: number | null;
             readonly masked_national_id: string;
             readonly national_id: string | null;
+            readonly is_first_time: boolean | null;
             readonly is_active: boolean;
             readonly required_documents: {
                 [key: string]: unknown;
@@ -660,6 +665,12 @@ export interface components {
             readonly phone_number: string;
             readonly applications_count: number;
         };
+        /**
+         * @description * `FLAT` - ثابتة حسب وجود مستفيدين
+         *     * `PER_BENEFICIARY` - ثابتة + لكل مستفيد
+         * @enum {string}
+         */
+        AdminFeeFormulaEnum: "FLAT" | "PER_BENEFICIARY";
         AdminNote: {
             /** Format: uuid */
             readonly id: string;
@@ -715,6 +726,10 @@ export interface components {
             readonly is_editable: boolean;
             readonly beneficiaries: components["schemas"]["Beneficiary"][];
             readonly documents: components["schemas"]["DocumentSummary"][];
+            /** @description This application's member slots (conditional ones included), from the rules table. */
+            readonly member_required_documents: {
+                [key: string]: unknown;
+            }[];
         };
         ApplicationCreateRequest: {
             /** @default FIRST_TIME */
@@ -759,6 +774,7 @@ export interface components {
             readonly full_name: string;
             readonly birth_year: number | null;
             readonly national_id: string | null;
+            readonly is_first_time: boolean | null;
             readonly is_active: boolean;
             readonly required_documents: {
                 [key: string]: unknown;
@@ -774,6 +790,7 @@ export interface components {
             full_name?: string;
             birth_year?: number | null;
             national_id?: string | null;
+            is_first_time?: boolean | null;
         };
         /** @enum {unknown} */
         BlankEnum: "";
@@ -852,15 +869,18 @@ export interface components {
          *     * `SYNDICATE_ID` - كارنيه النقابة
          *     * `PERSONAL_PHOTO` - صورة العضو الأصلي
          *     * `PAYMENT_RECEIPT` - إيصال الدفع
-         *     * `BENEFICIARY_NATIONAL_ID` - بطاقة الرقم القومي
-         *     * `BIRTH_CERTIFICATE` - شهادة الميلاد
+         *     * `MEMBER_BIRTH_CERTIFICATE` - شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم
+         *     * `BENEFICIARY_NATIONAL_ID` - بطاقة الرقم القومي للمستفيد (وجه)
+         *     * `BENEFICIARY_NATIONAL_ID_BACK` - بطاقة الرقم القومي للمستفيد (ظهر)
+         *     * `BENEFICIARY_PERSONAL_PHOTO` - صورة شخصية للمستفيد بخلفية بيضاء
+         *     * `BIRTH_CERTIFICATE` - شهادة ميلاد المستفيد
          *     * `MARRIAGE_CERTIFICATE` - شهادة الزواج
          *     * `INSURANCE_PRINT` - برينت تأميني
          *     * `UNIVERSITY_ID` - كارنيه الجامعة
          *     * `OTHER` - مستند آخر
          * @enum {string}
          */
-        DocumentTypeEnum: "NATIONAL_ID_FRONT" | "NATIONAL_ID_BACK" | "SYNDICATE_ID" | "PERSONAL_PHOTO" | "PAYMENT_RECEIPT" | "BENEFICIARY_NATIONAL_ID" | "BIRTH_CERTIFICATE" | "MARRIAGE_CERTIFICATE" | "INSURANCE_PRINT" | "UNIVERSITY_ID" | "OTHER";
+        DocumentTypeEnum: "NATIONAL_ID_FRONT" | "NATIONAL_ID_BACK" | "SYNDICATE_ID" | "PERSONAL_PHOTO" | "PAYMENT_RECEIPT" | "MEMBER_BIRTH_CERTIFICATE" | "BENEFICIARY_NATIONAL_ID" | "BENEFICIARY_NATIONAL_ID_BACK" | "BENEFICIARY_PERSONAL_PHOTO" | "BIRTH_CERTIFICATE" | "MARRIAGE_CERTIFICATE" | "INSURANCE_PRINT" | "UNIVERSITY_ID" | "OTHER";
         DocumentUploadRequest: {
             /** Format: binary */
             file: string;
@@ -868,6 +888,10 @@ export interface components {
             /** Format: uuid */
             beneficiary_id?: string | null;
         };
+        /**
+         * @description Read: every version, legacy four-tier FLAT ones included. Write (new version): tiers 0-4
+         *     and the PER_BENEFICIARY administrative fee (base + amount per active beneficiary).
+         */
         FeeSchedule: {
             /** Format: uuid */
             readonly id: string;
@@ -882,8 +906,11 @@ export interface components {
              *     ]
              */
             tier_boundaries: unknown;
-            admin_fee_member_only?: number;
-            admin_fee_with_beneficiaries?: number;
+            readonly admin_fee_formula: components["schemas"]["AdminFeeFormulaEnum"];
+            admin_fee_base: number | null;
+            admin_fee_per_beneficiary: number | null;
+            readonly admin_fee_member_only: number | null;
+            readonly admin_fee_with_beneficiaries: number | null;
             age_cap_threshold?: number;
             age_cap_amount?: number;
             registration_year_min?: number;
@@ -893,6 +920,10 @@ export interface components {
             /** Format: date-time */
             readonly locked_at: string | null;
         };
+        /**
+         * @description Read: every version, legacy four-tier FLAT ones included. Write (new version): tiers 0-4
+         *     and the PER_BENEFICIARY administrative fee (base + amount per active beneficiary).
+         */
         FeeScheduleRequest: {
             fiscal_year: number;
             tier_fees: unknown;
@@ -904,8 +935,8 @@ export interface components {
              *     ]
              */
             tier_boundaries: unknown;
-            admin_fee_member_only?: number;
-            admin_fee_with_beneficiaries?: number;
+            admin_fee_base: number | null;
+            admin_fee_per_beneficiary: number | null;
             age_cap_threshold?: number;
             age_cap_amount?: number;
             registration_year_min?: number;
@@ -950,9 +981,9 @@ export interface components {
         /**
          * @description * `MOTHER` - أم
          *     * `FATHER` - أب
-         *     * `SON_MINOR` - ابن (18 سنة أو أقل)
-         *     * `SON_UNIVERSITY` - ابن (طالب جامعي)
-         *     * `SON_GRADUATE` - ابن (خريج)
+         *     * `SON_MINOR` - ابن/ابنة (18 سنة أو أقل)
+         *     * `SON_UNIVERSITY` - ابن/ابنة (طالب جامعي)
+         *     * `SON_GRADUATE` - ابن/ابنة (خريج)
          *     * `DAUGHTER` - ابنة
          *     * `HUSBAND` - زوج
          *     * `WIFE` - زوجة
@@ -1063,6 +1094,7 @@ export interface components {
             full_name?: string;
             birth_year?: number | null;
             national_id?: string | null;
+            is_first_time?: boolean | null;
         };
         /**
          * @description The doctor's own profile. Derived fields (date of birth) and the Entra email are

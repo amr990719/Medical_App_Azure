@@ -39,6 +39,10 @@ export type ApiDocumentRequirement = {
   label: string;
   ocr_capable: boolean;
   stage?: "form" | "submit";
+  /** Photos: supported image formats only, even when PDF documents are enabled. */
+  images_only?: boolean;
+  /** Arabic guidance shown next to the upload (e.g. the white-background photo rule). */
+  hints?: string[];
 };
 
 export type ApiReferenceData = {
@@ -54,9 +58,12 @@ export type ApiReferenceData = {
   statuses: Choice<ApplicationStatus>[];
   payment_statuses: Choice<PaymentStatus>[];
   document_rules: {
-    document_types: { type: DocumentType; label: string; ocr_capable: boolean }[];
+    document_types: { type: DocumentType; label: string; ocr_capable: boolean; images_only: boolean }[];
+    /** Global member slots; the application's own list is `member_required_documents`. */
     member: ApiDocumentRequirement[];
+    member_conditional: Partial<Record<DocumentType, { required_with_kinship: Kinship }>>;
     child_national_id_age: number;
+    photo_exempt_child_age: number;
     kinships: Record<Kinship, { base_rule: string; extra_required: DocumentType[] }>;
     base_rules: Record<string, unknown>;
   };
@@ -67,6 +74,8 @@ export type ApiReferenceData = {
     receipt_min_width: number;
     receipt_min_height: number;
     accepted_content_types: string[];
+    /** Accepted for image-only slots (personal photos). */
+    image_content_types: string[];
   };
 };
 
@@ -120,21 +129,27 @@ type ApiAdminBeneficiary = Omit<Schemas["AdminBeneficiary"], "required_documents
 /** `fee_snapshot` is the fee quote stored at submission (null before the first submission). */
 export type ApiAdminApplicationDetail = Omit<
   Schemas["AdminApplicationDetail"],
-  "fee_snapshot" | "beneficiaries" | "allowed_transitions" | "reviewed_by_email"
+  "fee_snapshot" | "beneficiaries" | "allowed_transitions" | "reviewed_by_email" | "member_required_documents"
 > & {
   fee_snapshot: ApiFeeQuote | null;
   beneficiaries: ApiAdminBeneficiary[];
   allowed_transitions: ApplicationStatus[];
   reviewed_by_email: string | null;
+  member_required_documents: ApiDocumentRequirement[];
 };
 
 export type AdminApplicationDetail = Camelize<ApiAdminApplicationDetail>;
 export type AdminBeneficiary = AdminApplicationDetail["beneficiaries"][number];
 
 export type FeeKey = "member" | "spouse" | "child" | "grad_son" | "parent";
-export type TierFees = Record<"1" | "2" | "3" | "4", Record<FeeKey, number>>;
+export type TierKey = "0" | "1" | "2" | "3" | "4";
+/** `null` = not eligible at that tier (only tier 0 `grad_son`), never free. */
+export type TierRow = Record<FeeKey, number | null>;
+/** Tiers 0-4; schedules created before tier 0 (legacy) define tiers 1-4 only. */
+export type TierFees = Partial<Record<TierKey, TierRow>>;
+export type AdminFeeFormula = Schemas["AdminFeeFormulaEnum"];
 
-/** Tier keys ("1".."4") and fee keys stay as data; only the outer fields are camelized. */
+/** Tier keys ("0".."4") and fee keys stay as data; only the outer fields are camelized. */
 export type FeeSchedule = Camelize<Omit<Schemas["FeeSchedule"], "tier_fees" | "tier_boundaries">> & {
   tierFees: TierFees;
   tierBoundaries: [number, number, number];
@@ -142,10 +157,10 @@ export type FeeSchedule = Camelize<Omit<Schemas["FeeSchedule"], "tier_fees" | "t
 
 export type NewFeeSchedule = {
   fiscalYear: number;
-  tierFees: TierFees;
+  tierFees: Record<TierKey, TierRow>;
   tierBoundaries: [number, number, number];
-  adminFeeMemberOnly: number;
-  adminFeeWithBeneficiaries: number;
+  adminFeeBase: number;
+  adminFeePerBeneficiary: number;
   ageCapThreshold: number;
   ageCapAmount: number;
   registrationYearMin: number;

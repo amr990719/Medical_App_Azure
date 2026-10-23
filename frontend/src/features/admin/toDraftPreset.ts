@@ -15,6 +15,7 @@ export function toDraftPreset(detail: AdminApplicationDetail): DraftPreset {
     fullName: b.fullName,
     birthYear: b.birthYear,
     nationalId: b.nationalId ?? (b.maskedNationalId || null),
+    isFirstTime: b.isFirstTime,
     isActive: b.isActive,
     requiredDocuments: b.requiredDocuments,
     documents: b.documents,
@@ -42,6 +43,7 @@ export function toDraftPreset(detail: AdminApplicationDetail): DraftPreset {
       isEditable: false,
       beneficiaries,
       documents: detail.documents,
+      memberRequiredDocuments: detail.memberRequiredDocuments,
     },
     profile: {
       id: doctor.id,

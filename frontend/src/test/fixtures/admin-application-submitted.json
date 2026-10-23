@@ -76,28 +76,55 @@
       "birth_year": 1988,
       "masked_national_id": "28•••••••••242",
       "national_id": null,
+      "is_first_time": null,
       "is_active": true,
       "required_documents": [
         {
           "type": "BENEFICIARY_NATIONAL_ID",
           "required": true,
-          "label": "بطاقة الرقم القومي",
+          "label": "بطاقة الرقم القومي للمستفيد (وجه)",
           "ocr_capable": true,
-          "stage": "form"
+          "stage": "form",
+          "images_only": false,
+          "hints": []
+        },
+        {
+          "type": "BENEFICIARY_NATIONAL_ID_BACK",
+          "required": true,
+          "label": "بطاقة الرقم القومي للمستفيد (ظهر)",
+          "ocr_capable": false,
+          "stage": "form",
+          "images_only": false,
+          "hints": []
         },
         {
           "type": "MARRIAGE_CERTIFICATE",
           "required": true,
           "label": "شهادة الزواج",
           "ocr_capable": false,
-          "stage": "form"
+          "stage": "form",
+          "images_only": false,
+          "hints": []
         },
         {
           "type": "INSURANCE_PRINT",
           "required": true,
           "label": "برينت تأميني",
           "ocr_capable": false,
-          "stage": "form"
+          "stage": "form",
+          "images_only": false,
+          "hints": []
+        },
+        {
+          "type": "BENEFICIARY_PERSONAL_PHOTO",
+          "required": false,
+          "label": "صورة شخصية للمستفيد بخلفية بيضاء",
+          "ocr_capable": false,
+          "stage": "form",
+          "images_only": true,
+          "hints": [
+            "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة."
+          ]
         }
       ],
       "documents": [
@@ -144,21 +171,47 @@
       "birth_year": 2015,
       "masked_national_id": "",
       "national_id": null,
+      "is_first_time": null,
       "is_active": true,
       "required_documents": [
         {
           "type": "BENEFICIARY_NATIONAL_ID",
           "required": false,
-          "label": "بطاقة الرقم القومي",
+          "label": "بطاقة الرقم القومي للمستفيد (وجه)",
           "ocr_capable": true,
-          "stage": "form"
+          "stage": "form",
+          "images_only": false,
+          "hints": []
+        },
+        {
+          "type": "BENEFICIARY_NATIONAL_ID_BACK",
+          "required": false,
+          "label": "بطاقة الرقم القومي للمستفيد (ظهر)",
+          "ocr_capable": false,
+          "stage": "form",
+          "images_only": false,
+          "hints": []
         },
         {
           "type": "BIRTH_CERTIFICATE",
           "required": true,
-          "label": "شهادة الميلاد",
+          "label": "شهادة ميلاد المستفيد",
           "ocr_capable": true,
-          "stage": "form"
+          "stage": "form",
+          "images_only": false,
+          "hints": []
+        },
+        {
+          "type": "BENEFICIARY_PERSONAL_PHOTO",
+          "required": false,
+          "label": "صورة شخصية للمستفيد بخلفية بيضاء",
+          "ocr_capable": false,
+          "stage": "form",
+          "images_only": true,
+          "hints": [
+            "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.",
+            "لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات."
+          ]
         }
       ],
       "documents": [
@@ -271,5 +324,52 @@
     "NEEDS_CORRECTION",
     "REJECTED"
   ],
-  "beneficiary_warnings": []
+  "beneficiary_warnings": [],
+  "member_required_documents": [
+    {
+      "type": "NATIONAL_ID_FRONT",
+      "required": true,
+      "label": "صورة البطاقة (وجه)",
+      "ocr_capable": true,
+      "stage": "form",
+      "images_only": false,
+      "hints": []
+    },
+    {
+      "type": "NATIONAL_ID_BACK",
+      "required": true,
+      "label": "صورة البطاقة (ظهر)",
+      "ocr_capable": true,
+      "stage": "form",
+      "images_only": false,
+      "hints": []
+    },
+    {
+      "type": "SYNDICATE_ID",
+      "required": true,
+      "label": "كارنيه النقابة",
+      "ocr_capable": true,
+      "stage": "form",
+      "images_only": false,
+      "hints": []
+    },
+    {
+      "type": "PERSONAL_PHOTO",
+      "required": false,
+      "label": "صورة العضو الأصلي",
+      "ocr_capable": false,
+      "stage": "form",
+      "images_only": true,
+      "hints": []
+    },
+    {
+      "type": "PAYMENT_RECEIPT",
+      "required": true,
+      "label": "إيصال الدفع",
+      "ocr_capable": false,
+      "stage": "submit",
+      "images_only": false,
+      "hints": []
+    }
+  ]
 }

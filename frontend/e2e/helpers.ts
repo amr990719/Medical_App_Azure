@@ -64,7 +64,14 @@ export async function createSubmittedApplication(request: APIRequestContext): Pr
   return { ...draft, referenceNumber: await draft.submit() };
 }
 
-export type BeneficiaryInput = { kinship: string; full_name: string; birth_year: number; national_id?: string };
+export type BeneficiaryInput = {
+  kinship: string;
+  full_name: string;
+  birth_year: number;
+  national_id?: string;
+  /** `هل يشترك المستفيد لأول مرة؟` — required before submission; defaults to false here. */
+  is_first_time?: boolean;
+};
 
 export type DraftOptions = {
   beneficiaries?: BeneficiaryInput[];
@@ -89,6 +96,9 @@ const FIXTURE_FOR: Record<string, string> = {
   NATIONAL_ID_BACK: "id-back.png",
   SYNDICATE_ID: "syndicate-card.png",
   BENEFICIARY_NATIONAL_ID: "spouse-id.png",
+  BENEFICIARY_NATIONAL_ID_BACK: "id-back.png",
+  BENEFICIARY_PERSONAL_PHOTO: "id-front.png",
+  MEMBER_BIRTH_CERTIFICATE: "birth-son.png",
   MARRIAGE_CERTIFICATE: "marriage.png",
   INSURANCE_PRINT: "insurance.png",
   BIRTH_CERTIFICATE: "birth-son.png",
@@ -150,11 +160,23 @@ export async function createDraftApplication(
 
   for (const beneficiary of beneficiaries) {
     const row = await ok<{ id: string; required_documents: { type: string; required: boolean }[] }>(
-      await request.post(`${base}beneficiaries/`, { headers, data: beneficiary }),
+      await request.post(`${base}beneficiaries/`, { headers, data: { is_first_time: false, ...beneficiary } }),
     );
     if (!beneficiaryDocuments) continue;
     for (const slot of row.required_documents.filter((document) => document.required)) {
       await upload(slot.type, row.id);
+    }
+  }
+
+  // Conditional member slots (the member's own birth certificate with a MOTHER) come from the
+  // server's application-specific list, never a copy of the rule here.
+  if (beneficiaryDocuments) {
+    const current = await ok<{ member_required_documents: { type: string; required: boolean; stage: string }[] }>(
+      await request.get(base, { headers }),
+    );
+    const done = new Set(["NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID"]);
+    for (const slot of current.member_required_documents) {
+      if (slot.required && slot.stage !== "submit" && !done.has(slot.type)) await upload(slot.type);
     }
   }
 

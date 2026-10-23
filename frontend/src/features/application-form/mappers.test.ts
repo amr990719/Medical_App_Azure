@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toCamel } from "@/api/case";
-import { apiApplication } from "@/test/fixtures";
+import { apiApplication, apiProfile } from "@/test/fixtures";
 import {
   fieldForPath,
   mergeMemberOcr,
@@ -49,6 +49,7 @@ describe("toFormState", () => {
             full_name: "منى",
             birth_year: 1988,
             national_id: null,
+            is_first_time: null,
             is_active: true,
             required_documents: [],
             documents: [],
@@ -59,10 +60,38 @@ describe("toFormState", () => {
     );
     const state = toFormState(app, profile, 10);
     expect(state.beneficiaries).toHaveLength(10);
-    expect(state.beneficiaries[2]).toEqual({ id: "b3", kinship: "WIFE", name: "منى", birthYear: "1988", nationalId: "" });
+    expect(state.beneficiaries[2]).toEqual({
+      id: "b3",
+      kinship: "WIFE",
+      name: "منى",
+      birthYear: "1988",
+      nationalId: "",
+      isFirstTime: "",
+    });
     expect(state.beneficiaries[0]).toEqual(emptyRow());
     expect(state.memberName).toBe("أحمد محمد علي حسن");
     expect(state.email).toBe("doctor@dev.local");
+  });
+});
+
+describe("first-time answer on reload", () => {
+  it("maps is_first_time true / false / null to yes / no / not answered", () => {
+    const rows = [true, false, null].map((value, index) => ({
+      ...(toCamel(apiApplication()).beneficiaries[0] ?? {}),
+      id: `b${index}`,
+      rowNumber: index + 1,
+      kinship: "DAUGHTER" as const,
+      fullName: "مريم",
+      birthYear: 2015,
+      nationalId: null,
+      isFirstTime: value,
+      isActive: true,
+      requiredDocuments: [],
+      documents: [],
+      updatedAt: "2026-10-05T10:00:00+03:00",
+    }));
+    const state = toFormState({ ...toCamel(apiApplication()), beneficiaries: rows }, toCamel(apiProfile()), 10);
+    expect(state.beneficiaries.slice(0, 4).map((row) => row.isFirstTime)).toEqual(["yes", "no", "", ""]);
   });
 });
 
@@ -122,12 +151,19 @@ describe("payloads", () => {
   });
 
   it("builds beneficiary payloads", () => {
-    const row = { kinship: "WIFE" as const, name: "منى", birthYear: "198", nationalId: "" };
+    const row = { ...emptyRow(), kinship: "WIFE" as const, name: "منى", birthYear: "198", nationalId: "" };
     expect(rowPatch(row, ["kinship", "name", "birthYear", "nationalId"])).toEqual({
       kinship: "WIFE",
       full_name: "منى",
       national_id: null,
     });
+  });
+
+  it("sends the first-time answer as true / false / null (not answered)", () => {
+    const row = emptyRow();
+    expect(rowPatch({ ...row, isFirstTime: "yes" }, ["isFirstTime"])).toEqual({ is_first_time: true });
+    expect(rowPatch({ ...row, isFirstTime: "no" }, ["isFirstTime"])).toEqual({ is_first_time: false });
+    expect(rowPatch({ ...row, isFirstTime: "" }, ["isFirstTime"])).toEqual({ is_first_time: null });
   });
 });
 
@@ -136,6 +172,11 @@ describe("fieldForPath", () => {
     expect(fieldForPath("member.full_name")).toEqual({ kind: "member", field: "memberName" });
     expect(fieldForPath("member.work_status")).toEqual({ kind: "member", field: "workStatus" });
     expect(fieldForPath("beneficiaries[3].birth_year")).toEqual({ kind: "row", index: 2, field: "birthYear" });
+    expect(fieldForPath("beneficiaries[1].is_first_time")).toEqual({ kind: "row", index: 0, field: "isFirstTime" });
+    expect(fieldForPath("documents.MEMBER_BIRTH_CERTIFICATE")).toEqual({
+      kind: "memberDocument",
+      documentType: "MEMBER_BIRTH_CERTIFICATE",
+    });
     expect(fieldForPath("beneficiaries[2].documents.BIRTH_CERTIFICATE")).toEqual({
       kind: "rowDocument",
       index: 1,

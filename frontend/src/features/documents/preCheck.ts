@@ -15,3 +15,15 @@ export function preCheckFile(file: File, upload: ReferenceData["upload"]): strin
   }
   return null;
 }
+
+type UploadLimits = ReferenceData["upload"];
+
+/**
+ * Limits of one slot: image-only slots (personal photos, rules-table `images_only`) accept the
+ * server's image list even when PDF documents are enabled.
+ */
+export function slotLimits(upload: UploadLimits | undefined, imagesOnly: boolean): UploadLimits | undefined {
+  if (!upload || !imagesOnly) return upload;
+  const images = upload.imageContentTypes ?? upload.acceptedContentTypes.filter((type) => type.startsWith("image/"));
+  return { ...upload, acceptedContentTypes: images };
+}

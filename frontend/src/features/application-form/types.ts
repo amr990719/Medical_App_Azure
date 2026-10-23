@@ -41,7 +41,12 @@ export type BeneficiaryRow = {
   name: string;
   birthYear: string;
   nationalId: string;
+  /** `هل يشترك المستفيد لأول مرة؟` — "" = not answered (API `null`), independent of the
+   * application type. */
+  isFirstTime: FirstTimeAnswer;
 };
+
+export type FirstTimeAnswer = "" | "yes" | "no";
 
 export type BeneficiaryField = Exclude<keyof BeneficiaryRow, "id">;
 
@@ -52,4 +57,10 @@ export type ApplicationFormState = MemberFields & {
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-export const emptyRow = (): BeneficiaryRow => ({ kinship: "", name: "", birthYear: "", nationalId: "" });
+export const emptyRow = (): BeneficiaryRow => ({
+  kinship: "",
+  name: "",
+  birthYear: "",
+  nationalId: "",
+  isFirstTime: "",
+});

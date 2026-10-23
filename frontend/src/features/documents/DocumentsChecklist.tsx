@@ -3,7 +3,7 @@ import type { DocumentRequirement, DocumentSummary } from "@/api/types";
 import { Icon } from "@/components/ui/Icon";
 import { useApplicationForm } from "@/features/application-form/context";
 import { useInlineErrors } from "@/features/application-form/inlineErrors";
-import { requirementsOf } from "@/features/beneficiaries/requirements";
+import { memberRequirementsOf, requirementsOf } from "@/features/beneficiaries/requirements";
 import { ar, t } from "@/i18n/ar";
 import { cx } from "@/utils/cx";
 import { useUploadDocument } from "./useUploadDocument";
@@ -28,7 +28,7 @@ function ChecklistItem({
     applicationId: application?.id ?? "",
     documentType: slot.type,
     beneficiaryId,
-    imagesOnly: slot.type === "PERSONAL_PHOTO",
+    imagesOnly: slot.imagesOnly === true,
     onUploaded: documentsChanged,
   });
   const actionLabel = t(document ? C.replace : C.upload, { label: slot.label });
@@ -37,7 +37,14 @@ function ChecklistItem({
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
-      <span className="min-w-0 flex-1 font-semibold text-charcoal">{slot.label}</span>
+      <span className="min-w-0 flex-1 font-semibold text-charcoal">
+        {slot.label}
+        {slot.hints?.map((hint) => (
+          <span key={hint} className="block text-xs font-semibold text-slate">
+            {hint}
+          </span>
+        ))}
+      </span>
       <span
         data-state={state}
         className={cx(
@@ -112,7 +119,11 @@ export function DocumentsChecklist() {
   if (!application || !reference) return null;
 
   const kinshipLabel = (value: string) => reference.kinships.find((k) => k.value === value)?.label ?? value;
-  const memberSlots = reference.documentRules.member.filter((slot) => slot.stage !== "submit");
+  // This application's member slots (e.g. the member's own birth certificate while a MOTHER is
+  // listed), evaluated by the server; reference data is only the fallback.
+  const memberSlots = memberRequirementsOf(application, reference.documentRules.member).filter(
+    (slot) => slot.stage !== "submit",
+  );
   const active = application.beneficiaries.filter((b) => b.isActive);
 
   return (

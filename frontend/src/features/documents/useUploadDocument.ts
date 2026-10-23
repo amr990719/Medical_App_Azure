@@ -3,7 +3,7 @@ import { useState } from "react";
 import { uploadDocument } from "@/api/endpoints/documents";
 import type { DocumentSummary, DocumentType } from "@/api/types";
 import { useReferenceData } from "@/features/reference/useReferenceData";
-import { preCheckFile } from "./preCheck";
+import { preCheckFile, slotLimits } from "./preCheck";
 
 /**
  * Upload on select for compact slots (photo box, checklist buttons): pre-check with the server's
@@ -29,13 +29,13 @@ export function useUploadDocument({
     mutationFn: (file: File) => uploadDocument({ applicationId, file, documentType, beneficiaryId }, setProgress),
     onSuccess: onUploaded,
   });
-  const limits = reference.data?.upload;
-  const types = limits?.acceptedContentTypes.filter((type) => !imagesOnly || type.startsWith("image/")) ?? [];
+  const limits = slotLimits(reference.data?.upload, imagesOnly);
+  const types = limits?.acceptedContentTypes ?? [];
 
   const select = (file: File | undefined) => {
     if (!file || !limits) return;
     mutation.reset();
-    const problem = preCheckFile(file, { ...limits, acceptedContentTypes: types });
+    const problem = preCheckFile(file, limits);
     setLocalError(problem);
     if (problem) return;
     setProgress(0);

@@ -138,23 +138,59 @@ export function apiDocument(overrides: Partial<ApiDocument> = {}): ApiDocument {
   };
 }
 
-const requirement = (type: string, label: string, required: boolean, ocr: boolean) => ({
+const requirement = (
+  type: string,
+  label: string,
+  required: boolean,
+  ocr: boolean,
+  extra: { images_only?: boolean; hints?: string[] } = {},
+) => ({
   type,
   label,
   required,
   ocr_capable: ocr,
+  stage: "form",
+  images_only: extra.images_only ?? false,
+  hints: extra.hints ?? [],
 });
 
+export const PHOTO_HINT = "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.";
+export const PHOTO_CHILD_EXEMPT_HINT = "لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.";
+
+export const photoRequirement = (required: boolean, hints: string[] = [PHOTO_HINT]) =>
+  requirement("BENEFICIARY_PERSONAL_PHOTO", "صورة شخصية للمستفيد بخلفية بيضاء", required, false, {
+    images_only: true,
+    hints,
+  });
+
 export const SPOUSE_REQUIREMENTS = [
-  requirement("BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي", true, true),
+  requirement("BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي للمستفيد (وجه)", true, true),
+  requirement("BENEFICIARY_NATIONAL_ID_BACK", "بطاقة الرقم القومي للمستفيد (ظهر)", true, false),
   requirement("MARRIAGE_CERTIFICATE", "شهادة الزواج", true, false),
   requirement("INSURANCE_PRINT", "برينت تأميني", true, false),
+  photoRequirement(false),
 ];
 
 export const CHILD_REQUIREMENTS = [
-  requirement("BIRTH_CERTIFICATE", "شهادة الميلاد", true, true),
-  requirement("BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي", false, true),
+  requirement("BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي للمستفيد (وجه)", false, true),
+  requirement("BENEFICIARY_NATIONAL_ID_BACK", "بطاقة الرقم القومي للمستفيد (ظهر)", false, false),
+  requirement("BIRTH_CERTIFICATE", "شهادة ميلاد المستفيد", true, true),
+  photoRequirement(false, [PHOTO_HINT, PHOTO_CHILD_EXEMPT_HINT]),
 ];
+
+export const MOTHER_REQUIREMENTS = [
+  requirement("BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي للمستفيد (وجه)", true, true),
+  requirement("BENEFICIARY_NATIONAL_ID_BACK", "بطاقة الرقم القومي للمستفيد (ظهر)", true, false),
+  photoRequirement(false),
+];
+
+export const MEMBER_BIRTH_CERTIFICATE_REQUIREMENT = requirement(
+  "MEMBER_BIRTH_CERTIFICATE",
+  "شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم",
+  true,
+  false,
+  { hints: ["مطلوبة لإضافة الأم: شهادة ميلاد العضو الأصلي نفسه، ولا تغني عنها شهادة ميلاد الأم."] },
+);
 
 export function apiBeneficiary(overrides: Partial<ApiBeneficiary> = {}): ApiBeneficiary {
   return {
@@ -164,6 +200,7 @@ export function apiBeneficiary(overrides: Partial<ApiBeneficiary> = {}): ApiBene
     full_name: "منى سعيد عبد الله",
     birth_year: 1988,
     national_id: null,
+    is_first_time: null,
     is_active: true,
     required_documents: SPOUSE_REQUIREMENTS,
     documents: [],

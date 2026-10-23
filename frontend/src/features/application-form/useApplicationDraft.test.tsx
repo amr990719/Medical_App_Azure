@@ -136,6 +136,55 @@ describe("useApplicationDraft", () => {
     expect(bodies).toEqual([{ kinship: "MOTHER" }]);
   });
 
+  it("autosaves the first-time answer alone and reloads it", async () => {
+    const wife = apiBeneficiary({ is_first_time: null });
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-wife/`, async ({ request }) => {
+        const body = (await request.json()) as { is_first_time: boolean | null };
+        bodies.push(body);
+        return HttpResponse.json(apiBeneficiary({ is_first_time: body.is_first_time }));
+      }),
+    );
+    const { result } = setup(apiApplication({ beneficiaries: [wife] }));
+    await ready(result);
+    expect(result.current.state?.beneficiaries[0]?.isFirstTime).toBe("");
+
+    act(() => result.current.updateBeneficiary(0, "isFirstTime", "yes"));
+    expect(result.current.isDirty).toBe(true);
+    await waitFor(() => expect(result.current.saveStatus).toBe("saved"));
+    expect(bodies).toEqual([{ is_first_time: true }]); // partial: nothing else is sent
+    expect(result.current.isDirty).toBe(false);
+    expect(result.current.rowServer(0)?.isFirstTime).toBe(true);
+
+    act(() => result.current.updateBeneficiary(0, "isFirstTime", "no"));
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ is_first_time: false });
+
+    // Reload: a fresh form built from the server reads the stored answer back.
+    const reloaded = setup(apiApplication({ beneficiaries: [apiBeneficiary({ is_first_time: false })] }));
+    await ready(reloaded.result);
+    expect(reloaded.result.current.state?.beneficiaries[0]?.isFirstTime).toBe("no");
+  });
+
+  it("an answer on an empty row starts an incomplete draft row (allowed until submission)", async () => {
+    const posts: unknown[] = [];
+    server.use(
+      http.post(`${API}/applications/${APP_ID}/beneficiaries/`, async ({ request }) => {
+        posts.push(await request.json());
+        return HttpResponse.json(apiBeneficiary({ id: "b-new", row_number: 3, kinship: "WIFE", is_first_time: true }), {
+          status: 201,
+        });
+      }),
+    );
+    const { result } = setup();
+    await ready(result);
+    act(() => result.current.updateBeneficiary(2, "isFirstTime", "yes"));
+    await waitFor(() => expect(result.current.saveStatus).toBe("saved"));
+    expect(posts).toEqual([{ row_number: 3, is_first_time: true }]);
+    expect(result.current.state?.beneficiaries[2]?.isFirstTime).toBe("yes");
+  });
+
   it("creates a beneficiary on the first edit of an empty row, then patches it", async () => {
     const posts: unknown[] = [];
     server.use(
@@ -170,7 +219,13 @@ describe("useApplicationDraft", () => {
     await act(() => result.current.confirmDeletion());
     expect(deleted).toBe(true);
     expect(result.current.pendingDeletion).toBeNull();
-    expect(result.current.state?.beneficiaries[0]).toEqual({ kinship: "", name: "", birthYear: "", nationalId: "" });
+    expect(result.current.state?.beneficiaries[0]).toEqual({
+      kinship: "",
+      name: "",
+      birthYear: "",
+      nationalId: "",
+      isFirstTime: "",
+    });
   });
 
   it("restores a cleared row when deletion is cancelled", async () => {

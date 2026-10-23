@@ -7,7 +7,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useReferenceData } from "@/features/reference/useReferenceData";
 import { ar, t } from "@/i18n/ar";
 import { cx } from "@/utils/cx";
-import { preCheckFile } from "./preCheck";
+import { preCheckFile, slotLimits } from "./preCheck";
 
 export interface SmartUploadProps {
   applicationId: string;
@@ -22,6 +22,10 @@ export interface SmartUploadProps {
   ocrCapable?: boolean;
   /** Receives the server's suggestions; the caller merges them into EMPTY fields only. */
   onExtracted?: (fields: OcrFields) => void;
+  /** Rules-table `images_only` (personal photos): image formats only, even with PDFs enabled. */
+  imagesOnly?: boolean;
+  /** Rules-table guidance shown with the slot (e.g. the white-background photo rule). */
+  hints?: readonly string[];
   disabled?: boolean;
   className?: string;
 }
@@ -41,11 +45,14 @@ export function SmartUpload({
   onUploaded,
   ocrCapable = false,
   onExtracted,
+  imagesOnly = false,
+  hints = [],
   disabled = false,
   className,
 }: SmartUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const errorId = useId();
+  const hintsId = useId();
   const reference = useReferenceData();
   const [progress, setProgress] = useState(0);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -68,7 +75,7 @@ export function SmartUpload({
 
   const shown = current ?? document;
   const error = localError ?? (upload.isError ? upload.error.message : null);
-  const limits = reference.data?.upload;
+  const limits = slotLimits(reference.data?.upload, imagesOnly);
   const canScan = Boolean(ocrCapable && onExtracted && reference.data?.ocrEnabled && shown && !disabled);
 
   const handleFile = (file: File | undefined) => {
@@ -92,6 +99,13 @@ export function SmartUpload({
     >
       {/* First child, floated into the flow: the legend names the slot for assistive tech. */}
       <legend className="float-start w-full pe-20 font-bold text-charcoal">{label}</legend>
+      {hints.length > 0 ? (
+        <ul id={hintsId} className="clear-both space-y-0.5 text-xs font-semibold text-slate">
+          {hints.map((hint) => (
+            <li key={hint}>{hint}</li>
+          ))}
+        </ul>
+      ) : null}
       <span
         className={cx(
           "absolute end-4 top-4 rounded-full px-2 py-0.5 text-xs font-bold",
@@ -168,7 +182,7 @@ export function SmartUpload({
           className="sr-only"
           tabIndex={-1}
           aria-label={label}
-          aria-describedby={error ? errorId : undefined}
+          aria-describedby={[error ? errorId : "", hints.length > 0 ? hintsId : ""].filter(Boolean).join(" ") || undefined}
           accept={limits?.acceptedContentTypes.join(",")}
           disabled={disabled || upload.isPending}
           onChange={(event) => {

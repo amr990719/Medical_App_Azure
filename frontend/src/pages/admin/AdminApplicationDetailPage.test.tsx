@@ -7,6 +7,7 @@ import {
   adminHandlers,
   apiAdminDetail,
   handlers,
+  MEMBER_BIRTH_CERTIFICATE_REQUIREMENT,
   meAdmin,
   page,
   type ApiAdminDetail,
@@ -100,6 +101,33 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     await open();
     const row = within(screen.getByRole("table", { name: "المستفيدون" })).getByRole("row", { name: /سارة محمود علي/ });
     expect(within(row).getByText("شهادة الزواج: غير مرفق")).toBeInTheDocument();
+  });
+
+  it("shows a record submitted before the new rules as it is: unanswered first time, missing back side", async () => {
+    serve();
+    await open();
+    const table = screen.getByRole("table", { name: "المستفيدون" });
+    expect(within(table).getByRole("columnheader", { name: "أول مرة؟" })).toBeInTheDocument();
+    const wife = within(table).getByRole("row", { name: /سارة محمود علي/ });
+    expect(within(wife).getByText("غير محدد")).toBeInTheDocument(); // never inferred
+    expect(within(wife).getByText("بطاقة الرقم القومي للمستفيد (ظهر): غير مرفق")).toBeInTheDocument();
+    expect(within(wife).getByRole("button", { name: "عرض بطاقة الرقم القومي للمستفيد (وجه)" })).toBeInTheDocument();
+  });
+
+  it("shows the first-time answers", async () => {
+    const [wife, son] = base.beneficiaries;
+    serve({ ...base, beneficiaries: [{ ...wife!, is_first_time: true }, { ...son!, is_first_time: false }] });
+    await open();
+    const table = screen.getByRole("table", { name: "المستفيدون" });
+    expect(within(within(table).getByRole("row", { name: /سارة محمود علي/ })).getByText("نعم")).toBeInTheDocument();
+    expect(within(within(table).getByRole("row", { name: /عمر أحمد محمد/ })).getByText("لا")).toBeInTheDocument();
+  });
+
+  it("flags the member's own birth certificate when the application requires it", async () => {
+    serve({ ...base, member_required_documents: [...base.member_required_documents, MEMBER_BIRTH_CERTIFICATE_REQUIREMENT] as ApiAdminDetail["member_required_documents"] });
+    await open();
+    const panel = screen.getByRole("region", { name: "بيانات الطلب" });
+    expect(within(panel).getByText("شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم: غير مرفق")).toBeInTheDocument();
   });
 
   it("shows the fee snapshot, never a recomputed quote", async () => {
