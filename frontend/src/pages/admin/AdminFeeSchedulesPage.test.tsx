@@ -6,10 +6,9 @@ import { renderApp } from "@/test/render";
 import { server } from "@/test/server";
 
 const fy2026 = adminFeeSchedules.results.find((s) => s.fiscal_year === 2026 && s.is_active) as ApiFeeSchedule;
-const legacy = adminFeeSchedules.results.find((s) => s.fiscal_year === 2026 && s.version === 1) as ApiFeeSchedule;
 const locked: ApiFeeSchedule = { ...fy2026, locked_at: "2026-10-03T09:15:00+03:00" };
 
-function serve(schedules: ApiFeeSchedule[] = [locked, legacy]) {
+function serve(schedules: ApiFeeSchedule[] = [locked]) {
   const posts: unknown[] = [];
   let current = schedules;
   server.use(
@@ -71,21 +70,6 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
     expect(within(table).getByRole("row", { name: /الشريحة 4/ })).toHaveTextContent("أكثر من 15 سنة قيد");
   });
 
-  it("still shows a legacy four-tier version with its flat administrative fee", async () => {
-    serve();
-    const { user } = await open();
-    await screen.findByRole("table", { name: /الإصدار 2/ });
-    await user.click(screen.getByRole("button", { name: /الإصدار 1/ }));
-    const table = await screen.findByRole("table", { name: /السنة المالية 2026 — الإصدار 1/ });
-    expect(within(table).queryByRole("row", { name: /الشريحة 0/ })).not.toBeInTheDocument();
-    expect(within(table).getByRole("row", { name: /الشريحة 1/ })).toHaveTextContent("حتى 5 سنوات قيد");
-    expect(amounts(table, 3)).toEqual(["750", "1٬000", "550", "1٬500", "1٬300"]);
-    const settings = screen.getByRole("region", { name: "إعدادات الحساب" });
-    expect(within(settings).getByText("طريقة الرسوم الإدارية").nextElementSibling).toHaveTextContent(
-      "إصدار سابق: 150 ج.م للعضو فقط، 175 ج.م مع مستفيدين",
-    );
-  });
-
   it("marks a used version as locked and offers no editing of it", async () => {
     serve();
     await open();
@@ -134,6 +118,7 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
     expect(body.tier_fees["3"]).toEqual({ member: 900, spouse: 1100, child: 605, grad_son: 1650, parent: 1430 });
     expect([body.admin_fee_base, body.admin_fee_per_beneficiary]).toEqual([200, 175]);
     expect(body).not.toHaveProperty("admin_fee_member_only");
+    expect(body).not.toHaveProperty("admin_fee_formula");
     expect(await screen.findByText("تم إنشاء الإصدار 3 للسنة المالية 2026.")).toBeInTheDocument();
   });
 

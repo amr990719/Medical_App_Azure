@@ -317,7 +317,6 @@ export const ar = {
       tierN: "الشريحة {tier}",
       tierRange: {
         zero: "سنة القيد هي سنة الاشتراك",
-        first: "حتى {to} سنوات قيد",
         middle: "من {from} إلى {to} سنة قيد",
         last: "أكثر من {from} سنة قيد",
       },
@@ -332,7 +331,6 @@ export const ar = {
       adminFeePerBeneficiary: "رسوم إدارية لكل مستفيد",
       adminFeeFormula: "طريقة الرسوم الإدارية",
       adminFeeFormulaPerBeneficiary: "{base} + {per} × عدد المستفيدين",
-      adminFeeFormulaFlat: "إصدار سابق: {memberOnly} للعضو فقط، {withBeneficiaries} مع مستفيدين",
       notAvailable: "غير متاح",
       notAvailableHint: "«غير متاح» يعني عدم إمكانية إضافة هذه الفئة في هذه الشريحة، وليس اشتراكاً مجانياً.",
       markNotAvailable: "غير متاح — {label}",

@@ -3,20 +3,15 @@ import type { FeeSchedule } from "@/api/types";
 import { ar, t } from "@/i18n/ar";
 import { cx } from "@/utils/cx";
 import { formatDate, formatMoney } from "@/utils/format";
-import { adminFeeRule, FEE_KEYS, feeCell, tierRange, tiersOf } from "./feeSchedule";
+import { adminFeeRule, FEE_KEYS, feeCell, tierRange, TIERS } from "./feeSchedule";
 
 const L = ar.admin.fees;
 
-/**
- * One schedule version, read-only: versions are immutable once created (PROMPT.md §17.1).
- * Legacy versions (tiers 1-4, flat administrative fee) are shown as they were.
- */
+/** One schedule version, read-only: versions are immutable once created (PROMPT.md §17.1). */
 export function FeeScheduleTable({ schedule }: { schedule: FeeSchedule }) {
   const settingsId = useId();
   const title = t(L.version, { year: schedule.fiscalYear, version: schedule.version });
-  const tiers = tiersOf(schedule.tierFees);
-  const hasTierZero = tiers.includes("0");
-  const hasUnavailable = tiers.some((tier) => FEE_KEYS.some((key) => schedule.tierFees[tier]?.[key] === null));
+  const hasUnavailable = TIERS.some((tier) => FEE_KEYS.some((key) => schedule.tierFees[tier][key] === null));
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto rounded-xl border border-border bg-white">
@@ -35,16 +30,16 @@ export function FeeScheduleTable({ schedule }: { schedule: FeeSchedule }) {
             </tr>
           </thead>
           <tbody>
-            {tiers.map((tier) => (
+            {TIERS.map((tier) => (
               <tr key={tier} className="border-t border-border">
                 <th scope="row" className="px-3 py-2.5 text-start">
                   <span className="block font-bold text-charcoal">{t(L.tierN, { tier })}</span>
                   <span className="block text-xs font-normal text-muted">
-                    {tierRange(schedule.tierBoundaries, tier, hasTierZero)}
+                    {tierRange(schedule.tierBoundaries, tier)}
                   </span>
                 </th>
                 {FEE_KEYS.map((key) => {
-                  const amount = schedule.tierFees[tier]?.[key];
+                  const amount = schedule.tierFees[tier][key];
                   return (
                     <td
                       key={key}

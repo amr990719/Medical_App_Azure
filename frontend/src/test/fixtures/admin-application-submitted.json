@@ -39,7 +39,7 @@
     "schedule_id": "5ed606f5-aa47-4703-8b6c-83ab2469c007",
     "error_message": ""
   },
-  "fee_schedule": "5ed606f5-aa47-4703-8b6c-83ab2469c007",
+  "fee_schedule": null,
   "review_notes": "",
   "reviewed_by_email": null,
   "reviewed_at": null,

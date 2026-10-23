@@ -145,9 +145,8 @@ export type FeeKey = "member" | "spouse" | "child" | "grad_son" | "parent";
 export type TierKey = "0" | "1" | "2" | "3" | "4";
 /** `null` = not eligible at that tier (only tier 0 `grad_son`), never free. */
 export type TierRow = Record<FeeKey, number | null>;
-/** Tiers 0-4; schedules created before tier 0 (legacy) define tiers 1-4 only. */
-export type TierFees = Partial<Record<TierKey, TierRow>>;
-export type AdminFeeFormula = Schemas["AdminFeeFormulaEnum"];
+/** Every schedule defines tiers 0-4. */
+export type TierFees = Record<TierKey, TierRow>;
 
 /** Tier keys ("0".."4") and fee keys stay as data; only the outer fields are camelized. */
 export type FeeSchedule = Camelize<Omit<Schemas["FeeSchedule"], "tier_fees" | "tier_boundaries">> & {
@@ -157,7 +156,7 @@ export type FeeSchedule = Camelize<Omit<Schemas["FeeSchedule"], "tier_fees" | "t
 
 export type NewFeeSchedule = {
   fiscalYear: number;
-  tierFees: Record<TierKey, TierRow>;
+  tierFees: TierFees;
   tierBoundaries: [number, number, number];
   adminFeeBase: number;
   adminFeePerBeneficiary: number;

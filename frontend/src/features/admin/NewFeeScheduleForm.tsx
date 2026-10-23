@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
-import type { FeeKey, FeeSchedule, NewFeeSchedule, TierKey, TierRow } from "@/api/types";
+import type { FeeKey, FeeSchedule, NewFeeSchedule, TierFees, TierKey, TierRow } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { ar, t } from "@/i18n/ar";
 import { cx } from "@/utils/cx";
@@ -21,20 +21,18 @@ const SCALARS = [
   ["registrationYearMin", L.registrationYearMin],
 ] as const;
 
-/** Prefilled from the version on screen. A legacy base (no tier 0) leaves tier 0 to fill in,
- * with the university/graduate cell "not available" as in the current schedule. */
+/** Prefilled from the version on screen, its "not available" cell included. */
 function initialValues(base: FeeSchedule): Values {
   const values: Values = { fiscalYear: String(base.fiscalYear) };
   for (const tier of TIERS) {
-    const row = base.tierFees[tier];
     for (const key of FEE_KEYS) {
-      const amount = row?.[key];
-      values[tierField(tier, key)] = amount === null || amount === undefined ? "" : String(amount);
-      if (isNullableFee(tier, key) && (amount === null || row === undefined)) values[unavailableField(tier, key)] = "1";
+      const amount = base.tierFees[tier][key];
+      values[tierField(tier, key)] = amount === null ? "" : String(amount);
+      if (isNullableFee(tier, key) && amount === null) values[unavailableField(tier, key)] = "1";
     }
   }
   base.tierBoundaries.forEach((edge, index) => (values[`boundary.${index}`] = String(edge)));
-  for (const [name] of SCALARS) values[name] = String(base[name] ?? "");
+  for (const [name] of SCALARS) values[name] = String(base[name]);
   return values;
 }
 
@@ -53,7 +51,7 @@ function parse(values: Values): { schedule?: NewFeeSchedule; errors: Record<stri
     isNullableFee(tier, key) && values[unavailableField(tier, key)] === "1" ? null : number(tierField(tier, key));
   const tierFees = Object.fromEntries(
     TIERS.map((tier) => [tier, Object.fromEntries(FEE_KEYS.map((key) => [key, cell(tier, key)])) as TierRow]),
-  ) as Record<TierKey, TierRow>;
+  ) as TierFees;
   const schedule: NewFeeSchedule = {
     fiscalYear: number("fiscalYear"),
     tierFees,

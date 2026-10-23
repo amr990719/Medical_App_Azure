@@ -665,12 +665,6 @@ export interface components {
             readonly phone_number: string;
             readonly applications_count: number;
         };
-        /**
-         * @description * `FLAT` - ثابتة حسب وجود مستفيدين
-         *     * `PER_BENEFICIARY` - ثابتة + لكل مستفيد
-         * @enum {string}
-         */
-        AdminFeeFormulaEnum: "FLAT" | "PER_BENEFICIARY";
         AdminNote: {
             /** Format: uuid */
             readonly id: string;
@@ -888,10 +882,7 @@ export interface components {
             /** Format: uuid */
             beneficiary_id?: string | null;
         };
-        /**
-         * @description Read: every version, legacy four-tier FLAT ones included. Write (new version): tiers 0-4
-         *     and the PER_BENEFICIARY administrative fee (base + amount per active beneficiary).
-         */
+        /** @description Tiers 0-4 and the administrative fee `base + per_beneficiary × active beneficiaries`. */
         FeeSchedule: {
             /** Format: uuid */
             readonly id: string;
@@ -906,11 +897,8 @@ export interface components {
              *     ]
              */
             tier_boundaries: unknown;
-            readonly admin_fee_formula: components["schemas"]["AdminFeeFormulaEnum"];
-            admin_fee_base: number | null;
-            admin_fee_per_beneficiary: number | null;
-            readonly admin_fee_member_only: number | null;
-            readonly admin_fee_with_beneficiaries: number | null;
+            admin_fee_base: number;
+            admin_fee_per_beneficiary: number;
             age_cap_threshold?: number;
             age_cap_amount?: number;
             registration_year_min?: number;
@@ -920,10 +908,7 @@ export interface components {
             /** Format: date-time */
             readonly locked_at: string | null;
         };
-        /**
-         * @description Read: every version, legacy four-tier FLAT ones included. Write (new version): tiers 0-4
-         *     and the PER_BENEFICIARY administrative fee (base + amount per active beneficiary).
-         */
+        /** @description Tiers 0-4 and the administrative fee `base + per_beneficiary × active beneficiaries`. */
         FeeScheduleRequest: {
             fiscal_year: number;
             tier_fees: unknown;
@@ -935,8 +920,8 @@ export interface components {
              *     ]
              */
             tier_boundaries: unknown;
-            admin_fee_base: number | null;
-            admin_fee_per_beneficiary: number | null;
+            admin_fee_base: number;
+            admin_fee_per_beneficiary: number;
             age_cap_threshold?: number;
             age_cap_amount?: number;
             registration_year_min?: number;

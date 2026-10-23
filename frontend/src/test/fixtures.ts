@@ -69,7 +69,7 @@ export const feeQuote: ApiFeeQuote = {
   total: 3025,
   is_valid: true,
   error_message: "",
-  schedule_id: "5ed606f5-aa47-4703-8b6c-83ab2469c007",
+  schedule_id: "b6b391f1-0205-4a68-9c02-3f538cc52982",
 };
 
 const unauthenticated = () =>

@@ -130,7 +130,9 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     expect(within(panel).getByText("شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم: غير مرفق")).toBeInTheDocument();
   });
 
-  it("shows the fee snapshot, never a recomputed quote", async () => {
+  it("shows the fee snapshot, never a recomputed quote — also when its schedule version was removed", async () => {
+    // Priced with FY 2026 v1: fees.0005 removed it and cleared `fee_schedule`; the snapshot stays.
+    expect(base.fee_schedule).toBeNull();
     serve();
     await open();
     const fees = screen.getByRole("region", { name: "الرسوم المحسوبة عند التقديم" });
