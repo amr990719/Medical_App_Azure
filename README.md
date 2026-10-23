@@ -138,8 +138,8 @@ panel. Vite proxies `/api` to Django, so cookies behave as in production (same o
 | User | Role | Seeded state |
 |---|---|---|
 | `admin@dev.local` | ADMIN | — |
-| `doctor@dev.local` | DOCTOR | worked example 2 (wife, son, daughter), **SUBMITTED**, receipt pending, 3٬025 ج.م |
-| `doctor2@dev.local` | DOCTOR | female member + mother, **NEEDS_CORRECTION** with review notes |
+| `doctor@dev.local` | DOCTOR | worked example 2 (wife, son — first time, with photo — daughter), **SUBMITTED**, receipt pending, 3٬860 ج.م (FY 2026 v2) |
+| `doctor2@dev.local` | DOCTOR | female member + mother (first time) + her own birth certificate, **NEEDS_CORRECTION** with review notes, 2٬465 ج.م |
 | `new.doctor@dev.local` | DOCTOR | empty profile (first sign-in experience) |
 
 Shortcuts (root `package.json`; `make <name>` does the same where `make` exists):

@@ -103,6 +103,7 @@ erDiagram
         varchar full_name
         smallint birth_year
         varchar national_id "optional; unique per application"
+        bool is_first_time "nullable; NULL = not answered"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -126,10 +127,13 @@ erDiagram
         uuid id PK
         smallint fiscal_year
         smallint version "unique per fiscal_year"
-        jsonb tier_fees "tier -> member/spouse/child/grad_son/parent"
+        jsonb tier_fees "tier 0-4 (legacy 1-4) -> member/spouse/child/grad_son/parent; only tier 0 grad_son may be null"
         jsonb tier_boundaries "[5, 10, 15]"
-        int admin_fee_member_only "150"
-        int admin_fee_with_beneficiaries "175"
+        varchar admin_fee_formula "PER_BENEFICIARY (new) | FLAT (legacy)"
+        int admin_fee_base "200; null on FLAT"
+        int admin_fee_per_beneficiary "175; null on FLAT"
+        int admin_fee_member_only "legacy FLAT 150; null on PER_BENEFICIARY"
+        int admin_fee_with_beneficiaries "legacy FLAT 175; null on PER_BENEFICIARY"
         smallint age_cap_threshold "70"
         int age_cap_amount "500"
         smallint registration_year_min "1950"
@@ -183,6 +187,7 @@ Rules are enforced by the database first and handled as `IntegrityError` in the 
 | `documents_document` | `document_scan_status_valid` | `CHECK` | enum |
 | `fees_feeschedule` | `uniq_fee_schedule_version` | `UNIQUE (fiscal_year, version)` | versioned schedules |
 | `fees_feeschedule` | `uniq_active_fee_schedule_per_year` | `UNIQUE (fiscal_year) WHERE is_active` | exactly one active version per year |
+| `fees_feeschedule` | `fee_schedule_admin_fee_formula_complete` | `FLAT` ⇒ both legacy amounts set; `PER_BENEFICIARY` ⇒ base and per-beneficiary set | the administrative-fee formula always has its amounts |
 | `accounts_user` | `user_role_valid` | `CHECK (role IN ('DOCTOR','ADMIN'))` | roles |
 | `audit_auditlog` | trigger `audit_auditlog_append_only` | `BEFORE UPDATE OR DELETE` raises | append-only at database level (also refused in `AuditLog.save/delete`) |
 

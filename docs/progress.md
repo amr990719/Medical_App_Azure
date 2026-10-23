@@ -803,6 +803,68 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
   request URLs and console logs. Probes are not request telemetry (`HealthProbeMiddleware` runs
   before OpenTelemetry). KQL quirk: columns named `first`/`last` gave `SyntaxError` there.
 
+### Session 14 — 2026-10-23 — Owner rule changes: ID back side, first-time photos, mother proof, FY 2026 v2 fees
+
+Owner requirements of 2026-10-23 (they supersede PROMPT.md / business-rules where they conflict;
+both were updated). Local only: branch `feat/beneficiary-docs-tier0-fees` (from
+`fix/entra-login-intents`), commits `427ac95` (backend), `f701d4f` (frontend) and the docs commit.
+Nothing pushed or deployed.
+
+- **Beneficiary national ID, front + back (D152):** `BENEFICIARY_NATIONAL_ID` keeps its value and is
+  the front (`بطاقة الرقم القومي للمستفيد (وجه)`), so existing uploads still count; new
+  `BENEFICIARY_NATIONAL_ID_BACK` (`… (ظهر)`). Every ID requirement (spouse, parent, child ≥ 16) now
+  needs both; below 16 both are optional. Separate slots: upload, replace, preview, delete and
+  validation are independent (soft delete, audit, ownership CHECK and private blobs unchanged).
+  The back is not OCR-capable (it carries no name / ID / birth date).
+- **First-time beneficiaries (D153):** `Beneficiary.is_first_time` (nullable) through the model,
+  migration, read/write serializers, `BENEFICIARY_FIELDS`, admin serializer, submitted snapshot,
+  API types, form row (`isFirstTime` "" / yes / no), autosave and reload. Existing rows stay NULL
+  (never inferred from `application_type`); drafts may leave it empty; active rows need an answer
+  to submit (rule 19). `BENEFICIARY_PERSONAL_PHOTO` (image only, distinct from the member photo) is
+  required for a first-time beneficiary of any kinship except children younger than
+  `PHOTO_EXEMPT_CHILD_AGE` (3; unknown age never exempts), with the guidance hints.
+- **Member birth certificate for the mother (D154):** `MEMBER_BIRTH_CERTIFICATE`, member-owned,
+  required only while an active MOTHER exists; the mother's or a child's certificate never counts.
+  New `apps/applications/requirements.py` evaluates the application's member slots once for the
+  validator, `member_required_documents` on the doctor API and the admin detail. The checklist, the
+  MOTHER row's DocumentModal (separate member section, no OCR) and the admin page use it; the upload
+  is kept (optional) when the mother is removed.
+- **Female members' children:** the existing rule is verified for every `CHILD_KINSHIPS` value and
+  age (parametrized tests), with the mother-child guidance hint on the certificate.
+- **Kinship labels:** `ابن/ابنة (18 سنة أو أقل)`, `ابن/ابنة (طالب جامعي)`, `ابن/ابنة (خريج)` (values,
+  fee keys and stored rows unchanged); fixtures re-captured from the backend.
+- **FY 2026 v2 fees (D155–D157):** tier 0 (registration year = schedule fiscal year), tier 0
+  `grad_son = null` = not eligible (invalid quote + submission error, rule 21), per-beneficiary
+  administrative fee `200 + 175 × active`, amounts in the versioned schedule
+  (`admin_fee_formula`, `admin_fee_base`, `admin_fee_per_beneficiary`, all lock-protected).
+  Legacy four-tier FLAT schedules stay valid, displayable, deactivatable and priced as before.
+  Admin API/editor: tiers 0–4, "غير متاح" checkbox for the one nullable cell, formula shown in
+  words; legacy versions display their flat fee.
+- **Migrations:** `beneficiaries.0002` (nullable column), `documents.0003` (choices + replaced
+  ownership CHECK, a superset), `fees.0003` (formula columns; existing rows FLAT; legacy amounts
+  nullable; CHECK), `fees.0004` (v2 active, previous active only deactivated; idempotent; reverse
+  refused once v2 is locked). `seed_dev_data` imports `FY2026_V2` from `fees.0004` and seeds both ID
+  sides, first-time answers, a photo and the doctor's mother certificate (3,860 / 2,465 EGP).
+- **Upgrade path verified on the existing compose database** (63 applications, 569 documents,
+  locked v1): pg_dump backup first, then a fingerprint of every application's `fee_snapshot`,
+  `fee_schedule_id`, `submitted_snapshot`, the v1 schedule row and every document row was identical
+  before and after `migrate`; v1 inactive (lock kept), v2 active; 180 beneficiaries NULL. Reverse to
+  `fees.0002` and re-apply both worked. Fresh path = the test database (tests assert v1 inactive,
+  v2 active).
+- **Print regression found and fixed:** the new column pushed ten long rows to a third A4 page and
+  the longer kinship label was clipped in its select; kinship now prints as wrapping text and the
+  print column widths were rebalanced (doctor and admin prints back to 2 pages, D159).
+- Also: `ADMIN_ROLE_REVOKED` audit label added to `ar.ts` (the regenerated schema exposed the
+  missing key); `.env.example` / README list `PHOTO_EXEMPT_CHILD_AGE`.
+- **Verification (all local, compose stack):** backend `pytest` **1184 passed, 1 skipped**
+  (container), `ruff check` + `ruff format --check` clean, `manage.py check`,
+  `makemigrations --check --dry-run` (no changes), `spectacular --validate --fail-on-warn`;
+  frontend `npm run gen:api`, `lint`, `typecheck`, `vitest` **323 passed**, `rtl:check` 0 errors,
+  `build` OK; Playwright against the compose stack **11 passed, 5 skipped** (project-specific
+  skips) — one earlier run failed on a random national-ID collision in the e2e helper (unrelated,
+  re-run green). Regenerated screenshots were restored, not committed.
+  **NOT VERIFIED — requires Azure credentials:** the migrate job and v2 activation on dev.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1196,6 +1258,38 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
   signed-out page use `select_account`, so a returning user is never silently signed in with the
   previous Entra account; "Create account" uses `create` (OpenID Connect Prompt Create, MSAL's
   `Prompt.CREATE`). Logout is unchanged (Django session flushed, then Entra logout URL).
+- **D152 — Beneficiary ID front/back (2026-10-23):** keep `BENEFICIARY_NATIONAL_ID` as the front
+  (no data migration, old uploads valid) and add `BENEFICIARY_NATIONAL_ID_BACK`; blob slug
+  `national-id-back`. The back has no OCR (nothing on it maps to beneficiary fields).
+- **D153 — `is_first_time`:** nullable boolean, NULL = unanswered (also for pre-existing rows); not
+  reset by a kinship change. The photo slot is always offered (optional unless required) so an
+  uploaded photo survives a changed answer. The under-3 exemption applies to child kinships only;
+  the threshold is `PHOTO_EXEMPT_CHILD_AGE` (the note text keeps "3" as specified, Q-B23).
+- **D154 — Application-specific member requirements:** `member_document_requirements` gained
+  `has_active_mother` / `has_member_birth_certificate`; `apps/applications/requirements.py` is the
+  single evaluation used by validation and both serializers. The slot is listed while required or
+  while an upload exists (optional), never auto-deleted. Uploading it without a mother is allowed.
+- **D155 — Schedule shape:** tier "0" is optional in `tier_fees` (legacy 1–4 schedules keep pricing
+  year 0 as tier 1); `null` only for tier 0 `grad_son`; `admin_fee_formula` (`FLAT` legacy /
+  `PER_BENEFICIARY`) with nullable amounts and a CHECK that each formula has its amounts. New
+  admin versions are always `PER_BENEFICIARY` with tiers 0–4; formula and legacy amounts are
+  read-only in the API.
+- **D156 — Ineligible quote shape:** `is_valid=false`, `tier` kept (0), `breakdown=[]`, `total=0`,
+  Arabic message naming the beneficiary and kinship; validation adds rule 21 at step 2
+  (`NOT_ELIGIBLE_FOR_TIER`). Invalid registration still reports `tier=0`, so clients must use
+  `is_valid` (the SPA already did).
+- **D157 — FY 2026 v2 by data migration:** `fees.0004` creates the next version and only flips
+  `is_active` on the previous one (amounts, lock and every `fee_snapshot` untouched); idempotent on
+  the v2 amounts; reverse refused once v2 is locked. `seed_dev_data` imports `FY2026_V2` from it.
+- **D158 — Deploy window fails closed:** between the migrate job and the new revision, the old
+  revision would read v2 with NULL legacy admin-fee columns and fail the quote / submission with a
+  500 rather than freeze a wrong snapshot. Deploy in a quiet window; the window is the usual
+  migrate-then-roll duration (Q-T21).
+- **D159 — Print layout:** kinship prints as wrapping text (like the name); print column widths
+  rebalanced (number, birth year, first-time narrower) to keep ten long rows on two A4 pages.
+- **D160 — Rule guidance comes from the rules table:** the photo, exemption, mother-child and
+  member-certificate guidance are `hints` on each requirement (like the document labels), so the
+  rule and its text cannot drift; UI chrome strings stay in `ar.ts` (deviation 68).
 
 ## Deviations from PROMPT.md
 
@@ -1268,6 +1362,8 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
 | 65 | §55 "README contains deployment commands" | done in Session 10 | — |
 | 66 | §6 / §41 React Hook Form + Zod for instant validation | narrowed in Session 13: used by the profile page (D146); the wizard keeps its custom controller (server `/validation/` after each autosave + local hints) | rewriting every wizard step on RHF changes no behaviour; the server is authoritative either way |
 | 67 | plan Task 10.1/10.2: two commits (`docs: readme and documentation set`, `Session 10: documentation and final report`) | one commit `Phase 10: deployment readiness` | explicit user instruction |
+| 68 | CLAUDE.md "every UI string lives in `ar.ts`" | rule-bound document guidance (`hints`) comes from the server rules table, like document labels | D160: the text must follow the rule (e.g. only SON_MINOR shows the under-3 note) |
+| 69 | PROMPT.md §17.1 FY 2026 amounts / §17.2 admin fee 150/175 | FY 2026 version 2, tier 0, `200 + 175 × active` | owner requirements 2026-10-23 (PROMPT.md updated; v1 kept as legacy) |
 
 ## Open questions
 
@@ -1359,8 +1455,24 @@ confirmed by the organization). Technical/environment questions for the user:
   value; whether the hosted page opens on "Create account" depends on the `signup-signin` user flow
   having self-service sign-up enabled. If the tenant ignores `prompt=create`, the button still lands
   on the sign-in page, where the "No account? Create one" link remains.
+- **Q-B23** The under-3 note text says "3"; if `PHOTO_EXEMPT_CHILD_AGE` changes, should the text
+  follow? (Default: fixed text as given, threshold configurable.)
+- **Q-B24** The under-3 note is shown only on `SON_MINOR` rows as specified, while the exemption
+  itself also applies to `DAUGHTER` (and any child kinship). Confirm.
+- **Q-B25** Applications submitted before 2026-10-23 have unanswered first-time questions and may
+  lack the ID back side / mother proof. They are not re-validated; if one is sent back for
+  correction, the doctor must complete them before resubmitting. Confirm this is wanted.
+- **Q-T21** Deploy window (D158): quotes/submissions on the old revision fail closed between the
+  migrate job and the new revision. Acceptable, or should the rollout be gated (maintenance banner)?
 
 ## Next session starts with
+
+**Local branch `feat/beneficiary-docs-tier0-fees`** (Session 14, owner rule changes) is committed,
+not pushed: owner review, then push / PR on confirmation. On deploy, the migrate job applies
+`beneficiaries.0002`, `documents.0003`, `fees.0003`, `fees.0004`; afterwards confirm in dev that
+FY 2026 v2 is the only active schedule (admin → جداول الرسوم) and run the smoke list with: a tier-0
+member (600 / 1325 EGP), a university son at tier 0 (refused), a mother (member certificate), a
+first-time child aged 2 vs 3, both ID sides. Answer Q-B23–Q-B25 and Q-T21.
 
 **dev runs `f23b710`** (PR #4: `revoke_admin`, `/profile`, owner decisions D150), verified in Azure
 on 2026-10-11, App Insights included: https://victorious-meadow-0e5775b00.4.azurestaticapps.net.

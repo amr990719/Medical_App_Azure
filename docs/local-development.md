@@ -40,8 +40,8 @@ In Windows PowerShell 5.1 use `curl.exe` (plain `curl` is an alias of `Invoke-We
 | User | Role | Data |
 |---|---|---|
 | `admin@dev.local` | ADMIN | — |
-| `doctor@dev.local` | DOCTOR | worked example 2 (WIFE, SON_MINOR, DAUGHTER), application **SUBMITTED**, receipt waiting for confirmation, 3٬025 ج.م |
-| `doctor2@dev.local` | DOCTOR | female member + MOTHER, application **NEEDS_CORRECTION** with review notes from the admin, 2٬075 ج.م |
+| `doctor@dev.local` | DOCTOR | worked example 2 (WIFE, SON_MINOR first time with photo, DAUGHTER), application **SUBMITTED**, receipt waiting for confirmation, 3٬860 ج.م (FY 2026 v2) |
+| `doctor2@dev.local` | DOCTOR | female member + MOTHER (first time) + `MEMBER_BIRTH_CERTIFICATE`, application **NEEDS_CORRECTION** with review notes from the admin, 2٬465 ج.م |
 | `new.doctor@dev.local` | DOCTOR | empty profile, no application (first sign-in experience) |
 
 The FY 2026 fee schedule comes from the `fees` seed migration; the command re-creates it if no
@@ -157,7 +157,7 @@ cd frontend && npx playwright test
 | Spec | Scenario (PROMPT.md §42) |
 |---|---|
 | `foundation.spec.ts` | RTL + Cairo, dev login, sign-out, doctor refused from `/admin/*` |
-| `doctor-submit.spec.ts` | fresh doctor → OCR → family → 3٬025 ج.م → receipt → submit → reference → A4 PDF ≤ 2 pages |
+| `doctor-submit.spec.ts` | fresh doctor → OCR → family (both ID sides, first-time photo) → 3٬860 ج.م → receipt → submit → reference → A4 PDF ≤ 2 pages |
 | `admin-approve.spec.ts` | admin dashboard → filtered list → search → confirm payment → review → approve → doctor sees مقبول; 390 px overflow check |
 | `correction-loop.spec.ts` | admin requests a correction (notes required) → doctor fixes and resubmits → same reference number |
 
