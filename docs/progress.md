@@ -916,6 +916,33 @@ branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
     removed), `rtl:check` 0 errors, `build` OK; Playwright **11 passed, 5 skipped**.
   **NOT VERIFIED — requires Azure credentials:** the migrate job on dev (D163 pre-deploy query).
 
+### Session 15 (cont.) — 2026-10-24 — Deployed to dev; dev data cleaned
+
+- **Pre-deploy check (D163)** as a one-off migrate-job execution on the old image `f13846d`
+  (`caj-medsyn-dev-migrate-naqfoio`, read-only SQL): dev held only FY 2026 v1 (active, locked,
+  3 applications), no other schedule, `fees` at 0002 → 0005 could not refuse.
+- **CI registry limits (D165):** PR #7's image build failed three times and the backend test job
+  once on ECR Public's anonymous quota (`429 toomanyrequests: Data limit exceeded`); the Python and
+  PostgreSQL images now come from `mirror.gcr.io` (digests identical to Docker Hub / ECR Public).
+- **Dev data cleanup (owner request, 2026-10-24):** everything except the admin account and the fee
+  schedule removed in one transaction (execution `caj-medsyn-dev-migrate-09yzki9`, old image):
+  6 applications, 17 beneficiaries, 44 document rows, 1 admin note, 6 doctor profiles, 6 doctor
+  users and — by explicit owner choice, because `AuditLog.user` is PROTECT and the table is
+  append-only — the 146 audit entries (`TRUNCATE`; the row-level append-only trigger stays
+  enabled). Afterwards the 38 remaining blobs under `applications/` were deleted (6 were already
+  purged). `ReferenceCounter` kept (FY 2026 at 3: numbers are never reused, the next is
+  `MED-2026-000004`). Recoverable for 7 days: PostgreSQL PITR to before 2026-10-24T09:03Z, blob
+  soft delete + versioning.
+- **Deploy:** PR #7 merged (`010cbb8`); `backend` run `40080757250` and `frontend` run
+  `40080757216` succeeded (staging/prod skipped). Revision `ca-medsyn-dev-api--g010cbb8e0818-1`
+  Healthy with 100 % traffic, migrate job on the same image; `/api/ready/` and the SPA 200 through
+  the SWA host. Post-check (execution `caj-medsyn-dev-migrate-ivc2bt3`): `beneficiaries.0002`,
+  `documents.0003`, `fees.0003`–`0006` applied; only FY 2026 v2 (active, 200 + 175), legacy
+  admin-fee columns gone; quotes on the dev schedule 600 / 1,325 / 3,080, tier-0 university son
+  invalid; one user (ADMIN), no applications.
+- **Not yet done on dev:** the owner smoke list (sign-up as a new doctor, tier-0 quote, mother
+  certificate, first-time child 2 vs 3, both ID sides, submit, admin review).
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1547,17 +1574,12 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**Local branch `feat/beneficiary-docs-tier0-fees`** (Sessions 14–15: owner rule changes, then FY
-2026 v1 removed) is committed, not pushed: owner review, then push / PR on confirmation. Before the
-deploy, run the read-only D163 query on dev (expect no rows). On deploy, the migrate job applies
-`beneficiaries.0002`, `documents.0003`, `fees.0003`–`fees.0006`; afterwards confirm in dev that FY
-2026 v2 is the only schedule (admin → جداول الرسوم), that applications submitted under v1 still show
-their original fees, and run the smoke list with: a tier-0 member (600 / 1325 EGP), a university son
-at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides.
-Answer Q-B23–Q-B25 and Q-T21.
-
-**dev runs `f23b710`** (PR #4: `revoke_admin`, `/profile`, owner decisions D150), verified in Azure
-on 2026-10-11, App Insights included: https://victorious-meadow-0e5775b00.4.azurestaticapps.net.
+**dev runs `010cbb8`** (PR #7: Sessions 14–15 rule changes, FY 2026 v2 only), deployed and
+verified on 2026-10-24: https://victorious-meadow-0e5775b00.4.azurestaticapps.net. Dev data was
+cleaned the same day (only the admin account and the fee schedule remain). Next: the owner smoke
+list on the clean dev — sign up as a new doctor, a tier-0 member (600 / 1325 EGP), a university son
+at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides,
+submit, then admin review and approval. Answer Q-B23–Q-B25 and Q-T21.
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve, print. Enable Arabic
