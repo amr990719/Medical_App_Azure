@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
-import type { AdminApplicationDetail, AdminBeneficiary, DocumentSummary, ReferenceData } from "@/api/types";
+import type { AdminApplicationDetail, DocumentRequirement, DocumentSummary, ReferenceData } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { buttonClasses } from "@/components/ui/buttonClasses";
 import { FullPageStatus } from "@/components/ui/FullPageStatus";
@@ -19,6 +19,7 @@ import { NOTES_REQUIRED, type AdminTarget } from "@/features/admin/transitions";
 import { FeeSummaryPanel } from "@/features/fees/FeeSummaryPanel";
 import { useReferenceData } from "@/features/reference/useReferenceData";
 import { ar, t } from "@/i18n/ar";
+import { cx } from "@/utils/cx";
 import { formatDate } from "@/utils/format";
 
 const D = ar.admin.detail;
@@ -118,21 +119,24 @@ function DocumentButton({ document, label, onView }: { document: DocumentSummary
   );
 }
 
-function BeneficiaryDocuments({
-  beneficiary,
+/** Required / offered slots with their uploads (missing required ones flagged), then extras. */
+function RequiredDocuments({
+  requirements,
+  documents,
   reference,
   onView,
 }: {
-  beneficiary: AdminBeneficiary;
+  requirements: DocumentRequirement[];
+  documents: DocumentSummary[];
   reference: ReferenceData | undefined;
   onView: (document: DocumentSummary, label: string) => void;
 }) {
-  const listed = new Set(beneficiary.requiredDocuments.map((r) => r.type));
-  const extra = beneficiary.documents.filter((doc) => !listed.has(doc.documentType));
+  const listed = new Set(requirements.map((r) => r.type));
+  const extra = documents.filter((doc) => !listed.has(doc.documentType));
   return (
     <div className="flex flex-wrap gap-1.5">
-      {beneficiary.requiredDocuments.map((requirement) => {
-        const document = beneficiary.documents.find((doc) => doc.documentType === requirement.type);
+      {requirements.map((requirement) => {
+        const document = documents.find((doc) => doc.documentType === requirement.type);
         if (document) {
           return (
             <DocumentButton
@@ -171,6 +175,8 @@ function BeneficiariesPanel({
 }) {
   const C = D.beneficiaryColumns;
   const rows = app.beneficiaries.filter((b) => b.isActive || b.fullName || b.kinship);
+  const firstTime = (value: boolean | null) =>
+    value === true ? D.firstTimeYes : value === false ? D.firstTimeNo : D.firstTimeUnknown;
   return (
     <Panel title={D.beneficiaries}>
       {rows.length === 0 ? (
@@ -180,7 +186,7 @@ function BeneficiariesPanel({
           <table aria-label={D.beneficiaries} className="w-full min-w-[40rem] text-sm">
             <thead className="bg-smoke text-slate">
               <tr>
-                {[C.row, C.name, C.kinship, C.birthYear, C.nationalId, C.documents].map((label) => (
+                {[C.row, C.name, C.kinship, C.birthYear, C.nationalId, C.firstTime, C.documents].map((label) => (
                   <th key={label} scope="col" className="px-2.5 py-2 text-start font-bold whitespace-nowrap">
                     {label}
                   </th>
@@ -197,8 +203,16 @@ function BeneficiariesPanel({
                   <td className="px-2.5 py-2 font-mono whitespace-nowrap">
                     {ltr((revealed && b.nationalId) || b.maskedNationalId)}
                   </td>
+                  <td className={cx("px-2.5 py-2 whitespace-nowrap", b.isFirstTime === null && "text-muted")}>
+                    {firstTime(b.isFirstTime)}
+                  </td>
                   <td className="px-2.5 py-2">
-                    <BeneficiaryDocuments beneficiary={b} reference={reference} onView={onView} />
+                    <RequiredDocuments
+                      requirements={b.requiredDocuments}
+                      documents={b.documents}
+                      reference={reference}
+                      onView={onView}
+                    />
                   </td>
                 </tr>
               ))}
@@ -234,7 +248,9 @@ export function AdminApplicationDetailPage() {
   const statusLabel = (status: string) => choiceLabel(reference.data?.statuses, status);
   const view = (document: DocumentSummary, label?: string) =>
     setViewing({ document, label: label ?? documentTypeLabel(reference.data, document.documentType) });
+  // The receipt has its own panel; the member list is this application's (server-evaluated).
   const memberDocuments = app.documents.filter((doc) => !doc.beneficiaryId && doc.documentType !== "PAYMENT_RECEIPT");
+  const memberRequirements = app.memberRequiredDocuments.filter((slot) => slot.type !== "PAYMENT_RECEIPT");
   const closeTransition = () => {
     setTarget(null);
     transition.reset();
@@ -304,12 +320,12 @@ export function AdminApplicationDetailPage() {
               ]}
             />
             <h3 className="pt-2 text-sm font-extrabold text-charcoal">{D.memberDocuments}</h3>
-            <div className="flex flex-wrap gap-1.5">
-              {memberDocuments.map((document) => {
-                const label = documentTypeLabel(reference.data, document.documentType);
-                return <DocumentButton key={document.id} document={document} label={label} onView={() => view(document, label)} />;
-              })}
-            </div>
+            <RequiredDocuments
+              requirements={memberRequirements}
+              documents={memberDocuments}
+              reference={reference.data}
+              onView={view}
+            />
           </Panel>
           <BeneficiariesPanel app={app} reference={reference.data} revealed={revealed} onView={view} />
           {app.feeSnapshot ? (

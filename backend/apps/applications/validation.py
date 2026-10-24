@@ -11,13 +11,19 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Literal
 
-from django.conf import settings
 from django.utils import timezone
 
 from apps.beneficiaries.services import beneficiary_warnings, check_kinship_rules
 from apps.common.arabic import is_valid_mobile, normalize_arabic_name
 from apps.common.exceptions import FieldError
 from apps.doctors.models import Doctor
+from apps.fees.services import (
+    NoActiveFeeSchedule,
+    active_schedule,
+    beneficiary_ineligibility_message,
+    get_tier,
+    is_valid_registration_year,
+)
 from apps.reference.constants import (
     BENEFICIARY_BIRTH_YEAR_MIN,
     GOVERNORATES,
@@ -26,10 +32,6 @@ from apps.reference.constants import (
     SyndicateType,
     WorkStatus,
 )
-from apps.reference.document_rules import (
-    beneficiary_document_requirements,
-    member_document_requirements,
-)
 from apps.reference.national_id import (
     INVALID_NATIONAL_ID_MESSAGE,
     InvalidNationalId,
@@ -37,6 +39,7 @@ from apps.reference.national_id import (
 )
 
 from .models import InsuranceApplication
+from .requirements import beneficiary_requirements, member_requirements
 
 Stage = Literal["form", "submit"]
 STEPS = (1, 2, 3, 4, 5)
@@ -71,6 +74,7 @@ MSG_BIRTH_YEAR_MISMATCH = "سنة الميلاد لا تطابق الرقم ال
 MSG_BENEFICIARY_SAME_AS_MEMBER = (
     "المستفيد {name}: الرقم القومي للمستفيد لا يمكن أن يطابق الرقم القومي للعضو"
 )
+MSG_BENEFICIARY_FIRST_TIME = "المستفيد {name}: يرجى تحديد هل يشترك المستفيد لأول مرة"
 
 REQUIRED_MEMBER_TEXT_FIELDS = (  # [14] field → Arabic label
     ("governorate", "محافظة السكن"),
@@ -158,8 +162,10 @@ def _validate_member(c: _Collector, app: InsuranceApplication, doctor: Doctor) -
     return warnings
 
 
-def _validate_member_documents(c: _Collector, member_docs: set[str]) -> None:
-    for req in member_document_requirements(require_photo=settings.REQUIRE_MEMBER_PHOTO):
+def _validate_member_documents(
+    c: _Collector, app: InsuranceApplication, member_docs: set[str]
+) -> None:
+    for req in member_requirements(app, member_documents=member_docs):
         if not req.required or req.document_type in member_docs:
             continue
         if req.stage == "submit":  # the payment receipt has its own wizard step
@@ -171,11 +177,25 @@ def _validate_member_documents(c: _Collector, member_docs: set[str]) -> None:
         c.add(DOCUMENTS, f"documents.{req.document_type}", "MISSING_DOCUMENT", message)
 
 
+def _fee_tier(app: InsuranceApplication, doctor: Doctor):
+    """(schedule, tier) for the eligibility check, or (None, None) when no tier applies yet
+    (no active schedule, or an invalid registration year — reported by its own rule)."""
+    try:
+        schedule = active_schedule(app.fiscal_year)
+    except NoActiveFeeSchedule:
+        return None, None
+    year = doctor.syndicate_registration_year
+    if not is_valid_registration_year(schedule, year):
+        return None, None
+    return schedule, get_tier(schedule, year, app.work_status or None)
+
+
 def _validate_beneficiaries(
     c: _Collector, app: InsuranceApplication, doctor: Doctor, docs_by_beneficiary
 ) -> list[str]:
     warnings: list[str] = []
     fy = app.fiscal_year
+    schedule, tier = _fee_tier(app, doctor)
     for b in app.beneficiaries.all():
         n, name = b.row_number, b.full_name.strip()
         if name and not b.kinship:
@@ -190,16 +210,21 @@ def _validate_beneficiaries(
         if b.national_id and b.national_id == doctor.national_id:
             c.add(BENEFICIARIES, f"beneficiaries[{n}].national_id", "SAME_AS_MEMBER",
                   MSG_BENEFICIARY_SAME_AS_MEMBER.format(name=name))  # fmt: skip
+        if b.is_first_time is None:
+            c.add(BENEFICIARIES, f"beneficiaries[{n}].is_first_time", "REQUIRED",
+                  MSG_BENEFICIARY_FIRST_TIME.format(name=name))  # fmt: skip
         for error in check_kinship_rules(
             kinship=b.kinship, birth_year=b.birth_year, row_number=n, name=name,
             member_gender=doctor.gender or None, fiscal_year=fy,
         ):  # fmt: skip
             c.items.append((error, False))
+        if schedule is not None:
+            message = beneficiary_ineligibility_message(schedule, tier, b.kinship, name)
+            if message:
+                c.add(BENEFICIARIES, f"beneficiaries[{n}].kinship", "NOT_ELIGIBLE_FOR_TIER",
+                      message)  # fmt: skip
 
-        for req in beneficiary_document_requirements(
-            b.kinship, b.birth_year, fiscal_year=fy, member_gender=doctor.gender or None,
-            child_id_age=settings.CHILD_NATIONAL_ID_AGE,
-        ):  # fmt: skip
+        for req in beneficiary_requirements(b, app):
             if req.required and req.document_type not in docs_by_beneficiary[b.pk]:
                 c.add(DOCUMENTS, f"beneficiaries[{n}].documents.{req.document_type}",
                       "MISSING_DOCUMENT",
@@ -236,7 +261,7 @@ def validate_for_submission(
 
     c = _Collector()
     warnings = _validate_member(c, application, doctor)
-    _validate_member_documents(c, member_docs)
+    _validate_member_documents(c, application, member_docs)
     warnings += _validate_beneficiaries(c, application, doctor, docs_by_beneficiary)
     _validate_declaration(c, application, doctor)
 

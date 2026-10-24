@@ -4,7 +4,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 import { toCamel } from "@/api/case";
 import type { DocumentSummary } from "@/api/types";
-import { API } from "@/test/fixtures";
+import { API, apiReferenceData } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 import { server } from "@/test/server";
 import { SmartUpload } from "./SmartUpload";
@@ -50,6 +50,51 @@ describe("SmartUpload", () => {
     const { input } = renderUpload();
     expect(input).toHaveAttribute("type", "file");
     expect(input).toHaveAttribute("accept", "image/jpeg,image/png,image/webp");
+  });
+
+  it("keeps photo slots image-only and shows their guidance, even with PDF documents enabled", async () => {
+    server.use(
+      http.get(`${API}/reference-data/`, () =>
+        HttpResponse.json({
+          ...apiReferenceData,
+          upload: {
+            ...apiReferenceData.upload,
+            accepted_content_types: [...apiReferenceData.upload.accepted_content_types, "application/pdf"],
+          },
+        }),
+      ),
+    );
+    const hint = "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.";
+    renderWithProviders(
+      <>
+        <SmartUpload
+          applicationId="a1"
+          documentType="BENEFICIARY_PERSONAL_PHOTO"
+          label="صورة"
+          required
+          document={null}
+          onUploaded={vi.fn()}
+          imagesOnly
+          hints={[hint]}
+        />
+        <SmartUpload
+          applicationId="a1"
+          documentType="BENEFICIARY_NATIONAL_ID_BACK"
+          label="ظهر"
+          required
+          document={null}
+          onUploaded={vi.fn()}
+        />
+      </>,
+      { seedReferenceData: false },
+    );
+    const photo = screen.getByLabelText("صورة", { selector: "input" });
+    const back = screen.getByLabelText("ظهر", { selector: "input" });
+    await waitFor(() => expect(back).toHaveAttribute("accept", "image/jpeg,image/png,image/webp,application/pdf"));
+    expect(photo).toHaveAttribute("accept", "image/jpeg,image/png,image/webp");
+    expect(photo).toHaveAccessibleDescription(hint);
+    await userEvent.setup({ applyAccept: false }).upload(photo, new File(["%PDF"], "photo.pdf", { type: "application/pdf" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("نوع الملف غير مدعوم");
   });
 
   it("uploads immediately on select and confirms the attachment", async () => {

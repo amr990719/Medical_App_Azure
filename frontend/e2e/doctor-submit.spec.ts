@@ -7,7 +7,8 @@ import { pageDevLogin, uniqueEmail, uniqueMaleNationalId } from "./helpers";
 /**
  * Session 5 doctor journey against the real backend (development settings: DEV_AUTH_ENABLED,
  * mock OCR, Azurite blobs) through the Vite proxy — PROMPT.md §42 "Doctor" scenario with the
- * worked example 2 data (2014 / WORKING / 1985, WIFE 1988, SON_MINOR 2015, DAUGHTER 2018 → 3025).
+ * worked example 2 data (2014 / WORKING / 1985, WIFE 1988 first time, SON_MINOR 2015, DAUGHTER 2018
+ * → FY 2026 v2 tier 3: 825 + 1100 + 605 + 605 + (200 + 3 × 175) = 3860).
  *
  * Artefacts: docs/screenshots/session-5/{form-1280.png, form-390.png, status-1280.png, print-a4.pdf}.
  */
@@ -80,24 +81,31 @@ test("doctor fills the paper form with OCR, adds family, pays, submits and gets 
   await page.getByLabel("اسم المقر").fill("أحمد محمد علي حسن");
   await waitSaved(page);
 
-  // 4. Beneficiaries: WIFE with three documents.
+  // 4. Beneficiaries: WIFE, subscribing for the first time — both ID sides, marriage
+  // certificate, insurance print and a white-background photo.
   await rowField(page, "درجة القرابة", 1).selectOption("WIFE");
   await rowField(page, "اسم المستفيد", 1).fill("منى سعيد عبد الله");
   await rowField(page, "سنة الميلاد", 1).fill("1988");
+  await rowField(page, "هل يشترك المستفيد لأول مرة؟", 1).selectOption("yes");
   await waitSaved(page);
   await page.getByRole("button", { name: /^مستندات المستفيد رقم 1/ }).click();
   let dialog = page.getByRole("dialog", { name: "مستندات المستفيد: منى سعيد عبد الله" });
-  await uploadInSlot(dialog, "بطاقة الرقم القومي", "spouse-id.png");
+  await uploadInSlot(dialog, "بطاقة الرقم القومي للمستفيد (وجه)", "spouse-id.png");
+  await uploadInSlot(dialog, "بطاقة الرقم القومي للمستفيد (ظهر)", "id-back.png");
   await uploadInSlot(dialog, "شهادة الزواج", "marriage.png");
   await uploadInSlot(dialog, "برينت تأميني", "insurance.png");
+  const photo = await uploadInSlot(dialog, "صورة شخصية للمستفيد بخلفية بيضاء", "id-front.png");
+  await expect(photo).toContainText("صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.");
   await dialog.getByRole("button", { name: "حفظ وإغلاق" }).click();
   await expect(page.getByRole("button", { name: /^مستندات المستفيد رقم 1/ })).toHaveAttribute("data-state", "complete");
 
   // SON_MINOR: the birth certificate's OCR fills the empty name and birth year.
   await rowField(page, "درجة القرابة", 2).selectOption("SON_MINOR");
+  await rowField(page, "هل يشترك المستفيد لأول مرة؟", 2).selectOption("no");
   await page.getByRole("button", { name: /^مستندات المستفيد رقم 2/ }).click();
   dialog = page.getByRole("dialog", { name: /^مستندات المستفيد: / });
-  await scan(await uploadInSlot(dialog, "شهادة الميلاد", "birth-son.png"));
+  await expect(dialog).toContainText("لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.");
+  await scan(await uploadInSlot(dialog, "شهادة ميلاد المستفيد", "birth-son.png"));
   await dialog.getByRole("button", { name: "حفظ وإغلاق" }).click();
   await expect(rowField(page, "اسم المستفيد", 2)).toHaveValue("عمر أحمد محمد");
   await expect(rowField(page, "سنة الميلاد", 2)).toHaveValue("2015");
@@ -108,16 +116,18 @@ test("doctor fills the paper form with OCR, adds family, pays, submits and gets 
   await rowField(page, "درجة القرابة", 3).selectOption("DAUGHTER");
   await rowField(page, "اسم المستفيد", 3).fill("مريم أحمد محمد");
   await rowField(page, "سنة الميلاد", 3).fill("2018");
+  await rowField(page, "هل يشترك المستفيد لأول مرة؟", 3).selectOption("no");
   await waitSaved(page);
   await page.getByRole("button", { name: /^مستندات المستفيد رقم 3/ }).click();
   dialog = page.getByRole("dialog", { name: "مستندات المستفيد: مريم أحمد محمد" });
-  await uploadInSlot(dialog, "شهادة الميلاد", "birth-daughter.png");
+  await uploadInSlot(dialog, "شهادة ميلاد المستفيد", "birth-daughter.png");
   await dialog.getByRole("button", { name: "حفظ وإغلاق" }).click();
 
-  // 5. The server's quote: tier 3, 750 + 1000 + 550 + 550 + 175.
+  // 5. The server's quote: tier 3, 825 + 1100 + 605 + 605 + (200 + 3 × 175).
   const fees = page.getByRole("region", { name: "ملخص الاشتراك — السنة المالية 2026" });
   await expect(fees).toContainText("الدرجة 3");
-  await expect(fees).toContainText("3٬025 ج.م");
+  await expect(fees).toContainText("725 ج.م");
+  await expect(fees).toContainText("3٬860 ج.م");
   await expect(page.getByRole("group", { name: "العضو الأصلي" })).not.toContainText("غير مرفق");
 
   // Screenshots at 1280 px and 390 px (no horizontal scrolling on the phone layout).
@@ -134,7 +144,7 @@ test("doctor fills the paper form with OCR, adds family, pays, submits and gets 
   // 6. Continue → server validation of steps 1–3 → receipt.
   await page.getByRole("button", { name: "متابعة لرفع الإيصال" }).click();
   await expect(page).toHaveURL(`${applicationUrl}/payment`);
-  await expect(page.getByRole("region", { name: "ملخص الرسوم" })).toContainText("3٬025 ج.م");
+  await expect(page.getByRole("region", { name: "ملخص الرسوم" })).toContainText("3٬860 ج.م");
   await page.getByLabel("إيصال الدفع", { exact: true }).setInputFiles(fixture("receipt.png"));
   await expect(page.getByRole("group", { name: "الإيصال المرفوع" })).toContainText("receipt.png");
   await expect(page.getByText("حالة الدفع: بانتظار التأكيد")).toBeVisible();

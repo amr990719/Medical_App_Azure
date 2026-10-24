@@ -1,7 +1,16 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { API, APP_ID, apiApplication, apiBeneficiary, apiDocument, SPOUSE_REQUIREMENTS } from "@/test/fixtures";
+import {
+  API,
+  APP_ID,
+  apiApplication,
+  apiBeneficiary,
+  apiDocument,
+  MEMBER_BIRTH_CERTIFICATE_REQUIREMENT,
+  MOTHER_REQUIREMENTS,
+  SPOUSE_REQUIREMENTS,
+} from "@/test/fixtures";
 import { renderInForm } from "@/test/renderForm";
 import { server } from "@/test/server";
 import { BeneficiaryTable } from "./BeneficiaryTable";
@@ -30,7 +39,15 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     await renderInForm(<BeneficiaryTable />);
     const table = screen.getByRole("table", { name: "بيانات المستفيدين مع العضو الأصلى" });
     const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers).toEqual(["م", "درجة القرابة", "اسم المستفيد", "سنة الميلاد", "الرقم القومي"]);
+    expect(headers).toEqual([
+      "م",
+      "درجة القرابة",
+      "اسم المستفيد",
+      "سنة الميلاد",
+      "الرقم القومي",
+      "أول مرة؟هل يشترك المستفيد لأول مرة؟",
+    ]);
+    expect(within(table).getByRole("columnheader", { name: "هل يشترك المستفيد لأول مرة؟" })).toBeInTheDocument();
     expect(within(table).getAllByRole("row")).toHaveLength(1 + 10);
   });
 
@@ -139,5 +156,53 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     mockViewport(false);
     await renderInForm(<BeneficiaryTable layout="table" />);
     expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("asks whether each beneficiary is a first-time subscriber and autosaves the answer", async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-wife/`, async ({ request }) => {
+        const body = (await request.json()) as { is_first_time: boolean };
+        bodies.push(body);
+        return HttpResponse.json(apiBeneficiary({ is_first_time: body.is_first_time }));
+      }),
+    );
+    const { user } = await renderInForm(<BeneficiaryTable />, {
+      app: apiApplication({ beneficiaries: [apiBeneficiary({ is_first_time: null })] }),
+    });
+    const select = screen.getByRole("combobox", { name: "هل يشترك المستفيد لأول مرة؟ — المستفيد رقم 1" });
+    expect(select).toHaveValue("");
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual(["—", "نعم", "لا"]);
+    await user.selectOptions(select, "yes");
+    await waitFor(() => expect(bodies).toEqual([{ is_first_time: true }]));
+  });
+
+  it("shows a stored first-time answer, also on the mobile card", async () => {
+    mockViewport(false);
+    await renderInForm(<BeneficiaryTable />, {
+      app: apiApplication({ beneficiaries: [apiBeneficiary({ is_first_time: false })] }),
+    });
+    const card = screen.getAllByRole("group", { name: /^المستفيد رقم \d+$/ })[0]!;
+    expect(within(card).getByRole("combobox", { name: "هل يشترك المستفيد لأول مرة؟ — المستفيد رقم 1" })).toHaveValue("no");
+  });
+
+  it("offers the member's own birth certificate from the mother's row only", async () => {
+    const mother = apiBeneficiary({ id: "b-mother", kinship: "MOTHER", full_name: "فاطمة علي أحمد", required_documents: MOTHER_REQUIREMENTS });
+    const wife = apiBeneficiary({ id: "b-2", row_number: 2 });
+    const { user } = await renderInForm(<BeneficiaryTable />, {
+      app: apiApplication({
+        beneficiaries: [mother, wife],
+        member_required_documents: [MEMBER_BIRTH_CERTIFICATE_REQUIREMENT],
+      }),
+    });
+    await user.click(screen.getByRole("button", { name: /مستندات المستفيد رقم 1/ }));
+    let dialog = screen.getByRole("dialog", { name: "مستندات المستفيد: فاطمة علي أحمد" });
+    const section = within(dialog).getByRole("region", { name: "مستند خاص بالعضو الأصلي" });
+    expect(within(section).getByText("شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم")).toBeInTheDocument();
+    expect(within(dialog).getByText("بطاقة الرقم القومي للمستفيد (ظهر)")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /مستندات المستفيد رقم 2/ }));
+    dialog = screen.getByRole("dialog", { name: "مستندات المستفيد: منى سعيد عبد الله" });
+    expect(within(dialog).queryByRole("region", { name: "مستند خاص بالعضو الأصلي" })).toBeNull();
   });
 });

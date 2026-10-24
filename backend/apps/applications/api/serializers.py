@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.applications.models import InsuranceApplication
+from apps.applications.requirements import member_requirements
 from apps.beneficiaries.api.serializers import BeneficiarySerializer
 from apps.common.fields import CollapsedCharField
 from apps.documents.api.serializers import DocumentSummarySerializer
@@ -15,6 +16,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
     is_editable = serializers.BooleanField(read_only=True)
     beneficiaries = BeneficiarySerializer(many=True, read_only=True)
     documents = DocumentSummarySerializer(many=True, read_only=True)
+    member_required_documents = serializers.SerializerMethodField()
 
     class Meta:
         model = InsuranceApplication
@@ -23,9 +25,13 @@ class ApplicationSerializer(serializers.ModelSerializer):
             "reference_number", "declaration_name", "declaration_accepted",
             "declaration_accepted_at", "fee_snapshot", "fee_schedule", "review_notes",
             "reviewed_at", "submitted_at", "created_at", "updated_at", "is_editable",
-            "beneficiaries", "documents",
+            "beneficiaries", "documents", "member_required_documents",
         ]  # fmt: skip
         read_only_fields = fields
+
+    def get_member_required_documents(self, app) -> list[dict]:
+        """This application's member slots (conditional ones included), from the rules table."""
+        return [r.as_dict() for r in member_requirements(app)]
 
     def get_declaration_accepted(self, app) -> bool:
         return app.declaration_accepted_at is not None

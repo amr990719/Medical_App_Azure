@@ -8,6 +8,7 @@ from apps.applications.factories import ApplicationFactory, build_submittable_ap
 from apps.applications.validation import validate_for_submission
 from apps.beneficiaries.factories import BeneficiaryFactory
 from apps.doctors.factories import DoctorFactory
+from apps.documents.factories import DocumentFactory
 from apps.documents.models import Document
 from apps.reference.constants import DocumentType as D
 from apps.reference.constants import Gender, Kinship
@@ -231,7 +232,11 @@ def test_rule_13_uses_the_age_aware_child_rule(app):
     son.birth_year = 2010
     son.save()
     error = find(app, "beneficiaries[2].documents.BENEFICIARY_NATIONAL_ID")
-    assert error.message == "المستفيد عمر أحمد محمد: مستند بطاقة الرقم القومي مطلوب"
+    assert error.message == (
+        "المستفيد عمر أحمد محمد: مستند بطاقة الرقم القومي للمستفيد (وجه) مطلوب"
+    )
+    back = find(app, "beneficiaries[2].documents.BENEFICIARY_NATIONAL_ID_BACK")
+    assert back.message == "المستفيد عمر أحمد محمد: مستند بطاقة الرقم القومي للمستفيد (ظهر) مطلوب"
 
 
 # --- step 4 / 5: receipt and declaration ------------------------------------------------------
@@ -327,3 +332,187 @@ def test_cross_application_beneficiary_duplicate_is_a_warning_only(app):
     result = validate_for_submission(app)
     assert result.is_valid is True
     assert len(result.warnings) == 1
+
+
+# --- beneficiary first-time answer and personal photo -----------------------------------------
+
+
+def _beneficiary(app, row_number, **fields):
+    return BeneficiaryFactory(application=app, row_number=row_number, **fields)
+
+
+def _with_id_sides(app, beneficiary):
+    for side in (D.BENEFICIARY_NATIONAL_ID, D.BENEFICIARY_NATIONAL_ID_BACK):
+        DocumentFactory(application=app, beneficiary=beneficiary, document_type=side)
+    return beneficiary
+
+
+def test_active_beneficiary_needs_an_explicit_first_time_answer(app):
+    son = app.beneficiaries.get(row_number=2)
+    son.is_first_time = None
+    son.save()
+    error = find(app, "beneficiaries[2].is_first_time")
+    assert (error.step, error.code) == (2, "REQUIRED")
+    assert error.message == "المستفيد عمر أحمد محمد: يرجى تحديد هل يشترك المستفيد لأول مرة"
+
+
+def test_draft_validation_reports_but_tolerates_the_missing_answer(app):
+    son = app.beneficiaries.get(row_number=2)
+    son.is_first_time = None
+    son.save()
+    result = validate_for_submission(app, stage="form")
+    assert result.steps[2] is False
+    assert [e.field for e in result.errors] == ["beneficiaries[2].is_first_time"]
+
+
+def test_inactive_row_needs_no_first_time_answer(app):
+    _beneficiary(app, 4, kinship=Kinship.DAUGHTER, full_name="", is_first_time=None)
+    assert validate_for_submission(app).is_valid is True
+
+
+@pytest.mark.parametrize("kinship", [Kinship.WIFE, Kinship.SON_MINOR, Kinship.DAUGHTER])
+def test_first_time_beneficiary_needs_a_photo(app, kinship):
+    row = app.beneficiaries.get(kinship=kinship)
+    row.is_first_time = True
+    row.save()
+    error = find(app, f"beneficiaries[{row.row_number}].documents.BENEFICIARY_PERSONAL_PHOTO")
+    assert error.step == 3
+    assert error.message.endswith("مستند صورة شخصية للمستفيد بخلفية بيضاء مطلوب")
+
+
+@pytest.mark.parametrize(
+    ("kinship", "birth_year"),
+    [(Kinship.MOTHER, 1960), (Kinship.FATHER, 1955), (Kinship.SON_UNIVERSITY, 2004),
+     (Kinship.SON_GRADUATE, 1999), (Kinship.HUSBAND, 1980)],
+)  # fmt: skip
+def test_photo_rule_applies_to_every_category(app, kinship, birth_year):
+    row = _beneficiary(app, 4, kinship=kinship, full_name="مستفيد جديد", birth_year=birth_year,
+                       is_first_time=True)  # fmt: skip
+    photo = "beneficiaries[4].documents.BENEFICIARY_PERSONAL_PHOTO"
+    assert photo in {e.field for e in errors_of(app)}
+    row.is_first_time = False
+    row.save()
+    assert photo not in {e.field for e in errors_of(app)}
+
+
+@pytest.mark.parametrize(
+    ("kinship", "birth_year", "needed"),
+    [(Kinship.SON_MINOR, 2024, False), (Kinship.SON_MINOR, 2023, True),  # ages 2 / 3
+     (Kinship.DAUGHTER, 2024, False), (Kinship.DAUGHTER, 2023, True)],
+)  # fmt: skip
+def test_first_time_child_under_3_needs_no_photo(app, kinship, birth_year, needed):
+    child = _beneficiary(app, 4, kinship=kinship, full_name="طفل جديد", birth_year=birth_year,
+                         is_first_time=True)  # fmt: skip
+    DocumentFactory(application=app, beneficiary=child, document_type=D.BIRTH_CERTIFICATE)
+    fields = {e.field for e in errors_of(app)}
+    assert ("beneficiaries[4].documents.BENEFICIARY_PERSONAL_PHOTO" in fields) is needed
+
+
+def test_unknown_child_age_does_not_exempt_the_photo(app):
+    child = _beneficiary(app, 4, kinship=Kinship.SON_MINOR, full_name="طفل جديد",
+                         birth_year=None, is_first_time=True)  # fmt: skip
+    DocumentFactory(application=app, beneficiary=child, document_type=D.BIRTH_CERTIFICATE)
+    assert find(app, "beneficiaries[4].documents.BENEFICIARY_PERSONAL_PHOTO")
+
+
+def test_uploaded_photo_satisfies_the_requirement(app):
+    son = app.beneficiaries.get(row_number=2)
+    son.is_first_time = True
+    son.save()
+    DocumentFactory(application=app, beneficiary=son, document_type=D.BENEFICIARY_PERSONAL_PHOTO)
+    assert validate_for_submission(app).is_valid is True
+
+
+def test_member_photo_does_not_satisfy_a_beneficiary_photo(app):
+    son = app.beneficiaries.get(row_number=2)
+    son.is_first_time = True
+    son.save()
+    DocumentFactory(application=app, document_type=D.PERSONAL_PHOTO)
+    assert find(app, "beneficiaries[2].documents.BENEFICIARY_PERSONAL_PHOTO")
+
+
+def test_addition_application_beneficiary_can_be_first_time():
+    app = build_submittable_application(application_type="ADDITION")
+    son = app.beneficiaries.get(row_number=2)
+    son.is_first_time = True
+    son.save()
+    assert find(app, "beneficiaries[2].documents.BENEFICIARY_PERSONAL_PHOTO")
+
+
+# --- national ID front and back ---------------------------------------------------------------
+
+
+def test_existing_front_upload_still_counts_and_the_back_is_required(app):
+    remove_document(app, D.BENEFICIARY_NATIONAL_ID_BACK, app.beneficiaries.get(row_number=1))
+    fields = {e.field for e in errors_of(app)}
+    assert fields == {"beneficiaries[1].documents.BENEFICIARY_NATIONAL_ID_BACK"}
+
+
+def test_front_is_still_required_on_its_own(app):
+    remove_document(app, D.BENEFICIARY_NATIONAL_ID, app.beneficiaries.get(row_number=1))
+    fields = {e.field for e in errors_of(app)}
+    assert fields == {"beneficiaries[1].documents.BENEFICIARY_NATIONAL_ID"}
+
+
+# --- the member's own birth certificate when the mother is added ------------------------------
+
+
+def _add_mother(app, **fields):
+    mother = _beneficiary(app, 4, kinship=Kinship.MOTHER, full_name="فاطمة علي أحمد",
+                          birth_year=1960, is_first_time=False, **fields)  # fmt: skip
+    return _with_id_sides(app, mother)
+
+
+def test_mother_requires_the_members_own_birth_certificate(app):
+    _add_mother(app)
+    error = find(app, "documents.MEMBER_BIRTH_CERTIFICATE")
+    assert (error.step, error.code) == (3, "MISSING_DOCUMENT")
+    assert error.message == "يرجى إرفاق شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم"
+    DocumentFactory(application=app, document_type=D.MEMBER_BIRTH_CERTIFICATE)
+    assert validate_for_submission(app).is_valid is True
+
+
+def test_mothers_own_birth_certificate_does_not_satisfy_it(app):
+    mother = _add_mother(app)
+    DocumentFactory(application=app, beneficiary=mother, document_type=D.BIRTH_CERTIFICATE)
+    assert find(app, "documents.MEMBER_BIRTH_CERTIFICATE")
+
+
+def test_a_childs_birth_certificate_does_not_satisfy_it(app):
+    _add_mother(app)
+    assert app.documents.filter(document_type=D.BIRTH_CERTIFICATE).exists()  # the children's
+    assert find(app, "documents.MEMBER_BIRTH_CERTIFICATE")
+
+
+def test_member_birth_certificate_not_required_without_an_active_mother(app):
+    _beneficiary(app, 4, kinship=Kinship.MOTHER, full_name="  ")  # no name: inactive
+    father = _beneficiary(app, 5, kinship=Kinship.FATHER, full_name="محمود", birth_year=1955,
+                          is_first_time=False)  # fmt: skip
+    _with_id_sides(app, father)
+    assert validate_for_submission(app).is_valid is True
+
+
+# --- female member: children's birth certificates regardless of age -------------------------
+
+
+@pytest.mark.parametrize(
+    ("kinship", "birth_year", "extra"),
+    [(Kinship.SON_MINOR, 2009, None), (Kinship.DAUGHTER, 2000, None),
+     (Kinship.SON_UNIVERSITY, 2005, D.UNIVERSITY_ID),
+     (Kinship.SON_GRADUATE, 1998, D.INSURANCE_PRINT)],
+)  # fmt: skip
+def test_female_member_older_child_needs_birth_certificate_and_both_id_sides(
+    kinship, birth_year, extra
+):
+    app = ApplicationFactory(doctor=DoctorFactory(gender=Gender.FEMALE))
+    child = _beneficiary(app, 1, kinship=kinship, full_name="ابن العضوة", birth_year=birth_year,
+                         is_first_time=False)  # fmt: skip
+    prefix = "beneficiaries[1].documents."
+    expected = {D.BIRTH_CERTIFICATE, D.BENEFICIARY_NATIONAL_ID, D.BENEFICIARY_NATIONAL_ID_BACK}
+    if extra:
+        expected.add(extra)
+    missing = {e.field for e in errors_of(app) if e.field.startswith(prefix)}
+    assert missing == {f"{prefix}{t}" for t in expected}
+    for t in expected:
+        DocumentFactory(application=app, beneficiary=child, document_type=t)
+    assert not [e for e in errors_of(app) if e.field.startswith(prefix)]

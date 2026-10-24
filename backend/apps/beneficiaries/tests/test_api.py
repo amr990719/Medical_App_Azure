@@ -49,11 +49,13 @@ def test_create_with_arabic_digits_normalized():
     assert body["birth_year"] == 1988
     assert body["national_id"] == "28803150101242"
     assert body["is_active"] is True
-    assert {r["type"] for r in body["required_documents"]} == {
+    assert {r["type"] for r in body["required_documents"] if r["required"]} == {
         "BENEFICIARY_NATIONAL_ID",
+        "BENEFICIARY_NATIONAL_ID_BACK",
         "MARRIAGE_CERTIFICATE",
         "INSURANCE_PRINT",
     }
+    assert body["is_first_time"] is None  # not answered: allowed in a draft
     assert body["documents"] == []
     assert "warnings" not in body  # cross-application duplicates are for admins only
 
@@ -217,3 +219,81 @@ def test_beneficiary_of_another_application_through_own_application_404():
 def test_admin_gets_403():
     app = ApplicationFactory()
     assert client_for(AdminUserFactory()).get(collection(app)).status_code == 403
+
+
+# --- "هل يشترك المستفيد لأول مرة؟" (is_first_time) ----------------------------------------------
+
+
+def test_first_time_answer_is_persisted_on_create_and_reload():
+    app = ApplicationFactory()
+    client = client_for(app.doctor.user)
+    body = client.post(collection(app), {"kinship": "WIFE", "full_name": "سارة",
+                                         "is_first_time": True}, format="json").json()  # fmt: skip
+    assert body["is_first_time"] is True
+    reloaded = client.get(collection(app)).json()[0]
+    assert reloaded["is_first_time"] is True
+    application = client.get(f"/api/v1/applications/{app.pk}/").json()
+    assert application["beneficiaries"][0]["is_first_time"] is True
+
+
+def test_first_time_answer_survives_partial_updates_of_other_fields():
+    app = ApplicationFactory()
+    b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, is_first_time=False)
+    client = client_for(app.doctor.user)
+    body = client.patch(item(app, b), {"full_name": "اسم جديد"}, format="json").json()
+    assert (body["full_name"], body["is_first_time"]) == ("اسم جديد", False)
+
+
+def test_first_time_answer_alone_can_be_patched_and_cleared():
+    app = ApplicationFactory()
+    b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, birth_year=2015)
+    client = client_for(app.doctor.user)
+    body = client.patch(item(app, b), {"is_first_time": True}, format="json").json()
+    assert (body["is_first_time"], body["kinship"], body["birth_year"]) == (True, "SON_MINOR", 2015)
+    photo = next(r for r in body["required_documents"] if r["type"] == "BENEFICIARY_PERSONAL_PHOTO")
+    assert photo["required"] is True
+    assert photo["images_only"] is True
+    assert photo["hints"] == [
+        "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.",
+        "لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.",
+    ]
+    body = client.patch(item(app, b), {"is_first_time": None}, format="json").json()
+    assert body["is_first_time"] is None
+    assert Beneficiary.objects.get(pk=b.pk).is_first_time is None
+
+
+def test_first_time_answer_is_independent_of_the_application_type():
+    app = ApplicationFactory(application_type="ADDITION")
+    body = client_for(app.doctor.user).post(
+        collection(app), {"kinship": "DAUGHTER", "full_name": "مريم", "is_first_time": True},
+        format="json",
+    ).json()  # fmt: skip
+    assert body["is_first_time"] is True
+    first = ApplicationFactory(application_type="FIRST_TIME")
+    body = (
+        client_for(first.doctor.user)
+        .post(collection(first), {"kinship": "DAUGHTER", "full_name": "مريم"}, format="json")
+        .json()
+    )
+    assert body["is_first_time"] is None  # never inferred from FIRST_TIME
+
+
+def test_first_time_answer_rejects_garbage():
+    app = ApplicationFactory()
+    response = client_for(app.doctor.user).post(
+        collection(app), {"kinship": "WIFE", "full_name": "سارة", "is_first_time": "ربما"},
+        format="json",
+    )  # fmt: skip
+    assert response.status_code == 400
+    assert "is_first_time" in response.json()["error"]["fields"]
+
+
+def test_kinship_change_keeps_the_first_time_answer():
+    app = ApplicationFactory()
+    b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, is_first_time=True)
+    body = (
+        client_for(app.doctor.user)
+        .patch(item(app, b), {"kinship": "DAUGHTER"}, format="json")
+        .json()
+    )
+    assert body["is_first_time"] is True

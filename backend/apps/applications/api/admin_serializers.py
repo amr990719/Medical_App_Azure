@@ -4,6 +4,7 @@ audited "show full" action (`reveal_national_id=1`), which the view passes in th
 from rest_framework import serializers
 
 from apps.applications.models import AdminNote, InsuranceApplication
+from apps.applications.requirements import member_requirements
 from apps.audit.models import AuditLog
 from apps.beneficiaries.api.serializers import required_documents
 from apps.beneficiaries.models import Beneficiary
@@ -53,7 +54,7 @@ class AdminBeneficiarySerializer(serializers.ModelSerializer):
         model = Beneficiary
         fields = [
             "id", "row_number", "kinship", "full_name", "birth_year", "masked_national_id",
-            "national_id", "is_active", "required_documents", "documents",
+            "national_id", "is_first_time", "is_active", "required_documents", "documents",
         ]  # fmt: skip
         read_only_fields = fields
 
@@ -94,6 +95,7 @@ class AdminApplicationDetailSerializer(serializers.ModelSerializer):
     )
     allowed_transitions = serializers.SerializerMethodField()
     beneficiary_warnings = serializers.SerializerMethodField()
+    member_required_documents = serializers.SerializerMethodField()
 
     class Meta:
         model = InsuranceApplication
@@ -102,9 +104,12 @@ class AdminApplicationDetailSerializer(serializers.ModelSerializer):
             "reference_number", "declaration_name", "declaration_accepted_at", "fee_snapshot",
             "fee_schedule", "review_notes", "reviewed_by_email", "reviewed_at", "submitted_at",
             "created_at", "updated_at", "doctor", "beneficiaries", "documents",
-            "allowed_transitions", "beneficiary_warnings",
+            "allowed_transitions", "beneficiary_warnings", "member_required_documents",
         ]  # fmt: skip
         read_only_fields = fields
+
+    def get_member_required_documents(self, app) -> list[dict]:
+        return [r.as_dict() for r in member_requirements(app)]
 
     def get_allowed_transitions(self, app) -> list[str]:
         from apps.applications.services import admin_allowed_transitions

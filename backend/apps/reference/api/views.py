@@ -13,6 +13,7 @@ from apps.reference.constants import (
     KINSHIP_FEE_KEY,
     ApplicationStatus,
     ApplicationType,
+    DocumentType,
     Gender,
     Kinship,
     PaymentStatus,
@@ -45,6 +46,7 @@ def reference_data() -> dict:
         "document_rules": rules_as_reference_data(
             require_photo=settings.REQUIRE_MEMBER_PHOTO,
             child_id_age=settings.CHILD_NATIONAL_ID_AGE,
+            photo_exempt_child_age=settings.PHOTO_EXEMPT_CHILD_AGE,
         ),
         "ocr_enabled": settings.OCR_ENABLED,
         "features": {
@@ -57,6 +59,7 @@ def reference_data() -> dict:
             "receipt_min_width": settings.RECEIPT_MIN_WIDTH,
             "receipt_min_height": settings.RECEIPT_MIN_HEIGHT,
             "accepted_content_types": accepted_content_types(),
+            "image_content_types": accepted_content_types(DocumentType.PERSONAL_PHOTO),
         },
     }
 

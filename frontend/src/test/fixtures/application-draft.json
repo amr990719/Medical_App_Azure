@@ -18,5 +18,52 @@
   "updated_at": "2026-10-05T22:40:31.474762+03:00",
   "is_editable": true,
   "beneficiaries": [],
-  "documents": []
+  "documents": [],
+  "member_required_documents": [
+    {
+      "type": "NATIONAL_ID_FRONT",
+      "required": true,
+      "label": "صورة البطاقة (وجه)",
+      "ocr_capable": true,
+      "stage": "form",
+      "images_only": false,
+      "hints": []
+    },
+    {
+      "type": "NATIONAL_ID_BACK",
+      "required": true,
+      "label": "صورة البطاقة (ظهر)",
+      "ocr_capable": true,
+      "stage": "form",
+      "images_only": false,
+      "hints": []
+    },
+    {
+      "type": "SYNDICATE_ID",
+      "required": true,
+      "label": "كارنيه النقابة",
+      "ocr_capable": true,
+      "stage": "form",
+      "images_only": false,
+      "hints": []
+    },
+    {
+      "type": "PERSONAL_PHOTO",
+      "required": false,
+      "label": "صورة العضو الأصلي",
+      "ocr_capable": false,
+      "stage": "form",
+      "images_only": true,
+      "hints": []
+    },
+    {
+      "type": "PAYMENT_RECEIPT",
+      "required": true,
+      "label": "إيصال الدفع",
+      "ocr_capable": false,
+      "stage": "submit",
+      "images_only": false,
+      "hints": []
+    }
+  ]
 }

@@ -11,7 +11,7 @@ import { ar, t } from "@/i18n/ar";
 import { cx } from "@/utils/cx";
 import { digitsOnly } from "@/utils/digits";
 import { DocumentModal } from "./DocumentModal";
-import { documentsComplete } from "./requirements";
+import { documentsComplete, memberRequirementsOf } from "./requirements";
 
 const B = ar.form.beneficiaries;
 
@@ -35,24 +35,36 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
   const server = rowServer(index);
   const complete = server ? documentsComplete(server) : false;
   const docsError = Object.values(inline.rowDocuments[index] ?? {})[0];
-  const hasContent = Boolean(row.kinship || row.name || row.birthYear || row.nationalId);
+  const hasContent = Boolean(row.kinship || row.name || row.birthYear || row.nationalId || row.isFirstTime);
 
+  // Like the name: a select clips a long label (ابن/ابنة (18 سنة أو أقل)) on paper, so print a
+  // wrapping copy of the label instead.
+  const kinshipLabel = reference?.kinships.find((k) => k.value === row.kinship)?.label ?? "";
   const kinship = (
-    <select
-      aria-label={labelOf(B.kinship)}
-      value={row.kinship}
-      disabled={readOnly}
-      aria-invalid={errorOf("kinship") ? true : undefined}
-      onChange={(event) => onKinship(index, event.target.value)}
-      className={cx(cellInput, "cursor-pointer disabled:cursor-default print:appearance-none print:px-1", row.kinship === "" && "text-muted")}
-    >
-      <option value="">{B.kinshipPlaceholder}</option>
-      {reference?.kinships.map((k) => (
-        <option key={k.value} value={k.value} className="text-charcoal">
-          {k.label}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        aria-label={labelOf(B.kinship)}
+        value={row.kinship}
+        disabled={readOnly}
+        aria-invalid={errorOf("kinship") ? true : undefined}
+        onChange={(event) => onKinship(index, event.target.value)}
+        className={cx(cellInput, "cursor-pointer disabled:cursor-default print:hidden", row.kinship === "" && "text-muted")}
+      >
+        <option value="">{B.kinshipPlaceholder}</option>
+        {reference?.kinships.map((k) => (
+          <option key={k.value} value={k.value} className="text-charcoal">
+            {k.label}
+          </option>
+        ))}
+      </select>
+      <span
+        data-print-value
+        aria-hidden
+        className="hidden min-w-0 break-words px-1 py-1 font-semibold leading-snug text-ink print:block"
+      >
+        {kinshipLabel}
+      </span>
+    </>
   );
   // An input clips a long name without a trace on paper: print a wrapping copy instead.
   const name = (
@@ -90,6 +102,28 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
       className={cx(cellInput, "text-center tabular-nums")}
     />
   );
+  const firstTime = (
+    <select
+      aria-label={labelOf(B.firstTime)}
+      value={row.isFirstTime}
+      disabled={readOnly}
+      aria-invalid={errorOf("isFirstTime") ? true : undefined}
+      onChange={(event) => updateBeneficiary(index, "isFirstTime", event.target.value)}
+      className={cx(
+        cellInput,
+        "cursor-pointer text-center disabled:cursor-default print:appearance-none print:px-1",
+        row.isFirstTime === "" && "text-muted",
+      )}
+    >
+      <option value="">{B.firstTimePlaceholder}</option>
+      <option value="yes" className="text-charcoal">
+        {B.firstTimeYes}
+      </option>
+      <option value="no" className="text-charcoal">
+        {B.firstTimeNo}
+      </option>
+    </select>
+  );
   const nationalId = (
     <NidInput
       label={labelOf(B.nationalId)}
@@ -125,12 +159,12 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
         <Icon name="close" className="size-4" />
       </button>
     ) : null;
-  const errors = (["kinship", "name", "birthYear", "nationalId"] as const)
+  const errors = (["kinship", "name", "birthYear", "nationalId", "isFirstTime"] as const)
     .map(errorOf)
     .filter((message): message is string => Boolean(message));
   if (docsError && !complete) errors.push(docsError);
 
-  return { n, kinship, name, birthYear, nationalId, paperclip, clear, errors };
+  return { n, kinship, name, birthYear, nationalId, firstTime, paperclip, clear, errors };
 }
 
 function RowErrors({ errors }: { errors: string[] }) {
@@ -165,6 +199,7 @@ function TableRow(props: RowProps) {
       </td>
       <td className={cell}>{c.birthYear}</td>
       <td className={cx(cell, "px-1 py-1")}>{c.nationalId}</td>
+      <td className={cell}>{c.firstTime}</td>
     </tr>
   );
 }
@@ -197,6 +232,7 @@ function Card(props: RowProps) {
       <CardField label={B.kinship}>{c.kinship}</CardField>
       <CardField label={B.name}>{c.name}</CardField>
       <CardField label={B.birthYear}>{c.birthYear}</CardField>
+      <CardField label={B.firstTime}>{c.firstTime}</CardField>
       <div className="flex min-w-0 flex-col gap-1">
         <span aria-hidden className="text-sm font-bold text-charcoal">
           {B.nationalId}
@@ -219,7 +255,7 @@ export function BeneficiaryTable({ layout = "auto" }: { layout?: "auto" | "table
   const desktop = useMediaQuery("(min-width: 768px)");
   const [documentsFor, setDocumentsFor] = useState<number | null>(null);
   const [kinshipChange, setKinshipChange] = useState<{ index: number; kinship: string } | null>(null);
-  const { state, application, readOnly, rowServer, pendingDeletion } = draft;
+  const { state, application, reference, readOnly, rowServer, pendingDeletion, memberDocuments } = draft;
   if (!state || !application) return null;
 
   const onKinship = (index: number, kinship: string) => {
@@ -241,6 +277,13 @@ export function BeneficiaryTable({ layout = "auto" }: { layout?: "auto" | "table
     onOpenDocuments: (i) => void onOpenDocuments(i),
   });
   const modalBeneficiary = documentsFor === null ? undefined : rowServer(documentsFor);
+  // Member-owned slots this beneficiary's kinship makes necessary (server rule + server list).
+  const conditional = reference?.documentRules.memberConditional ?? {};
+  const modalMemberSlots = modalBeneficiary
+    ? memberRequirementsOf(application).filter(
+        (slot) => conditional[slot.type]?.requiredWithKinship === modalBeneficiary.kinship,
+      )
+    : [];
   const deletionName =
     pendingDeletion === null ? "" : (rowServer(pendingDeletion)?.fullName ?? ar.documents.unnamedBeneficiary);
   const asTable = layout === "table" || desktop;
@@ -255,13 +298,14 @@ export function BeneficiaryTable({ layout = "auto" }: { layout?: "auto" | "table
       </h2>
       {asTable ? (
         <div className="overflow-x-auto">
-          <table aria-labelledby={titleId} className="w-full min-w-[46rem] table-fixed border-collapse bg-paper text-sm">
+          <table aria-labelledby={titleId} className="w-full min-w-[51rem] table-fixed border-collapse bg-paper text-sm">
             <colgroup>
-              <col className="w-16" />
-              <col className="w-40 print:w-36" />
+              <col className="w-16 print:w-9" />
+              <col className="w-44 print:w-28" />
               <col />
-              <col className="w-[4.5rem]" />
+              <col className="w-[4.5rem] print:w-14" />
               <col className="w-[21rem] print:w-[17rem]" />
+              <col className="w-20 print:w-9" />
             </colgroup>
             <thead>
               <tr className="bg-[#eceef1]">
@@ -274,6 +318,14 @@ export function BeneficiaryTable({ layout = "auto" }: { layout?: "auto" | "table
                     {label}
                   </th>
                 ))}
+                <th
+                  scope="col"
+                  title={B.firstTime}
+                  className="border-[1.5px] border-paper-line px-1 py-1.5 text-center text-xs leading-tight font-extrabold text-charcoal"
+                >
+                  <span aria-hidden>{B.firstTimeShort}</span>
+                  <span className="sr-only">{B.firstTime}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -299,6 +351,8 @@ export function BeneficiaryTable({ layout = "auto" }: { layout?: "auto" | "table
           readOnly={readOnly}
           onClose={() => setDocumentsFor(null)}
           onExtracted={(fields) => draft.applyOcrSuggestions(fields, documentsFor)}
+          memberSlots={modalMemberSlots}
+          memberDocuments={memberDocuments}
         />
       ) : null}
 

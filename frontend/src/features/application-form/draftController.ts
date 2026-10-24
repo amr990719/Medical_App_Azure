@@ -67,7 +67,7 @@ const MEMBER_KEYS: MemberField[] = [
   "syndicateRegistrationYear", "workStatus", "memberName", "religion", "nationalId", "gender",
   "birthYear", "governorate", "neighborhood", "address", "mobile", "declarationName",
 ];
-const ROW_KEYS: BeneficiaryField[] = ["kinship", "name", "birthYear", "nationalId"];
+const ROW_KEYS: BeneficiaryField[] = ["kinship", "name", "birthYear", "nationalId", "isFirstTime"];
 
 const isEmptyRow = (row: BeneficiaryRow) => ROW_KEYS.every((key) => row[key] === "");
 /** A stored row whose name and kinship were cleared: waiting for the deletion confirmation. */

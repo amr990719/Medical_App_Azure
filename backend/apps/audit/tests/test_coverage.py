@@ -69,8 +69,9 @@ def full_lifecycle(settings):
     doctor.get(f"/api/v1/documents/{front}/content/")  # DOCUMENT_VIEWED (replaced → 404)
     wife = doctor.post(f"{base}beneficiaries/", {
         "kinship": "WIFE", "full_name": "سارة محمود علي", "birth_year": 1988,
-        "national_id": "28803150101242"}).json()["id"]  # fmt: skip
-    for doc_type in (T.BENEFICIARY_NATIONAL_ID, T.MARRIAGE_CERTIFICATE, T.INSURANCE_PRINT):
+        "national_id": "28803150101242", "is_first_time": False}).json()["id"]  # fmt: skip
+    for doc_type in (T.BENEFICIARY_NATIONAL_ID, T.BENEFICIARY_NATIONAL_ID_BACK,
+                     T.MARRIAGE_CERTIFICATE, T.INSURANCE_PRINT):  # fmt: skip
         upload(doctor, app_id, doc_type, beneficiary_id=wife)
     receipt = upload(doctor, app_id, T.PAYMENT_RECEIPT)  # PAYMENT_STATUS_CHANGED
     doctor.get(f"/api/v1/documents/{receipt}/content/")  # DOCUMENT_VIEWED
@@ -86,7 +87,8 @@ def full_lifecycle(settings):
     assert doctor.post(f"{base}submit/").status_code == 200  # APPLICATION_RESUBMITTED
     schedule = FeeSchedule.objects.get(fiscal_year=2026, is_active=True)
     admin.post("/api/v1/admin/fee-schedules/", {
-        "fiscal_year": 2026, "tier_fees": schedule.tier_fees}, format="json")  # fmt: skip
+        "fiscal_year": 2026, "tier_fees": schedule.tier_fees, "admin_fee_base": 200,
+        "admin_fee_per_beneficiary": 175}, format="json")  # fmt: skip
 
     promoted = UserFactory(email="new-admin@example.test")
     call_command("grant_admin", promoted.email, stdout=StringIO())  # ADMIN_ROLE_GRANTED

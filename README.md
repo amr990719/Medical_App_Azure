@@ -138,8 +138,8 @@ panel. Vite proxies `/api` to Django, so cookies behave as in production (same o
 | User | Role | Seeded state |
 |---|---|---|
 | `admin@dev.local` | ADMIN | — |
-| `doctor@dev.local` | DOCTOR | worked example 2 (wife, son, daughter), **SUBMITTED**, receipt pending, 3٬025 ج.م |
-| `doctor2@dev.local` | DOCTOR | female member + mother, **NEEDS_CORRECTION** with review notes |
+| `doctor@dev.local` | DOCTOR | worked example 2 (wife, son — first time, with photo — daughter), **SUBMITTED**, receipt pending, 3٬860 ج.م (FY 2026 v2) |
+| `doctor2@dev.local` | DOCTOR | female member + mother (first time) + her own birth certificate, **NEEDS_CORRECTION** with review notes, 2٬465 ج.م |
 | `new.doctor@dev.local` | DOCTOR | empty profile (first sign-in experience) |
 
 Shortcuts (root `package.json`; `make <name>` does the same where `make` exists):
@@ -212,7 +212,8 @@ Production settings **refuse to start** when a required value is missing or unsa
 | `CURRENT_FISCAL_YEAR` | 2026 | fiscal year of new applications and fee quotes |
 | `MAX_BENEFICIARIES` | 10 | beneficiaries per application |
 | `REQUIRE_MEMBER_PHOTO` | `false` | personal photo mandatory |
-| `CHILD_NATIONAL_ID_AGE` | 16 | children from this age need a national ID instead of a birth certificate |
+| `CHILD_NATIONAL_ID_AGE` | 16 | children from this age need both national-ID sides instead of only a birth certificate |
+| `PHOTO_EXEMPT_CHILD_AGE` | 3 | first-time child beneficiaries younger than this need no personal photo |
 | `ENFORCE_SPOUSE_GENDER` | `true` | WIFE needs a male member, HUSBAND a female member |
 | `ENFORCE_SON_MINOR_AGE`, `SON_MINOR_MAX_AGE` | `true`, 18 | SON_MINOR age limit |
 

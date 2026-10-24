@@ -20,11 +20,13 @@ from apps.common.exceptions import (
     ValidationFailed,
 )
 from apps.doctors.factories import DoctorFactory
+from apps.doctors.models import Doctor
+from apps.documents.factories import DocumentFactory
 from apps.documents.models import Document
 from apps.fees.models import FeeSchedule
 from apps.fees.services import quote_for_application
 from apps.reference.constants import ApplicationStatus as S
-from apps.reference.constants import ApplicationType, DocumentType, WorkStatus
+from apps.reference.constants import ApplicationType, DocumentType, Kinship, WorkStatus
 from apps.reference.constants import PaymentStatus as P
 
 pytestmark = pytest.mark.django_db
@@ -43,17 +45,17 @@ def test_submit_stores_fee_snapshot_matching_example_2():
     assert result.status == S.SUBMITTED
     assert result.reference_number == "MED-2026-000001"
     assert result.submitted_at is not None
-    assert result.fee_snapshot["total"] == 3025
+    assert result.fee_snapshot["total"] == 3860
     assert result.fee_snapshot["tier"] == 3
     assert result.fee_snapshot["is_valid"] is True
-    assert [line["fee"] for line in result.fee_snapshot["breakdown"]] == [750, 1000, 550, 550, 175]
-    assert result.fee_schedule == FeeSchedule.objects.get(fiscal_year=2026, version=1)
+    assert [line["fee"] for line in result.fee_snapshot["breakdown"]] == [825, 1100, 605, 605, 725]
+    assert result.fee_schedule == FeeSchedule.objects.get(fiscal_year=2026, version=2)
 
 
 def test_submit_locks_the_fee_schedule():
     app = build_submittable_application()
     submit(app, actor=app.doctor.user)
-    assert FeeSchedule.objects.get(fiscal_year=2026, version=1).is_locked is True
+    assert FeeSchedule.objects.get(fiscal_year=2026, version=2).is_locked is True
 
 
 def test_submit_writes_snapshot_and_audit():
@@ -64,6 +66,7 @@ def test_submit_writes_snapshot_and_audit():
     assert snapshot["member"]["national_id"] == app.doctor.national_id
     assert snapshot["application"]["work_status"] == "WORKING"
     assert [b["kinship"] for b in snapshot["beneficiaries"]] == ["WIFE", "SON_MINOR", "DAUGHTER"]
+    assert [b["is_first_time"] for b in snapshot["beneficiaries"]] == [False, False, False]
     assert len(snapshot["documents"]) == Document.objects.filter(application=app).count()
     assert actions() == [AuditAction.APPLICATION_SUBMITTED, AuditAction.FEE_SNAPSHOT_CREATED]
     submitted = AuditLog.objects.get(action=AuditAction.APPLICATION_SUBMITTED)
@@ -84,7 +87,7 @@ def test_submit_with_errors_raises_validation_failed_and_changes_nothing():
     assert (app.status, app.reference_number, app.fee_snapshot) == (S.DRAFT, None, None)
     assert not AuditLog.objects.exists()
     assert not ReferenceCounter.objects.filter(last_sequence__gt=0).exists()
-    assert FeeSchedule.objects.get(fiscal_year=2026, version=1).is_locked is False
+    assert FeeSchedule.objects.get(fiscal_year=2026, version=2).is_locked is False
 
 
 def test_resubmit_keeps_reference_number():
@@ -105,7 +108,8 @@ def test_resubmission_recomputes_the_fee_snapshot():
     transition(app, to_status=S.NEEDS_CORRECTION, actor=AdminUserFactory(), review_notes="x")
     app.beneficiaries.filter(row_number=3).update(full_name="")  # daughter row no longer active
     again = submit(app, actor=app.doctor.user)
-    assert again.fee_snapshot["total"] == 3025 - 550
+    # 825 + 1100 + 605 + (200 + 2 × 175): one line and one per-beneficiary admin fee fewer
+    assert again.fee_snapshot["total"] == 3860 - 605 - 175 == 3080
 
 
 def test_sequential_submissions_get_sequential_numbers():
@@ -121,14 +125,43 @@ def test_sequential_submissions_get_sequential_numbers():
 
 def test_quote_for_draft_uses_the_active_schedule():
     quote = quote_for_application(build_submittable_application())
-    assert quote.total == 3025
-    assert quote.schedule_id == str(FeeSchedule.objects.get(fiscal_year=2026).id)
+    assert quote.total == 3860
+    assert quote.schedule_id == str(FeeSchedule.objects.get(fiscal_year=2026, is_active=True).id)
 
 
 def test_addition_priced_like_first_time():
     first = build_submittable_application()
     addition = build_submittable_application(application_type=ApplicationType.ADDITION)
-    assert quote_for_application(addition).total == quote_for_application(first).total == 3025
+    assert quote_for_application(addition).total == quote_for_application(first).total == 3860
+
+
+def test_tier_0_university_child_blocks_submission_with_an_arabic_error():
+    app = build_submittable_application()
+    Doctor.objects.filter(pk=app.doctor_id).update(syndicate_registration_year=2026)
+    son = app.beneficiaries.get(row_number=2)
+    son.kinship, son.birth_year = Kinship.SON_UNIVERSITY, 2005
+    son.save()
+    DocumentFactory(application=app, beneficiary=son, document_type=DocumentType.UNIVERSITY_ID)
+    for side in (DocumentType.BENEFICIARY_NATIONAL_ID, DocumentType.BENEFICIARY_NATIONAL_ID_BACK):
+        DocumentFactory(application=app, beneficiary=son, document_type=side)
+    app.refresh_from_db()
+    quote = quote_for_application(app)
+    assert (quote.is_valid, quote.tier, quote.total) == (False, 0, 0)
+    with pytest.raises(ValidationFailed) as exc:
+        submit(app, actor=app.doctor.user)
+    assert [(e.step, e.code) for e in exc.value.errors] == [(2, "NOT_ELIGIBLE_FOR_TIER")]
+    assert "عمر أحمد محمد" in exc.value.errors[0].message
+    app.refresh_from_db()
+    assert (app.status, app.fee_snapshot) == (S.DRAFT, None)
+
+
+def test_tier_0_application_submits_with_tier_0_pricing():
+    app = build_submittable_application()
+    Doctor.objects.filter(pk=app.doctor_id).update(syndicate_registration_year=2026)
+    app.refresh_from_db()
+    snapshot = submit(app, actor=app.doctor.user).fee_snapshot
+    # 400 + wife 880 + 550 + 550 + (200 + 3 × 175)
+    assert (snapshot["tier"], snapshot["is_valid"], snapshot["total"]) == (0, True, 3105)
 
 
 def test_quote_for_pensioner_uses_application_work_status():

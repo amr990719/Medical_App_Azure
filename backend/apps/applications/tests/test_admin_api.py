@@ -212,10 +212,41 @@ def test_detail_masks_ids_lists_transitions_and_is_audited(admin):
     assert wife["national_id"] is None
     assert wife["masked_national_id"] == "28•••••••••242"
     assert body["fee_snapshot"] == {"total": 3025, "tier": 3}
-    assert len(body["documents"]) == 9
+    assert len(body["documents"]) == 10
     assert set(body["allowed_transitions"]) == {"UNDER_REVIEW", "NEEDS_CORRECTION", "REJECTED"}
     viewed = AuditLog.objects.get(action=AuditAction.ADMIN_APPLICATION_VIEWED)
     assert viewed.object_id == app.pk
+
+
+# A FY 2026 version 1 quote as frozen at submission; fees.0005 removed that version and cleared
+# the reference, the snapshot stays the record of what was charged.
+V1_SNAPSHOT = {
+    "fiscal_year": 2026, "tier": 3, "admin_fee": 175, "total": 3025, "is_valid": True,
+    "error_message": "", "schedule_id": "6f1c2d1e-0000-4000-8000-000000000001",
+    "breakdown": [
+        {"label": "العضو الأصلي", "fee": 750, "note": ""},
+        {"label": "سارة", "fee": 1000, "note": ""},
+        {"label": "عمر", "fee": 550, "note": ""},
+        {"label": "مريم", "fee": 550, "note": ""},
+        {"label": "رسوم إدارية", "fee": 175, "note": ""},
+    ],
+}  # fmt: skip
+
+
+def test_application_of_a_removed_schedule_still_shows_its_snapshot(admin):
+    app = submitted(status=S.APPROVED, payment=P.CONFIRMED)
+    InsuranceApplication.objects.filter(pk=app.pk).update(
+        fee_snapshot=V1_SNAPSHOT, fee_schedule=None
+    )
+    body = admin.get(app_url(app)).json()
+    assert (body["fee_schedule"], body["fee_snapshot"]) == (None, V1_SNAPSHOT)
+    rows = admin.get(f"{ADMIN}applications/").json()["results"]
+    assert next(r["total"] for r in rows if r["id"] == str(app.pk)) == 3025
+    doctor = client_for(app.doctor.user)
+    own = doctor.get(f"/api/v1/applications/{app.pk}/").json()
+    assert (own["fee_schedule"], own["fee_snapshot"]) == (None, V1_SNAPSHOT)
+    # Never re-priced with the current schedule (v2 would give 3,860).
+    assert doctor.get(f"/api/v1/applications/{app.pk}/fees/").json() == V1_SNAPSHOT
 
 
 def test_approve_is_offered_only_with_confirmed_payment(admin):
@@ -403,3 +434,22 @@ def test_admin_doctor_list_and_detail(admin):
 
 def test_payment_status_value_labels_are_stable():
     assert PaymentStatus.CONFIRMED.label == "مؤكد"
+
+
+def test_detail_shows_first_time_answers_and_conditional_member_requirements(admin):
+    from apps.beneficiaries.factories import BeneficiaryFactory
+    from apps.reference.constants import Kinship
+
+    app = submitted()
+    BeneficiaryFactory(application=app, row_number=4, kinship=Kinship.MOTHER,
+                       full_name="فاطمة", birth_year=1960, is_first_time=True)  # fmt: skip
+    body = admin.get(app_url(app)).json()
+    answers = {b["kinship"]: b["is_first_time"] for b in body["beneficiaries"]}
+    assert answers == {"WIFE": False, "SON_MINOR": False, "DAUGHTER": False, "MOTHER": True}
+    member = {r["type"]: r["required"] for r in body["member_required_documents"]}
+    assert member["MEMBER_BIRTH_CERTIFICATE"] is True
+    mother = next(b for b in body["beneficiaries"] if b["kinship"] == "MOTHER")
+    required = {r["type"] for r in mother["required_documents"] if r["required"]}
+    assert required == {
+        "BENEFICIARY_NATIONAL_ID", "BENEFICIARY_NATIONAL_ID_BACK", "BENEFICIARY_PERSONAL_PHOTO",
+    }  # fmt: skip

@@ -803,6 +803,119 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
   request URLs and console logs. Probes are not request telemetry (`HealthProbeMiddleware` runs
   before OpenTelemetry). KQL quirk: columns named `first`/`last` gave `SyntaxError` there.
 
+### Session 14 — 2026-10-23 — Owner rule changes: ID back side, first-time photos, mother proof, FY 2026 v2 fees
+
+Owner requirements of 2026-10-23 (they supersede PROMPT.md / business-rules where they conflict;
+both were updated). Local only: branch `feat/beneficiary-docs-tier0-fees` (from
+`fix/entra-login-intents`), commits `427ac95` (backend), `f701d4f` (frontend) and the docs commit.
+Nothing pushed or deployed.
+
+- **Beneficiary national ID, front + back (D152):** `BENEFICIARY_NATIONAL_ID` keeps its value and is
+  the front (`بطاقة الرقم القومي للمستفيد (وجه)`), so existing uploads still count; new
+  `BENEFICIARY_NATIONAL_ID_BACK` (`… (ظهر)`). Every ID requirement (spouse, parent, child ≥ 16) now
+  needs both; below 16 both are optional. Separate slots: upload, replace, preview, delete and
+  validation are independent (soft delete, audit, ownership CHECK and private blobs unchanged).
+  The back is not OCR-capable (it carries no name / ID / birth date).
+- **First-time beneficiaries (D153):** `Beneficiary.is_first_time` (nullable) through the model,
+  migration, read/write serializers, `BENEFICIARY_FIELDS`, admin serializer, submitted snapshot,
+  API types, form row (`isFirstTime` "" / yes / no), autosave and reload. Existing rows stay NULL
+  (never inferred from `application_type`); drafts may leave it empty; active rows need an answer
+  to submit (rule 19). `BENEFICIARY_PERSONAL_PHOTO` (image only, distinct from the member photo) is
+  required for a first-time beneficiary of any kinship except children younger than
+  `PHOTO_EXEMPT_CHILD_AGE` (3; unknown age never exempts), with the guidance hints.
+- **Member birth certificate for the mother (D154):** `MEMBER_BIRTH_CERTIFICATE`, member-owned,
+  required only while an active MOTHER exists; the mother's or a child's certificate never counts.
+  New `apps/applications/requirements.py` evaluates the application's member slots once for the
+  validator, `member_required_documents` on the doctor API and the admin detail. The checklist, the
+  MOTHER row's DocumentModal (separate member section, no OCR) and the admin page use it; the upload
+  is kept (optional) when the mother is removed.
+- **Female members' children:** the existing rule is verified for every `CHILD_KINSHIPS` value and
+  age (parametrized tests), with the mother-child guidance hint on the certificate.
+- **Kinship labels:** `ابن/ابنة (18 سنة أو أقل)`, `ابن/ابنة (طالب جامعي)`, `ابن/ابنة (خريج)` (values,
+  fee keys and stored rows unchanged); fixtures re-captured from the backend.
+- **FY 2026 v2 fees (D155–D157):** tier 0 (registration year = schedule fiscal year), tier 0
+  `grad_son = null` = not eligible (invalid quote + submission error, rule 21), per-beneficiary
+  administrative fee `200 + 175 × active`, amounts in the versioned schedule
+  (`admin_fee_formula`, `admin_fee_base`, `admin_fee_per_beneficiary`, all lock-protected).
+  Legacy four-tier FLAT schedules stay valid, displayable, deactivatable and priced as before.
+  Admin API/editor: tiers 0–4, "غير متاح" checkbox for the one nullable cell, formula shown in
+  words; legacy versions display their flat fee.
+- **Migrations:** `beneficiaries.0002` (nullable column), `documents.0003` (choices + replaced
+  ownership CHECK, a superset), `fees.0003` (formula columns; existing rows FLAT; legacy amounts
+  nullable; CHECK), `fees.0004` (v2 active, previous active only deactivated; idempotent; reverse
+  refused once v2 is locked). `seed_dev_data` imports `FY2026_V2` from `fees.0004` and seeds both ID
+  sides, first-time answers, a photo and the doctor's mother certificate (3,860 / 2,465 EGP).
+- **Upgrade path verified on the existing compose database** (63 applications, 569 documents,
+  locked v1): pg_dump backup first, then a fingerprint of every application's `fee_snapshot`,
+  `fee_schedule_id`, `submitted_snapshot`, the v1 schedule row and every document row was identical
+  before and after `migrate`; v1 inactive (lock kept), v2 active; 180 beneficiaries NULL. Reverse to
+  `fees.0002` and re-apply both worked. Fresh path = the test database (tests assert v1 inactive,
+  v2 active).
+- **Print regression found and fixed:** the new column pushed ten long rows to a third A4 page and
+  the longer kinship label was clipped in its select; kinship now prints as wrapping text and the
+  print column widths were rebalanced (doctor and admin prints back to 2 pages, D159).
+- Also: `ADMIN_ROLE_REVOKED` audit label added to `ar.ts` (the regenerated schema exposed the
+  missing key); `.env.example` / README list `PHOTO_EXEMPT_CHILD_AGE`.
+- **Verification (all local, compose stack):** backend `pytest` **1184 passed, 1 skipped**
+  (container), `ruff check` + `ruff format --check` clean, `manage.py check`,
+  `makemigrations --check --dry-run` (no changes), `spectacular --validate --fail-on-warn`;
+  frontend `npm run gen:api`, `lint`, `typecheck`, `vitest` **323 passed**, `rtl:check` 0 errors,
+  `build` OK; Playwright against the compose stack **11 passed, 5 skipped** (project-specific
+  skips) — one earlier run failed on a random national-ID collision in the e2e helper (unrelated,
+  re-run green). Regenerated screenshots were restored, not committed.
+  **NOT VERIFIED — requires Azure credentials:** the migrate job and v2 activation on dev.
+
+### Session 15 — 2026-10-24 — FY 2026 version 1 and the legacy pricing support removed
+
+Owner instruction of 2026-10-24 (removal of v1 explicitly authorized). Local only, on the same
+branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
+
+- **`fees.0005_remove_fy2026_v1` (data, D161):** refuses — changing nothing — while any schedule
+  other than FY 2026 v1 still has the legacy format (tiers 1–4 or the FLAT fee) or while v1 is the
+  active FY 2026 version; otherwise clears `fee_schedule` on the applications that used v1 with a
+  queryset UPDATE (no other column, not even `updated_at`, changes), then deletes the row found by
+  `fiscal_year=2026, version=1`. `fee_snapshot`, `submitted_snapshot`, beneficiaries, documents and
+  audit entries are untouched; the snapshot's `schedule_id` and audit metadata keep the removed id
+  as history. Never re-priced, never pointed at v2. Idempotent; reverse is a no-op.
+- **`fees.0006_remove_legacy_admin_fee` (schema, D162):** drops `admin_fee_formula`,
+  `admin_fee_member_only`, `admin_fee_with_beneficiaries` and the formula CHECK; `admin_fee_base` /
+  `admin_fee_per_beneficiary` become NOT NULL (defaults 200 / 175). `0002_seed_fy2026` and every
+  earlier migration are unchanged (history).
+- **Runtime:** `validate_tier_fees` accepts tiers 0–4 only (null only for tier 0 `grad_son`);
+  `AdminFeeFormula`, `LEGACY_TIERS`, the FLAT branch of `admin_fee_for` and the "tier 0 if defined"
+  branch of `get_tier` are gone (tier selection, pensioner override, 70+ cap and tier-0 eligibility
+  unchanged). Admin API: the three fields removed, base / per-beneficiary required non-null.
+  Factories: `FY2026_V1_TIER_FEES` / `fy2026_legacy_schedule()` removed. `seed_dev_data` keeps only
+  the model's current fields from `FY2026_V2` and never creates a version below 2 (D164).
+- **Frontend:** `TierFees` is a full 0–4 record; `tiersOf`, the `hasTierZero` tier-range branch, the
+  FLAT `adminFeeRule` branch, the legacy-base handling of the new-version form and the strings
+  `tierRange.first` / `adminFeeFormulaFlat` removed; schema regenerated; fee-schedule fixture = the
+  live API response (v2 only, compared key by key); the admin-detail fixture now has
+  `fee_schedule: null` with its v1-era snapshot (the historical display is covered by that test).
+- **Checked first:** the compose database held only v1 (FLAT, tiers 1–4, locked, 61 applications)
+  and v2 (19 applications) — no other legacy schedule, so no conversion was needed. Azure dev is at
+  `fees.0002` and cannot be checked from here (D163).
+- **Verification (all local):**
+  - existing database (compose, fees at 0004; pg_dump backup first): a fingerprint of every
+    application row except `fee_schedule_id` (82), both snapshots, beneficiaries (271), documents
+    (852), audit entries (1775) and the v2 row was identical before and after `migrate`; 61 v1
+    references cleared, 19 v2 references kept, v1 absent, v2 active and locked; the doctor `/fees/`
+    and admin detail endpoints return the stored snapshot for all 60 submitted v1-priced
+    applications (the 61st is NEEDS_CORRECTION and gets a live quote, as before);
+  - fresh database (`medical_fresh`, migrated from zero, then `seed_dev_data`): only FY 2026 v2,
+    active, amounts exact; seeded totals 3,860 / 2,465 on v2; database dropped afterwards;
+  - real-schema migration tests (`MigrationExecutor`, transactional): fees rolled back to 0002 →
+    v1 seeded as 0002 did, locked and used → forward through 0003–0006 keeps every record; refusal
+    with another legacy schedule and with an active v1 leaves the data unchanged;
+  - the PostgreSQL "pending trigger events" error that forces the 0005 / 0006 split was reproduced
+    in a scratch database;
+  - fee examples on the migrated v2 row: 600, 1,325, 3,080; tier-0 university son still invalid;
+  - backend `pytest` **1179 passed, 1 skipped** (container), `ruff check` / `ruff format --check`,
+    `manage.py check`, `makemigrations --check --dry-run`, `spectacular --validate --fail-on-warn`;
+    frontend `gen:api`, `typecheck`, `lint`, `vitest` **322 passed** (the legacy-version test
+    removed), `rtl:check` 0 errors, `build` OK; Playwright **11 passed, 5 skipped**.
+  **NOT VERIFIED — requires Azure credentials:** the migrate job on dev (D163 pre-deploy query).
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1196,6 +1309,65 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
   signed-out page use `select_account`, so a returning user is never silently signed in with the
   previous Entra account; "Create account" uses `create` (OpenID Connect Prompt Create, MSAL's
   `Prompt.CREATE`). Logout is unchanged (Django session flushed, then Entra logout URL).
+- **D152 — Beneficiary ID front/back (2026-10-23):** keep `BENEFICIARY_NATIONAL_ID` as the front
+  (no data migration, old uploads valid) and add `BENEFICIARY_NATIONAL_ID_BACK`; blob slug
+  `national-id-back`. The back has no OCR (nothing on it maps to beneficiary fields).
+- **D153 — `is_first_time`:** nullable boolean, NULL = unanswered (also for pre-existing rows); not
+  reset by a kinship change. The photo slot is always offered (optional unless required) so an
+  uploaded photo survives a changed answer. The under-3 exemption applies to child kinships only;
+  the threshold is `PHOTO_EXEMPT_CHILD_AGE` (the note text keeps "3" as specified, Q-B23).
+- **D154 — Application-specific member requirements:** `member_document_requirements` gained
+  `has_active_mother` / `has_member_birth_certificate`; `apps/applications/requirements.py` is the
+  single evaluation used by validation and both serializers. The slot is listed while required or
+  while an upload exists (optional), never auto-deleted. Uploading it without a mother is allowed.
+- **D155 — Schedule shape:** tier "0" is optional in `tier_fees` (legacy 1–4 schedules keep pricing
+  year 0 as tier 1); `null` only for tier 0 `grad_son`; `admin_fee_formula` (`FLAT` legacy /
+  `PER_BENEFICIARY`) with nullable amounts and a CHECK that each formula has its amounts. New
+  admin versions are always `PER_BENEFICIARY` with tiers 0–4; formula and legacy amounts are
+  read-only in the API.
+- **D156 — Ineligible quote shape:** `is_valid=false`, `tier` kept (0), `breakdown=[]`, `total=0`,
+  Arabic message naming the beneficiary and kinship; validation adds rule 21 at step 2
+  (`NOT_ELIGIBLE_FOR_TIER`). Invalid registration still reports `tier=0`, so clients must use
+  `is_valid` (the SPA already did).
+- **D157 — FY 2026 v2 by data migration:** `fees.0004` creates the next version and only flips
+  `is_active` on the previous one (amounts, lock and every `fee_snapshot` untouched); idempotent on
+  the v2 amounts; reverse refused once v2 is locked. `seed_dev_data` imports `FY2026_V2` from it.
+- **D158 — Deploy window fails closed:** between the migrate job and the new revision, the old
+  revision would read v2 with NULL legacy admin-fee columns and fail the quote / submission with a
+  500 rather than freeze a wrong snapshot. Deploy in a quiet window; the window is the usual
+  migrate-then-roll duration (Q-T21).
+- **D159 — Print layout:** kinship prints as wrapping text (like the name); print column widths
+  rebalanced (number, birth year, first-time narrower) to keep ten long rows on two A4 pages.
+- **D160 — Rule guidance comes from the rules table:** the photo, exemption, mother-child and
+  member-certificate guidance are `hints` on each requirement (like the document labels), so the
+  rule and its text cannot drift; UI chrome strings stay in `ar.ts` (deviation 68).
+- **D161 — FY 2026 v1 removal keeps history in the snapshots:** the application's
+  `fee_schedule` FK was already nullable (PROTECT), so only the reference is cleared; the frozen
+  `fee_snapshot` / `submitted_snapshot` remain the record of what was charged. Re-pricing or
+  re-pointing at v2 would misrepresent the schedule used. The migration refuses instead of guessing
+  a conversion for any other legacy schedule (it would need invented tier-0 amounts or a different
+  administrative fee) and refuses to delete an active v1. Reverse = no-op (v1 is not recreated;
+  cleared references cannot be told apart from never-submitted applications).
+- **D162 — Data and schema in separate migrations:** deleting a row whose deferred FK checks are
+  pending and then `ALTER TABLE` in one transaction fails on PostgreSQL ("pending trigger events",
+  reproduced), so 0005 (data) and 0006 (schema) each run in their own transaction.
+- **D163 — Expand and contract ship together (deviation 70); wider deploy window:** 0003 added the
+  formula columns and 0006 drops them before either was deployed. The old dev revision (`fees` at
+  0002) selects `admin_fee_member_only` / `admin_fee_with_beneficiaries`, so between the migrate job
+  and the new revision **every** FeeSchedule read fails there (quotes, submission, admin
+  جداول الرسوم), not only quotes/submissions (D158). Still fail-closed: no wrong snapshot can be
+  frozen. Pre-deploy check on dev, read-only: `SELECT fiscal_year, version FROM fees_feeschedule
+  WHERE NOT (fiscal_year = 2026 AND version = 1);` — at `fees.0002` every row is four-tier FLAT, so
+  any row returned would make 0005 refuse (an admin-created version needs an owner decision first).
+- **D164 — Seeding never recreates v1:** `seed_dev_data` creates FY 2026 only when no version is
+  active, as `max(latest + 1, 2)`, with the `FY2026_V2` amounts of `fees.0004` filtered to the
+  model's current fields.
+- **D165 — Python base image through `mirror.gcr.io` (2026-10-24):** PR #7's image build failed
+  three times on ECR Public's anonymous quota (`429 toomanyrequests: Data limit exceeded`), after
+  Docker Hub's limit had blocked PR #2. `mirror.gcr.io/library/python:3.12-slim` serves the same
+  digest (`sha256:a0f57064…`, compared against Docker Hub and ECR Public), so only the transport
+  changed. The CI and compose PostgreSQL images (`postgres:16`, `postgres:16-alpine`) moved to the
+  mirror too after the next run hit the same quota (digests compared the same way).
 
 ## Deviations from PROMPT.md
 
@@ -1268,6 +1440,9 @@ checklist, production decision list. Branch `session-13/finish-dev` (not pushed)
 | 65 | §55 "README contains deployment commands" | done in Session 10 | — |
 | 66 | §6 / §41 React Hook Form + Zod for instant validation | narrowed in Session 13: used by the profile page (D146); the wizard keeps its custom controller (server `/validation/` after each autosave + local hints) | rewriting every wizard step on RHF changes no behaviour; the server is authoritative either way |
 | 67 | plan Task 10.1/10.2: two commits (`docs: readme and documentation set`, `Session 10: documentation and final report`) | one commit `Phase 10: deployment readiness` | explicit user instruction |
+| 68 | CLAUDE.md "every UI string lives in `ar.ts`" | rule-bound document guidance (`hints`) comes from the server rules table, like document labels | D160: the text must follow the rule (e.g. only SON_MINOR shows the under-3 note) |
+| 69 | PROMPT.md §17.1 FY 2026 amounts / §17.2 admin fee 150/175 | FY 2026 version 2, tier 0, `200 + 175 × active` | owner requirements 2026-10-23 (PROMPT.md updated); v1 removed 2026-10-24 (D161) |
+| 70 | CLAUDE.md "migrations … expand/contract only" | `fees.0003` (expand) and `fees.0006` (contract) in the same, not yet deployed release | owner instruction 2026-10-24 to remove the legacy fields; D163 (old revision fails closed during the deploy window) |
 
 ## Open questions
 
@@ -1359,8 +1534,27 @@ confirmed by the organization). Technical/environment questions for the user:
   value; whether the hosted page opens on "Create account" depends on the `signup-signin` user flow
   having self-service sign-up enabled. If the tenant ignores `prompt=create`, the button still lands
   on the sign-in page, where the "No account? Create one" link remains.
+- **Q-B23** The under-3 note text says "3"; if `PHOTO_EXEMPT_CHILD_AGE` changes, should the text
+  follow? (Default: fixed text as given, threshold configurable.)
+- **Q-B24** The under-3 note is shown only on `SON_MINOR` rows as specified, while the exemption
+  itself also applies to `DAUGHTER` (and any child kinship). Confirm.
+- **Q-B25** Applications submitted before 2026-10-23 have unanswered first-time questions and may
+  lack the ID back side / mother proof. They are not re-validated; if one is sent back for
+  correction, the doctor must complete them before resubmitting. Confirm this is wanted.
+- **Q-T21** Deploy window (D158, widened by D163): between the migrate job and the new revision the
+  old revision fails closed on every fee-schedule read (quotes, submission, admin fee schedules).
+  Acceptable, or should the rollout be gated (maintenance banner)?
 
 ## Next session starts with
+
+**Local branch `feat/beneficiary-docs-tier0-fees`** (Sessions 14–15: owner rule changes, then FY
+2026 v1 removed) is committed, not pushed: owner review, then push / PR on confirmation. Before the
+deploy, run the read-only D163 query on dev (expect no rows). On deploy, the migrate job applies
+`beneficiaries.0002`, `documents.0003`, `fees.0003`–`fees.0006`; afterwards confirm in dev that FY
+2026 v2 is the only schedule (admin → جداول الرسوم), that applications submitted under v1 still show
+their original fees, and run the smoke list with: a tier-0 member (600 / 1325 EGP), a university son
+at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides.
+Answer Q-B23–Q-B25 and Q-T21.
 
 **dev runs `f23b710`** (PR #4: `revoke_admin`, `/profile`, owner decisions D150), verified in Azure
 on 2026-10-11, App Insights included: https://victorious-meadow-0e5775b00.4.azurestaticapps.net.

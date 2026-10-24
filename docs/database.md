@@ -103,6 +103,7 @@ erDiagram
         varchar full_name
         smallint birth_year
         varchar national_id "optional; unique per application"
+        bool is_first_time "nullable; NULL = not answered"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -126,10 +127,10 @@ erDiagram
         uuid id PK
         smallint fiscal_year
         smallint version "unique per fiscal_year"
-        jsonb tier_fees "tier -> member/spouse/child/grad_son/parent"
+        jsonb tier_fees "tiers 0-4 -> member/spouse/child/grad_son/parent; only tier 0 grad_son may be null"
         jsonb tier_boundaries "[5, 10, 15]"
-        int admin_fee_member_only "150"
-        int admin_fee_with_beneficiaries "175"
+        int admin_fee_base "200"
+        int admin_fee_per_beneficiary "175 x active beneficiaries"
         smallint age_cap_threshold "70"
         int age_cap_amount "500"
         smallint registration_year_min "1950"
@@ -234,11 +235,11 @@ one (audited `NATIONAL_ID_REVEALED`). Logs never contain them (masking filter).
 |---|---|
 | accounts | `0001_initial`, `0002_user_display_name` |
 | doctors | `0001_initial` |
-| fees | `0001_initial`, `0002_seed_fy2026` (FY 2026 schedule, version 1, active) |
+| fees | `0001_initial`, `0002_seed_fy2026` (FY 2026 v1 — history only, row removed by 0005), `0003_admin_fee_formula`, `0004_fy2026_v2_schedule` (FY 2026 v2, active), `0005_remove_fy2026_v1` (clears v1 references, keeps snapshots, deletes v1), `0006_remove_legacy_admin_fee` (drops the flat-fee columns) |
 | applications | `0001_initial` |
-| beneficiaries | `0001_initial` |
-| documents | `0001_initial`, `0002_document_blob_purged_at` |
-| audit | `0001_initial`, `0002_append_only_trigger` |
+| beneficiaries | `0001_initial`, `0002_beneficiary_is_first_time` |
+| documents | `0001_initial`, `0002_document_blob_purged_at`, `0003_document_types_id_back_photo_member_certificate` |
+| audit | `0001_initial`, `0002_append_only_trigger`, `0003_admin_role_revoked_action` |
 
 Commands:
 

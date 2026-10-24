@@ -5,20 +5,16 @@ from django.db import models
 from django.db.models import Q
 
 from apps.reference.constants import DocumentType, ScanStatus
+from apps.reference.document_rules import MEMBER_DOCUMENT_TYPES
 
-MEMBER_DOCUMENT_TYPES = (
-    DocumentType.NATIONAL_ID_FRONT,
-    DocumentType.NATIONAL_ID_BACK,
-    DocumentType.SYNDICATE_ID,
-    DocumentType.PERSONAL_PHOTO,
-    DocumentType.PAYMENT_RECEIPT,
-)
 BENEFICIARY_DOCUMENT_TYPES = (
     DocumentType.BENEFICIARY_NATIONAL_ID,
+    DocumentType.BENEFICIARY_NATIONAL_ID_BACK,
     DocumentType.BIRTH_CERTIFICATE,
     DocumentType.MARRIAGE_CERTIFICATE,
     DocumentType.INSURANCE_PRINT,
     DocumentType.UNIVERSITY_ID,
+    DocumentType.BENEFICIARY_PERSONAL_PHOTO,
 )
 
 

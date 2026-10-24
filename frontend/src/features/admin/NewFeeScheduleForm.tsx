@@ -1,29 +1,38 @@
 import { useId, useState, type FormEvent } from "react";
-import type { FeeKey, FeeSchedule, NewFeeSchedule, TierFees } from "@/api/types";
+import type { FeeKey, FeeSchedule, NewFeeSchedule, TierFees, TierKey, TierRow } from "@/api/types";
 import { Button } from "@/components/ui/Button";
 import { ar, t } from "@/i18n/ar";
 import { cx } from "@/utils/cx";
 import { digitsOnly, normalizeDigits } from "@/utils/digits";
-import { FEE_KEYS, TIERS } from "./feeSchedule";
+import { FEE_KEYS, isNullableFee, TIERS } from "./feeSchedule";
 
 const L = ar.admin.fees;
 
 type Values = Record<string, string>;
 
 const tierField = (tier: string, key: FeeKey) => `tier.${tier}.${key}`;
+/** Checkbox state of a nullable cell: "1" = not available (sent as null). */
+const unavailableField = (tier: string, key: FeeKey) => `${tierField(tier, key)}.unavailable`;
 const SCALARS = [
-  ["adminFeeMemberOnly", L.adminFeeMemberOnly],
-  ["adminFeeWithBeneficiaries", L.adminFeeWithBeneficiaries],
+  ["adminFeeBase", L.adminFeeBase],
+  ["adminFeePerBeneficiary", L.adminFeePerBeneficiary],
   ["ageCapThreshold", L.ageCapThreshold],
   ["ageCapAmount", L.ageCapAmount],
   ["registrationYearMin", L.registrationYearMin],
 ] as const;
 
+/** Prefilled from the version on screen, its "not available" cell included. */
 function initialValues(base: FeeSchedule): Values {
   const values: Values = { fiscalYear: String(base.fiscalYear) };
-  for (const tier of TIERS) for (const key of FEE_KEYS) values[tierField(tier, key)] = String(base.tierFees[tier][key]);
+  for (const tier of TIERS) {
+    for (const key of FEE_KEYS) {
+      const amount = base.tierFees[tier][key];
+      values[tierField(tier, key)] = amount === null ? "" : String(amount);
+      if (isNullableFee(tier, key) && amount === null) values[unavailableField(tier, key)] = "1";
+    }
+  }
   base.tierBoundaries.forEach((edge, index) => (values[`boundary.${index}`] = String(edge)));
-  for (const [name] of SCALARS) values[name] = String(base[name] ?? "");
+  for (const [name] of SCALARS) values[name] = String(base[name]);
   return values;
 }
 
@@ -38,15 +47,17 @@ function parse(values: Values): { schedule?: NewFeeSchedule; errors: Record<stri
     }
     return Number(raw);
   };
+  const cell = (tier: TierKey, key: FeeKey): number | null =>
+    isNullableFee(tier, key) && values[unavailableField(tier, key)] === "1" ? null : number(tierField(tier, key));
   const tierFees = Object.fromEntries(
-    TIERS.map((tier) => [tier, Object.fromEntries(FEE_KEYS.map((key) => [key, number(tierField(tier, key))]))]),
+    TIERS.map((tier) => [tier, Object.fromEntries(FEE_KEYS.map((key) => [key, cell(tier, key)])) as TierRow]),
   ) as TierFees;
   const schedule: NewFeeSchedule = {
     fiscalYear: number("fiscalYear"),
     tierFees,
     tierBoundaries: [number("boundary.0"), number("boundary.1"), number("boundary.2")],
-    adminFeeMemberOnly: number("adminFeeMemberOnly"),
-    adminFeeWithBeneficiaries: number("adminFeeWithBeneficiaries"),
+    adminFeeBase: number("adminFeeBase"),
+    adminFeePerBeneficiary: number("adminFeePerBeneficiary"),
     ageCapThreshold: number("ageCapThreshold"),
     ageCapAmount: number("ageCapAmount"),
     registrationYearMin: number("registrationYearMin"),
@@ -61,6 +72,7 @@ function NumberField({
   errors,
   onChange,
   compact = false,
+  disabled = false,
 }: {
   name: string;
   label: string;
@@ -68,6 +80,7 @@ function NumberField({
   errors: Record<string, string>;
   onChange: (name: string, value: string) => void;
   compact?: boolean;
+  disabled?: boolean;
 }) {
   const id = useId();
   const error = errors[name];
@@ -82,11 +95,12 @@ function NumberField({
         inputMode="numeric"
         dir="ltr"
         value={values[name] ?? ""}
+        disabled={disabled}
         onChange={(event) => onChange(name, digitsOnly(event.target.value))}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
         className={cx(
-          "min-h-10 w-full min-w-16 rounded-lg border bg-white px-2 text-end text-sm tabular-nums focus:border-teal",
+          "min-h-10 w-full min-w-16 rounded-lg border bg-white px-2 text-end text-sm tabular-nums focus:border-teal disabled:bg-smoke disabled:text-muted",
           error ? "border-danger" : "border-border-hover",
         )}
       />
@@ -158,16 +172,28 @@ export function NewFeeScheduleForm({
                 <th scope="row" className="px-1 py-1.5 text-start font-bold whitespace-nowrap">
                   {t(L.tierN, { tier })}
                 </th>
-                {FEE_KEYS.map((key) => (
-                  <td key={key} className="px-1 py-1.5 align-top">
-                    <NumberField
-                      name={tierField(tier, key)}
-                      label={`${t(L.tierN, { tier })} — ${L.feeKeys[key]}`}
-                      compact
-                      {...field}
-                    />
-                  </td>
-                ))}
+                {FEE_KEYS.map((key) => {
+                  const label = `${t(L.tierN, { tier })} — ${L.feeKeys[key]}`;
+                  const unavailable = isNullableFee(tier, key) && values[unavailableField(tier, key)] === "1";
+                  return (
+                    <td key={key} className="px-1 py-1.5 align-top">
+                      <NumberField name={tierField(tier, key)} label={label} compact disabled={unavailable} {...field} />
+                      {isNullableFee(tier, key) ? (
+                        <label className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate">
+                          <input
+                            type="checkbox"
+                            checked={unavailable}
+                            aria-label={t(L.markNotAvailable, { label })}
+                            onChange={(event) =>
+                              change(unavailableField(tier, key), event.target.checked ? "1" : "")
+                            }
+                          />
+                          <span aria-hidden>{L.notAvailable}</span>
+                        </label>
+                      ) : null}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

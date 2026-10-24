@@ -84,10 +84,13 @@ maps to:
 | Kinship | Arabic | Fee column |
 |---|---|---|
 | MOTHER / FATHER | أم / أب | parent |
-| SON_MINOR | ابن (18 سنة أو أقل) | child |
+| SON_MINOR | ابن/ابنة (18 سنة أو أقل) | child |
 | DAUGHTER | ابنة | child |
-| SON_UNIVERSITY | ابن (طالب جامعي) | grad_son |
-| SON_GRADUATE | ابن (خريج) | grad_son |
+| SON_UNIVERSITY | ابن/ابنة (طالب جامعي) | grad_son |
+| SON_GRADUATE | ابن/ابنة (خريج) | grad_son |
+
+The `SON_*` labels were changed on 2026-10-23 (owner); values and fee columns are unchanged, stored
+rows are not migrated, and `DAUGHTER` remains a separate option.
 | HUSBAND / WIFE | زوج / زوجة | spouse |
 
 Brothers, sisters and "other" are not supported because the schedule has no fee for them.
@@ -99,56 +102,94 @@ children) but unique within the application and different from the member's; bir
 member parents is an admin warning, not a block. Changing a kinship discards that row's documents
 because the required set changes.
 
+**First time (`is_first_time`, «هل يشترك المستفيد لأول مرة؟»)** — a yes/no answer stored per
+beneficiary, independent of the application type (an `ADDITION` can add a first-time beneficiary)
+and never inferred from it. Drafts may leave it empty (NULL; also every row created before the
+question existed); each active beneficiary needs an explicit answer before submission. It is kept in
+the submitted snapshot and shown to reviewers (`غير محدد` when unanswered).
+
 ## 6. Required documents [`apps/reference/document_rules.py`]
 
 Member: ID front, ID back, syndicate card (always); personal photo (optional unless
-`REQUIRE_MEMBER_PHOTO`); payment receipt (before submission).
+`REQUIRE_MEMBER_PHOTO`); payment receipt (before submission); **the member's own birth certificate
+(`MEMBER_BIRTH_CERTIFICATE`, «شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم») while an active
+MOTHER is listed** — it proves the relation, so the mother's (or a child's) certificate never
+satisfies it. One member-owned upload per application, no OCR, never deleted when the mother is
+removed (it just becomes optional). Because this slot depends on the beneficiaries, the server
+returns the application's own member list (`member_required_documents` on the doctor and admin
+application APIs); reference data keeps the global list plus `member_conditional`.
 
-Beneficiaries, where age = fiscal year − birth year and the threshold (16) is configurable:
+Beneficiaries, where age = fiscal year − birth year and the thresholds are configurable.
+"National ID" always means **both sides**: `BENEFICIARY_NATIONAL_ID` (front — the old value, so
+earlier uploads still count) and `BENEFICIARY_NATIONAL_ID_BACK`, each uploaded, replaced and
+validated on its own:
 
 | Kinship | Required |
 |---|---|
-| Spouse | national ID, marriage certificate, insurance print (برينت تأميني) |
-| Parent | national ID |
-| Son (minor) / daughter | birth certificate if age < 16 **or** the member is female; national ID if age ≥ 16 (optional below) |
+| Spouse | national ID (both sides), marriage certificate, insurance print (برينت تأميني) |
+| Parent | national ID (both sides) |
+| Son (minor) / daughter | birth certificate if age < 16 **or** the member is female; national ID (both sides) if age ≥ 16 (both optional below) |
 | Son (university) | child rule + university card |
 | Son (graduate) | child rule + insurance print |
+| Any kinship, first time | white-background personal photo (`BENEFICIARY_PERSONAL_PHOTO`), except children younger than `PHOTO_EXEMPT_CHILD_AGE` (3); an unknown age never exempts |
+
+- A **female member's** children (minor, daughter, university, graduate) need their own birth
+  certificate at any age — on top of both ID sides from 16 and the kinship's documents — with the
+  guidance «شهادة ميلاد الابن/الابنة مطلوبة لإثبات صلة القرابة بالأم (العضوة) مهما كان العمر.»
+- Photo guidance next to the upload: «صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.»;
+  for `SON_MINOR` only also «لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.». The white background is
+  checked by the reviewer — there is no automatic background detection or image editing.
+- The member photo and the beneficiary photo are separate slots; both accept images only (JPG, PNG,
+  WEBP) even when PDF documents are enabled.
 
 The same table feeds the validator, the document dialog and the documents checklist, so labels and
-enforcement cannot drift (prototype defect 11).
+enforcement cannot drift (prototype defect 11). Each requirement carries `images_only` and `hints`.
 
-Upload limits: JPG/PNG/WEBP (PDF and HEIC behind flags), max 8 MB, receipt at least 400×300 px,
-server-side type sniffing and image decoding; one active document per slot, re-upload replaces.
+Upload limits: JPG/PNG/WEBP (PDF and HEIC behind flags, never for photos), max 8 MB, receipt at
+least 400×300 px, server-side type sniffing and image decoding; one active document per slot,
+re-upload replaces.
 
 ## 7. Fees [`apps/fees/services.py`]
 
-FY 2026 schedule (whole Egyptian pounds):
+FY 2026 schedule, **version 2** (active since 2026-10-23; whole Egyptian pounds):
 
 | Tier | member | spouse | child | grad_son | parent |
 |---|---|---|---|---|---|
-| 1 (≤5 years since registration) | 600 | 800 | 500 | 1200 | 1050 |
-| 2 (≤10) | 700 | 950 | 550 | 1400 | 1200 |
-| 3 (≤15) | 750 | 1000 | 550 | 1500 | 1300 |
-| 4 (>15, or pensioner) | 850 | 1050 | 600 | 1750 | 1400 |
+| 0 (registered in the fiscal year itself) | 400 | 880 | 550 | **not eligible** | 1155 |
+| 1 (1–5 years since registration) | 660 | 880 | 550 | 1320 | 1155 |
+| 2 (6–10) | 770 | 1045 | 605 | 1540 | 1320 |
+| 3 (11–15) | 825 | 1100 | 605 | 1650 | 1430 |
+| 4 (>15, or pensioner) | 935 | 1155 | 660 | 1925 | 1540 |
 
-- Administrative fee (رسوم إدارية): 150 with no beneficiaries, 175 with at least one.
-- Age cap: a member or spouse aged 70 or more in the fiscal year pays 500 instead of the tier fee
-  (note `تم تطبيق سقف 500 ج (عمر N سنة)`). Parents and children are never capped.
+- Tier 0: registration year = the application's fiscal year (never the server clock). Boundaries stay
+  [5, 10, 15]. A university/graduate son at tier 0 is **not eligible** (stored as `null`, never 0):
+  the quote is invalid with an Arabic message, drafts can still be saved, and submission is refused.
+  Only tier 0's `grad_son` may be `null`.
+- Administrative fee (رسوم إدارية): **200 + 175 × active beneficiaries** (200 / 375 / 550 / …). Only
+  active rows (kinship and name) count. Both amounts are stored in the versioned schedule.
+- Age cap: a member or spouse aged 70 or more in the fiscal year pays 500 instead of a higher tier
+  fee (note `تم تطبيق سقف 500 ج (عمر N سنة)`). Parents and children are never capped.
 - Pensioners (معاش) are always tier 4. Deceased members' families are priced like working members.
+- Version 2 is the only FY 2026 version. **Version 1** (the original four-tier seed with a flat
+  150 / 175 administrative fee) **was removed on 2026-10-24** (owner; migration `fees.0005`), and
+  `fees.0006` removed the four-tier and flat-fee support. Applications priced with it keep their
+  `fee_snapshot` and `submitted_snapshot` unchanged — their `fee_schedule` reference is `null` — and
+  are shown from the snapshot; they are never re-priced or attached to version 2. Every schedule
+  (and every new admin version) defines tiers 0–4 and `admin_fee_base` / `admin_fee_per_beneficiary`.
 - An invalid registration year (missing, <1950, > fiscal year) makes the quote invalid with
   `يرجى إدخال سنة قيد النقابة بشكل صحيح لحساب الاشتراك.`
 - `ADDITION` applications are priced like `FIRST_TIME`.
 - Schedules are stored per fiscal year, versioned and audited; a version used by any submitted
   application becomes read-only.
 
-Worked examples (used as tests): see `.claude/skills/syndicate-form-rules/SKILL.md` §4
-(e.g. registration 2014, member born 1985, wife 1988, son 2015, daughter 2018 → tier 3 →
-750 + 1000 + 550 + 550 + 175 = **3025**).
+Worked examples (used as tests): see `.claude/skills/syndicate-form-rules/SKILL.md` §4, e.g.
+registration 2026 → tier 0: 400 + 200 = **600**; with one SON_MINOR 400 + 550 + 375 = **1325**;
+registration 2014 with WIFE and SON_MINOR → tier 3: 825 + 1100 + 605 + 550 = **3080**.
 
 ## 8. Validation [`apps/applications/validation.py`]
 
 Two levels: *draft* (formats, lengths, enums, digit normalization — incomplete is fine) on every
-autosave, and *submission* (all 18 rules in SKILL.md §6, returned together, grouped by wizard step).
+autosave, and *submission* (all 21 rules in SKILL.md §6, returned together, grouped by wizard step).
 The declaration name must equal the member name after normalization (trim, collapse spaces,
 أ/إ/آ→ا, ة→ه, ى→ي), and the doctor must tick the acceptance checkbox on the review page.
 
@@ -161,10 +202,10 @@ with the codes listed in SKILL.md §7. The UI never shows stack traces.
 
 | # | Question | Default implemented | Where configured |
 |---|---|---|---|
-| 1 | Are the FY 2026 amounts, tiers, admin fees and 70+ cap final? | Values above, in an editable `FeeSchedule` | admin fee-schedules page |
+| 1 | Are the FY 2026 amounts, tiers, admin fees and 70+ cap final? | Version 2 values above (owner, 2026-10-23), in an editable `FeeSchedule` | admin fee-schedules page |
 | 2 | How are fees calculated for a deceased (متوفى) member's family? | Same as WORKING | `fees/services.py` |
 | 3 | Fees for an `ADDITION` application — only the new beneficiaries? | Same as FIRST_TIME | `fees/services.py` |
-| 4 | Children's documents: is the age-16 rule right (birth certificate <16, national ID ≥16, birth certificate always if member is female)? | Age-aware rule, threshold configurable | `CHILD_NATIONAL_ID_AGE` |
+| 4 | Children's documents: is the age-16 rule right (birth certificate <16, national ID ≥16, birth certificate always if member is female)? | Age-aware rule, threshold configurable; both ID sides; female member's children always (confirmed 2026-10-23) | `CHILD_NATIONAL_ID_AGE` |
 | 5 | Maximum beneficiaries: 10 (prototype) or 11 (paper rows)? | 10 | `MAX_BENEFICIARIES` |
 | 6 | Must `SON_MINOR` be ≤18, and must spouse kinship match the member's gender? | Both enforced | `ENFORCE_SON_MINOR_AGE`, `ENFORCE_SPOUSE_GENDER` |
 | 7 | Can a rejected applicant re-apply in the same fiscal year? | Yes, a new application | partial unique constraint |
@@ -182,3 +223,5 @@ with the codes listed in SKILL.md §7. The UI never shows stack traces.
 | 19 | Must official printouts always carry the full national ID? (Q-B20) | Admin printouts show it masked unless the reviewer reveals it (audited) | `AdminPrintPage.tsx` |
 | 20 | When a correction is requested and the doctor resubmits, does a CONFIRMED payment stay confirmed? (Q-B21) | Yes, unless the doctor replaces the receipt (→ `PENDING_REVIEW`) | `applications/services.py` |
 | 21 | Legal / organizational decisions L1–L8 (religion field, OCR by an AI service, region, retention, admin access, breach procedure, production access, malware scanning) (Q-B22) | See `docs/security.md` §6 | — |
+| 22 | The under-3 photo note says "3"; if `PHOTO_EXEMPT_CHILD_AGE` changes, should the note follow? | Note text fixed as given by the owner; threshold configurable | `document_rules.py` `HINT_PHOTO_CHILD_EXEMPT`, `PHOTO_EXEMPT_CHILD_AGE` |
+| 23 | Should the under-3 note also appear on `DAUGHTER` rows? | Shown for `SON_MINOR` only (as specified); the exemption itself applies to every child kinship | `document_rules.py` |

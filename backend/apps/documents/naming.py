@@ -16,7 +16,10 @@ SLUGS: dict[T, str] = {
     T.SYNDICATE_ID: "syndicate-id",
     T.PERSONAL_PHOTO: "personal-photo",
     T.PAYMENT_RECEIPT: "payment-receipt",
-    T.BENEFICIARY_NATIONAL_ID: "national-id",
+    T.MEMBER_BIRTH_CERTIFICATE: "member-birth-certificate",
+    T.BENEFICIARY_NATIONAL_ID: "national-id",  # the front side (value kept for old uploads)
+    T.BENEFICIARY_NATIONAL_ID_BACK: "national-id-back",
+    T.BENEFICIARY_PERSONAL_PHOTO: "personal-photo",
     T.BIRTH_CERTIFICATE: "birth-certificate",
     T.MARRIAGE_CERTIFICATE: "marriage-certificate",
     T.INSURANCE_PRINT: "insurance-print",

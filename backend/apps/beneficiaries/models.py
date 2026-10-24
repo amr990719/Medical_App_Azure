@@ -31,6 +31,10 @@ class Beneficiary(models.Model):
     national_id = models.CharField(  # noqa: DJ001 — young children have none
         max_length=14, null=True, blank=True
     )
+    # "هل يشترك المستفيد لأول مرة؟" — independent of the application's FIRST_TIME/ADDITION type.
+    # NULL = not answered yet (drafts, and every row that existed before the question); an
+    # active row needs an explicit answer before submission. Never inferred.
+    is_first_time = models.BooleanField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
