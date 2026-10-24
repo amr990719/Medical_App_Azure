@@ -943,6 +943,44 @@ branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
 - **Not yet done on dev:** the owner smoke list (sign-up as a new doctor, tier-0 quote, mother
   certificate, first-time child 2 vs 3, both ID sides, submit, admin review).
 
+### Session 16 — 2026-10-24 — Fix: the member birth certificate follows the mother without a reload
+
+Local only (branch `fix/mother-certificate-refresh`, on top of the docs branch of PR #8); nothing
+pushed, merged or deployed.
+
+- **Bug:** adding an active MOTHER made the server require the member's own birth certificate
+  (`member_required_documents`, D154), but the SPA kept the cached application detail: after a
+  beneficiary save the controller only patched that row into the cache and refreshed fees and
+  validation. The checklist and the mother's DocumentModal (both read
+  `application.memberRequiredDocuments`) showed the slot only after a reload or an unrelated upload
+  (`documentsChanged` invalidates the detail); removing / changing the mother left it stale too.
+- **Fix (`draftController.ts`, D166):** a cycle that saved a beneficiary, and a confirmed deletion,
+  mark the application detail stale; other saves mark only fees + validation. Stale data is
+  refreshed once the save engine is idle (no cycle running or queued) — one prefix invalidation of
+  `["applications", "detail", id]` refreshes the detail, the fee quote and the validation. The rule
+  stays on the server; the SPA shows whatever slots the refetched detail lists (required with an
+  active mother, optional while an uploaded certificate remains, absent otherwise).
+- **Tests:** `memberRequirementsRefresh.test.tsx` drives BeneficiaryTable + DocumentsChecklist +
+  the fee / validation hooks through the real autosave path against a stateful fake backend: no
+  mother → active mother (checklist and her dialog, fees + validation refetched), kinship change,
+  cleared name, deletion without and with an uploaded certificate (kept, optional, never deleted),
+  another active mother remaining, and unsaved + in-flight edits surviving a held refetch with no
+  request after settling. 6 of the 7 fail without the fix (the "another mother" case passes either
+  way by construction). A hook test pins the request economy: one application refetch per
+  beneficiary save, none for a member-only save. Two existing tests had static GET handlers that
+  contradicted their own PATCH (first-time answer, kinship change clearing documents); they now
+  serve the stored state, as the server does.
+- **Verification:** `vitest` **330 passed** (twice), `lint`, `typecheck`, `rtl:check` 0 errors,
+  `build` OK. Real browser against the compose stack (temporary Playwright spec, deleted): adding a
+  mother shows «شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم» as «غير مرفق» in the checklist
+  and in her dialog, clearing her name removes it, restoring the name brings it back, changing her
+  kinship removes it — no navigation and no document upload during the run; the fee summary updated
+  in the same refresh. The same spec fails without the fix.
+- Not changed: fees, migrations, document ownership, backend rules. Noted, not fixed (outside the
+  scope): a member gender change also changes the children's slots on the server, but member
+  saves still refresh only fees and validation, so those rows update on the next beneficiary save,
+  upload or reload.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1395,6 +1433,13 @@ branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
   digest (`sha256:a0f57064…`, compared against Docker Hub and ECR Public), so only the transport
   changed. The CI and compose PostgreSQL images (`postgres:16`, `postgres:16-alpine`) moved to the
   mirror too after the next run hit the same quota (digests compared the same way).
+- **D166 — Beneficiary saves refresh the application detail, once, when the saves are idle:**
+  rows' and the member's slots are server-evaluated, so the SPA refetches instead of mirroring the
+  MOTHER rule. Deferring to the end of a burst (no running or queued cycle) avoids a refetch per
+  save. A refetch already in flight when a new save starts can land after that save's own cache
+  update; the save then triggers its own refetch, so the cache converges on the server state. A
+  refetch never rebuilds the form state, so unsaved and in-flight edits survive and no save is
+  triggered by it.
 
 ## Deviations from PROMPT.md
 
@@ -1580,6 +1625,10 @@ cleaned the same day (only the admin account and the fee schedule remain). Next:
 list on the clean dev — sign up as a new doctor, a tier-0 member (600 / 1325 EGP), a university son
 at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides,
 submit, then admin review and approval. Answer Q-B23–Q-B25 and Q-T21.
+
+**Local branch `fix/mother-certificate-refresh`** (Session 16, D166) is committed, not pushed: the
+member birth certificate now appears / disappears with the mother without a reload. Push and PR on
+confirmation (it sits on top of PR #8's docs commit).
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve, print. Enable Arabic
