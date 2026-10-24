@@ -1366,7 +1366,8 @@ branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
   three times on ECR Public's anonymous quota (`429 toomanyrequests: Data limit exceeded`), after
   Docker Hub's limit had blocked PR #2. `mirror.gcr.io/library/python:3.12-slim` serves the same
   digest (`sha256:a0f57064…`, compared against Docker Hub and ECR Public), so only the transport
-  changed. The compose / CI PostgreSQL image stays on ECR Public (its pulls succeeded).
+  changed. The CI and compose PostgreSQL images (`postgres:16`, `postgres:16-alpine`) moved to the
+  mirror too after the next run hit the same quota (digests compared the same way).
 
 ## Deviations from PROMPT.md
 

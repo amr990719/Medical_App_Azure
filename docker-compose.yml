@@ -7,7 +7,7 @@ name: medical-syndicates
 
 services:
   postgres:
-    image: public.ecr.aws/docker/library/postgres:16-alpine
+    image: mirror.gcr.io/library/postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-medical}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medical}
