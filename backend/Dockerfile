@@ -7,8 +7,10 @@
 #
 #   docker build --target runtime -t medical-backend backend/
 
-# Docker Official Image through Amazon ECR Public: same image, no Docker Hub anonymous-pull limit.
-FROM public.ecr.aws/docker/library/python:3.12-slim AS base
+# Docker Official Image through Google's Docker Hub mirror (same digest as Docker Hub and ECR
+# Public). Docker Hub's anonymous pull limit (PR #2) and ECR Public's anonymous data limit
+# (PR #7, "toomanyrequests: Data limit exceeded") both blocked the GitHub-hosted runners.
+FROM mirror.gcr.io/library/python:3.12-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

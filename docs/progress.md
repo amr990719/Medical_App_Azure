@@ -1362,6 +1362,11 @@ branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
 - **D164 — Seeding never recreates v1:** `seed_dev_data` creates FY 2026 only when no version is
   active, as `max(latest + 1, 2)`, with the `FY2026_V2` amounts of `fees.0004` filtered to the
   model's current fields.
+- **D165 — Python base image through `mirror.gcr.io` (2026-10-24):** PR #7's image build failed
+  three times on ECR Public's anonymous quota (`429 toomanyrequests: Data limit exceeded`), after
+  Docker Hub's limit had blocked PR #2. `mirror.gcr.io/library/python:3.12-slim` serves the same
+  digest (`sha256:a0f57064…`, compared against Docker Hub and ECR Public), so only the transport
+  changed. The compose / CI PostgreSQL image stays on ECR Public (its pulls succeeded).
 
 ## Deviations from PROMPT.md
 
