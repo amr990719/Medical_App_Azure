@@ -15,6 +15,7 @@ import {
   apiReferenceData,
   draftHandlers,
   type ApiApplication,
+  type ApiProfile,
 } from "@/test/fixtures";
 import { createTestQueryClient } from "@/test/render";
 import { server } from "@/test/server";
@@ -206,16 +207,21 @@ describe("useApplicationDraft", () => {
     expect(result.current.state?.beneficiaries[1]?.id).toBe("b-new");
   });
 
-  it("refetches the application once after a beneficiary save, never after a member-only save", async () => {
+  it("refetches the application after a beneficiary save or a stored gender change, never after other member saves", async () => {
     const { result, queryClient } = setup();
     await ready(result);
+    let stored = apiProfile();
     let applicationGets = 0;
     server.use(
       http.get(`${API}/applications/${APP_ID}/`, () => {
         applicationGets += 1;
         return HttpResponse.json(apiApplication());
       }),
-      http.patch(`${API}/profile/`, () => HttpResponse.json(apiProfile({ full_name: "أحمد محمد" }))),
+      // Stateful: the response carries what the server stored (the gender drives children's slots).
+      http.patch(`${API}/profile/`, async ({ request }) => {
+        stored = { ...stored, ...((await request.json()) as Partial<ApiProfile>) };
+        return HttpResponse.json(stored);
+      }),
       http.post(`${API}/applications/${APP_ID}/beneficiaries/`, () =>
         HttpResponse.json(apiBeneficiary({ id: "b-new", row_number: 2, kinship: "MOTHER", full_name: "فاطمة" }), {
           status: 201,
@@ -237,13 +243,16 @@ describe("useApplicationDraft", () => {
     expect(invalidated(validationKey)).toBe(true);
     expect(applicationGets).toBe(0);
 
+    act(() => result.current.updateField("gender", "FEMALE"));
+    await waitFor(() => expect(applicationGets).toBe(1));
+
     seedDerived();
     act(() => result.current.updateBeneficiaryBatch(1, { kinship: "MOTHER", name: "فاطمة" }));
-    await waitFor(() => expect(applicationGets).toBe(1));
+    await waitFor(() => expect(applicationGets).toBe(2));
     expect(invalidated(feesKey)).toBe(true);
     expect(invalidated(validationKey)).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(applicationGets).toBe(1); // no loop: the refetch does not cause another save
+    expect(applicationGets).toBe(2); // no loop: the refetch does not cause another save
     expect(result.current.isDirty).toBe(false);
   });
 

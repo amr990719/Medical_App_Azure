@@ -336,6 +336,7 @@ export class DraftController {
       else this.markStale(stale);
     };
 
+    // A gender change also marks the application itself stale (see saveMember).
     if (profileFields.length) note(await this.saveMember(sent, profileFields, "profile"), "derived");
     if (applicationFields.length) note(await this.saveMember(sent, applicationFields, "application"), "derived");
     // A beneficiary change can change the application's own member slots (D154).
@@ -365,8 +366,12 @@ export class DraftController {
   ): Promise<Failure | null> {
     const send = async (subset: MemberField[]) => {
       if (target === "profile") {
+        const before = this.queryClient.getQueryData<DoctorProfile>(queryKeys.profile);
         const profile = await updateProfile(profilePatch(sent, subset));
         this.queryClient.setQueryData<DoctorProfile>(queryKeys.profile, profile);
+        // Children's slots follow the member's gender AS STORED (typed, or derived from the
+        // national ID by the server): refresh the rows' requirements when it changed.
+        if (before?.gender !== profile.gender) this.markStale("application");
       } else {
         const app = await updateApplication(this.applicationId, applicationPatch(sent, subset));
         this.queryClient.setQueryData<Application>(queryKeys.applications.detail(this.applicationId), app);
