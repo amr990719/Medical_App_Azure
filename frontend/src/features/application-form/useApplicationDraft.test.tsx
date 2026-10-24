@@ -15,6 +15,7 @@ import {
   apiReferenceData,
   draftHandlers,
   type ApiApplication,
+  type ApiProfile,
 } from "@/test/fixtures";
 import { createTestQueryClient } from "@/test/render";
 import { server } from "@/test/server";
@@ -137,17 +138,20 @@ describe("useApplicationDraft", () => {
   });
 
   it("autosaves the first-time answer alone and reloads it", async () => {
-    const wife = apiBeneficiary({ is_first_time: null });
+    let wife = apiBeneficiary({ is_first_time: null });
     const bodies: unknown[] = [];
+    const { result } = setup(apiApplication({ beneficiaries: [wife] }));
+    await ready(result);
     server.use(
+      // The application refetched after the save reflects what was stored, like the server.
+      http.get(`${API}/applications/${APP_ID}/`, () => HttpResponse.json(apiApplication({ beneficiaries: [wife] }))),
       http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-wife/`, async ({ request }) => {
         const body = (await request.json()) as { is_first_time: boolean | null };
         bodies.push(body);
-        return HttpResponse.json(apiBeneficiary({ is_first_time: body.is_first_time }));
+        wife = apiBeneficiary({ is_first_time: body.is_first_time });
+        return HttpResponse.json(wife);
       }),
     );
-    const { result } = setup(apiApplication({ beneficiaries: [wife] }));
-    await ready(result);
     expect(result.current.state?.beneficiaries[0]?.isFirstTime).toBe("");
 
     act(() => result.current.updateBeneficiary(0, "isFirstTime", "yes"));
@@ -201,6 +205,55 @@ describe("useApplicationDraft", () => {
     await waitFor(() => expect(result.current.saveStatus).toBe("saved"));
     expect(posts).toEqual([{ row_number: 2, kinship: "WIFE" }]);
     expect(result.current.state?.beneficiaries[1]?.id).toBe("b-new");
+  });
+
+  it("refetches the application after a beneficiary save or a stored gender change, never after other member saves", async () => {
+    const { result, queryClient } = setup();
+    await ready(result);
+    let stored = apiProfile();
+    let applicationGets = 0;
+    server.use(
+      http.get(`${API}/applications/${APP_ID}/`, () => {
+        applicationGets += 1;
+        return HttpResponse.json(apiApplication());
+      }),
+      // Stateful: the response carries what the server stored (the gender drives children's slots).
+      http.patch(`${API}/profile/`, async ({ request }) => {
+        stored = { ...stored, ...((await request.json()) as Partial<ApiProfile>) };
+        return HttpResponse.json(stored);
+      }),
+      http.post(`${API}/applications/${APP_ID}/beneficiaries/`, () =>
+        HttpResponse.json(apiBeneficiary({ id: "b-new", row_number: 2, kinship: "MOTHER", full_name: "فاطمة" }), {
+          status: 201,
+        }),
+      ),
+    );
+    const feesKey = queryKeys.applications.fees(APP_ID);
+    const validationKey = queryKeys.applications.validation(APP_ID);
+    const seedDerived = () => {
+      queryClient.setQueryData(feesKey, {});
+      queryClient.setQueryData(validationKey, {});
+    };
+    const invalidated = (key: readonly unknown[]) => queryClient.getQueryState(key)?.isInvalidated;
+
+    seedDerived();
+    act(() => result.current.updateField("memberName", "أحمد محمد"));
+    await waitFor(() => expect(result.current.saveStatus).toBe("saved"));
+    await waitFor(() => expect(invalidated(feesKey)).toBe(true));
+    expect(invalidated(validationKey)).toBe(true);
+    expect(applicationGets).toBe(0);
+
+    act(() => result.current.updateField("gender", "FEMALE"));
+    await waitFor(() => expect(applicationGets).toBe(1));
+
+    seedDerived();
+    act(() => result.current.updateBeneficiaryBatch(1, { kinship: "MOTHER", name: "فاطمة" }));
+    await waitFor(() => expect(applicationGets).toBe(2));
+    expect(invalidated(feesKey)).toBe(true);
+    expect(invalidated(validationKey)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(applicationGets).toBe(2); // no loop: the refetch does not cause another save
+    expect(result.current.isDirty).toBe(false);
   });
 
   it("asks before deleting a cleared row and deletes it after confirmation", async () => {

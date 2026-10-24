@@ -916,6 +916,105 @@ branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
     removed), `rtl:check` 0 errors, `build` OK; Playwright **11 passed, 5 skipped**.
   **NOT VERIFIED — requires Azure credentials:** the migrate job on dev (D163 pre-deploy query).
 
+### Session 15 (cont.) — 2026-10-24 — Deployed to dev; dev data cleaned
+
+- **Pre-deploy check (D163)** as a one-off migrate-job execution on the old image `f13846d`
+  (`caj-medsyn-dev-migrate-naqfoio`, read-only SQL): dev held only FY 2026 v1 (active, locked,
+  3 applications), no other schedule, `fees` at 0002 → 0005 could not refuse.
+- **CI registry limits (D165):** PR #7's image build failed three times and the backend test job
+  once on ECR Public's anonymous quota (`429 toomanyrequests: Data limit exceeded`); the Python and
+  PostgreSQL images now come from `mirror.gcr.io` (digests identical to Docker Hub / ECR Public).
+- **Dev data cleanup (owner request, 2026-10-24):** everything except the admin account and the fee
+  schedule removed in one transaction (execution `caj-medsyn-dev-migrate-09yzki9`, old image):
+  6 applications, 17 beneficiaries, 44 document rows, 1 admin note, 6 doctor profiles, 6 doctor
+  users and — by explicit owner choice, because `AuditLog.user` is PROTECT and the table is
+  append-only — the 146 audit entries (`TRUNCATE`; the row-level append-only trigger stays
+  enabled). Afterwards the 38 remaining blobs under `applications/` were deleted (6 were already
+  purged). `ReferenceCounter` kept (FY 2026 at 3: numbers are never reused, the next is
+  `MED-2026-000004`). Recoverable for 7 days: PostgreSQL PITR to before 2026-10-24T09:03Z, blob
+  soft delete + versioning.
+- **Deploy:** PR #7 merged (`010cbb8`); `backend` run `40080757250` and `frontend` run
+  `40080757216` succeeded (staging/prod skipped). Revision `ca-medsyn-dev-api--g010cbb8e0818-1`
+  Healthy with 100 % traffic, migrate job on the same image; `/api/ready/` and the SPA 200 through
+  the SWA host. Post-check (execution `caj-medsyn-dev-migrate-ivc2bt3`): `beneficiaries.0002`,
+  `documents.0003`, `fees.0003`–`0006` applied; only FY 2026 v2 (active, 200 + 175), legacy
+  admin-fee columns gone; quotes on the dev schedule 600 / 1,325 / 3,080, tier-0 university son
+  invalid; one user (ADMIN), no applications.
+- **Not yet done on dev:** the owner smoke list (sign-up as a new doctor, tier-0 quote, mother
+  certificate, first-time child 2 vs 3, both ID sides, submit, admin review).
+
+### Session 16 — 2026-10-24 — Fix: the member birth certificate follows the mother without a reload
+
+Local only (branch `fix/mother-certificate-refresh`, on top of the docs branch of PR #8); nothing
+pushed, merged or deployed.
+
+- **Bug:** adding an active MOTHER made the server require the member's own birth certificate
+  (`member_required_documents`, D154), but the SPA kept the cached application detail: after a
+  beneficiary save the controller only patched that row into the cache and refreshed fees and
+  validation. The checklist and the mother's DocumentModal (both read
+  `application.memberRequiredDocuments`) showed the slot only after a reload or an unrelated upload
+  (`documentsChanged` invalidates the detail); removing / changing the mother left it stale too.
+- **Fix (`draftController.ts`, D166):** a cycle that saved a beneficiary, and a confirmed deletion,
+  mark the application detail stale; other saves mark only fees + validation. Stale data is
+  refreshed once the save engine is idle (no cycle running or queued) — one prefix invalidation of
+  `["applications", "detail", id]` refreshes the detail, the fee quote and the validation. The rule
+  stays on the server; the SPA shows whatever slots the refetched detail lists (required with an
+  active mother, optional while an uploaded certificate remains, absent otherwise).
+- **Tests:** `memberRequirementsRefresh.test.tsx` drives BeneficiaryTable + DocumentsChecklist +
+  the fee / validation hooks through the real autosave path against a stateful fake backend: no
+  mother → active mother (checklist and her dialog, fees + validation refetched), kinship change,
+  cleared name, deletion without and with an uploaded certificate (kept, optional, never deleted),
+  another active mother remaining, and unsaved + in-flight edits surviving a held refetch with no
+  request after settling. 6 of the 7 fail without the fix (the "another mother" case passes either
+  way by construction). A hook test pins the request economy: one application refetch per
+  beneficiary save, none for a member-only save. Two existing tests had static GET handlers that
+  contradicted their own PATCH (first-time answer, kinship change clearing documents); they now
+  serve the stored state, as the server does.
+- **Verification:** `vitest` **330 passed** (twice), `lint`, `typecheck`, `rtl:check` 0 errors,
+  `build` OK. Real browser against the compose stack (temporary Playwright spec, deleted): adding a
+  mother shows «شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم» as «غير مرفق» in the checklist
+  and in her dialog, clearing her name removes it, restoring the name brings it back, changing her
+  kinship removes it — no navigation and no document upload during the run; the fee summary updated
+  in the same refresh. The same spec fails without the fix.
+- Not changed: fees, migrations, document ownership, backend rules. Noted, not fixed (outside the
+  scope): a member gender change also changes the children's slots on the server, but member
+  saves still refresh only fees and validation, so those rows update on the next beneficiary save,
+  upload or reload. **Resolved in Session 17 (D167).**
+
+### Session 17 — 2026-10-24 — Fix: children's document slots follow the member's gender
+
+Same local branch `fix/mother-certificate-refresh`; nothing pushed, merged or deployed.
+
+- **Bug:** a female member's children need their birth certificate at any age, so every child's
+  `required_documents` depends on the member's gender — stored on the profile, typed or derived
+  from the national ID by `doctors/services.py::update_profile`. A profile save refreshed only fees
+  and validation; after correcting the gender to female, validation required the certificate while
+  the checklist and the child's DocumentModal did not offer it until a reload, a beneficiary save
+  or an upload.
+- **Fix (`draftController.ts`, D167):** after each successful profile PATCH (including the
+  re-send of the accepted fields after a 4xx), the gender in the response is compared with the
+  cached profile from before the save; when it changed, the application detail is marked stale and
+  refreshed by the existing deferred mechanism (D166) — detail, fee quote and validation in one
+  prefix invalidation, once the saves are idle. Other profile edits still refresh only fees and
+  validation. No gender / age rule in the SPA.
+- **Tests** (stateful fake backend; profile PATCH derives the gender from the national ID and
+  refuses a contradicting gender or an invalid mobile like the server; children's slots follow the
+  server's rule): male → female with all four child kinships aged ≥ 16 (birth certificate appears
+  in each checklist group and the dialog, the graduate's paperclip turns from complete to missing,
+  fees + validation refetched, an address typed and a new row typed during a held refetch survive,
+  no request after settling); female → male (the 21-year-old's certificate slot goes and both ID
+  sides are required, the 10- and 5-year-olds keep it, the uploaded certificate stays on the server
+  and in the refetched detail, no DELETE); a national ID alone (`{national_id}` sent) whose stored
+  gender is female; a partial save (mobile refused, ID re-sent and stored); an address edit
+  refetches fees and validation but not the application. The hook test now pins 0 / 1 / 1
+  application refetches for a name edit, a gender change and a beneficiary save. The 4 gender
+  tests fail without the change; the 7 mother tests still pass.
+- **Verification:** `vitest` **335 passed** (three full runs), `lint`, `typecheck`, `rtl:check`
+  0 errors, `build` OK.
+- **Observation (Q-B26):** after female → male, the server no longer lists an older child's birth
+  certificate at all, so an uploaded one is kept (server, admin "extra" documents) but no longer
+  shown in the doctor's checklist or dialog. Unchanged here (rules table not touched).
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1368,6 +1467,19 @@ branch `feat/beneficiary-docs-tier0-fees`; nothing pushed or deployed.
   digest (`sha256:a0f57064…`, compared against Docker Hub and ECR Public), so only the transport
   changed. The CI and compose PostgreSQL images (`postgres:16`, `postgres:16-alpine`) moved to the
   mirror too after the next run hit the same quota (digests compared the same way).
+- **D166 — Beneficiary saves refresh the application detail, once, when the saves are idle:**
+  rows' and the member's slots are server-evaluated, so the SPA refetches instead of mirroring the
+  MOTHER rule. Deferring to the end of a burst (no running or queued cycle) avoids a refetch per
+  save. A refetch already in flight when a new save starts can land after that save's own cache
+  update; the save then triggers its own refetch, so the cache converges on the server state. A
+  refetch never rebuilds the form state, so unsaved and in-flight edits survive and no save is
+  triggered by it.
+- **D167 — A profile save refreshes the rows' slots only when the stored gender changed:** the
+  gender is the only profile value the document rules read (children's birth certificate), and the
+  server may derive it from the national ID, so the decision uses the PATCH response, not the
+  fields sent: explicit gender, an ID-derived change and a partial save are all covered, and
+  ordinary profile edits cause no application refetch. Without a cached profile the refresh
+  happens (safe default).
 
 ## Deviations from PROMPT.md
 
@@ -1544,20 +1656,25 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T21** Deploy window (D158, widened by D163): between the migrate job and the new revision the
   old revision fails closed on every fee-schedule read (quotes, submission, admin fee schedules).
   Acceptable, or should the rollout be gated (maintenance banner)?
+- **Q-B26** After a female → male correction, an older child's uploaded birth certificate is no
+  longer listed by the server (the rule omits the slot instead of offering it as optional), so the
+  doctor no longer sees it, although it is kept and the admin sees it as an extra document. Should
+  the rules table offer it as optional while an upload exists (as for the member's birth
+  certificate, D154)? (Default: unchanged.)
 
 ## Next session starts with
 
-**Local branch `feat/beneficiary-docs-tier0-fees`** (Sessions 14–15: owner rule changes, then FY
-2026 v1 removed) is committed, not pushed: owner review, then push / PR on confirmation. Before the
-deploy, run the read-only D163 query on dev (expect no rows). On deploy, the migrate job applies
-`beneficiaries.0002`, `documents.0003`, `fees.0003`–`fees.0006`; afterwards confirm in dev that FY
-2026 v2 is the only schedule (admin → جداول الرسوم), that applications submitted under v1 still show
-their original fees, and run the smoke list with: a tier-0 member (600 / 1325 EGP), a university son
-at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides.
-Answer Q-B23–Q-B25 and Q-T21.
+**dev runs `010cbb8`** (PR #7: Sessions 14–15 rule changes, FY 2026 v2 only), deployed and
+verified on 2026-10-24: https://victorious-meadow-0e5775b00.4.azurestaticapps.net. Dev data was
+cleaned the same day (only the admin account and the fee schedule remain). Next: the owner smoke
+list on the clean dev — sign up as a new doctor, a tier-0 member (600 / 1325 EGP), a university son
+at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides,
+submit, then admin review and approval. Answer Q-B23–Q-B25 and Q-T21.
 
-**dev runs `f23b710`** (PR #4: `revoke_admin`, `/profile`, owner decisions D150), verified in Azure
-on 2026-10-11, App Insights included: https://victorious-meadow-0e5775b00.4.azurestaticapps.net.
+**Local branch `fix/mother-certificate-refresh`** (Sessions 16–17, D166–D167) is committed, not
+pushed: the member birth certificate follows the mother, and the children's slots follow the
+member's stored gender, without a reload. Answer Q-B26. Push and PR on
+confirmation (it sits on top of PR #8's docs commit).
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve, print. Enable Arabic

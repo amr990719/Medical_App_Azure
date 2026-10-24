@@ -115,6 +115,8 @@ export class DraftController {
   private running: Promise<void> | null = null;
   private rerun = false;
   private attempt = 0;
+  /** Server-derived data made stale by a save, refreshed once the save engine is idle. */
+  private stale: "none" | "derived" | "application" = "none";
 
   constructor(
     private readonly queryClient: QueryClient,
@@ -267,7 +269,8 @@ export class DraftController {
     this.queryClient.setQueryData<Application>(queryKeys.applications.detail(this.applicationId), (old) =>
       old ? { ...old, beneficiaries: old.beneficiaries.filter((b) => b.id !== id) } : old,
     );
-    this.invalidateDerived();
+    this.markStale("application");
+    this.refreshStale();
   };
 
   // ---- saving --------------------------------------------------------------------------------
@@ -306,6 +309,8 @@ export class DraftController {
       if (this.rerun) {
         this.rerun = false;
         void this.run();
+      } else {
+        this.refreshStale();
       }
     });
     return this.running;
@@ -326,17 +331,17 @@ export class DraftController {
 
     this.set({ saveStatus: "saving" });
     const failures: Failure[] = [];
-    let anySaved = false;
-    const note = (result: Failure | null) => {
+    const note = (result: Failure | null, stale: "derived" | "application") => {
       if (result) failures.push(result);
-      else anySaved = true;
+      else this.markStale(stale);
     };
 
-    if (profileFields.length) note(await this.saveMember(sent, profileFields, "profile"));
-    if (applicationFields.length) note(await this.saveMember(sent, applicationFields, "application"));
-    for (const { row, index, fields } of rows) note(await this.saveRow(row, index, fields));
+    // A gender change also marks the application itself stale (see saveMember).
+    if (profileFields.length) note(await this.saveMember(sent, profileFields, "profile"), "derived");
+    if (applicationFields.length) note(await this.saveMember(sent, applicationFields, "application"), "derived");
+    // A beneficiary change can change the application's own member slots (D154).
+    for (const { row, index, fields } of rows) note(await this.saveRow(row, index, fields), "application");
 
-    if (anySaved) this.invalidateDerived();
     if (failures.some((f) => f.retry) && this.attempt < this.retryDelays.length) {
       const delay = this.retryDelays[this.attempt] ?? 0;
       this.attempt += 1;
@@ -361,8 +366,12 @@ export class DraftController {
   ): Promise<Failure | null> {
     const send = async (subset: MemberField[]) => {
       if (target === "profile") {
+        const before = this.queryClient.getQueryData<DoctorProfile>(queryKeys.profile);
         const profile = await updateProfile(profilePatch(sent, subset));
         this.queryClient.setQueryData<DoctorProfile>(queryKeys.profile, profile);
+        // Children's slots follow the member's gender AS STORED (typed, or derived from the
+        // national ID by the server): refresh the rows' requirements when it changed.
+        if (before?.gender !== profile.gender) this.markStale("application");
       } else {
         const app = await updateApplication(this.applicationId, applicationPatch(sent, subset));
         this.queryClient.setQueryData<Application>(queryKeys.applications.detail(this.applicationId), app);
@@ -448,8 +457,27 @@ export class DraftController {
     });
   }
 
-  /** The fee quote and validation depend on what was just saved (§10.3). */
-  private invalidateDerived() {
+  private markStale(kind: "derived" | "application") {
+    if (kind === "application" || this.stale === "none") this.stale = kind;
+  }
+
+  /**
+   * The fee quote and validation depend on what was just saved (§10.3); after a beneficiary
+   * change so does the application itself — the server re-evaluates its member slots (the
+   * member's own birth certificate while an active MOTHER is listed, D154) and each row's slots.
+   * Deferred while a save is running or queued, so a burst of saves causes one refetch that
+   * already includes them. A refetch never touches the form state (`initialize` builds it once),
+   * so unsaved and in-flight edits survive it.
+   */
+  private refreshStale() {
+    if (this.running || this.stale === "none") return;
+    const kind = this.stale;
+    this.stale = "none";
+    if (kind === "application") {
+      // The detail key prefixes the fees and validation keys: one call refreshes all three.
+      void this.queryClient.invalidateQueries({ queryKey: queryKeys.applications.detail(this.applicationId) });
+      return;
+    }
     void this.queryClient.invalidateQueries({ queryKey: queryKeys.applications.fees(this.applicationId) });
     void this.queryClient.invalidateQueries({ queryKey: queryKeys.applications.validation(this.applicationId) });
   }

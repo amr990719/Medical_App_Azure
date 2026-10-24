@@ -19,7 +19,7 @@ logs: `docs/progress.md` Sessions 11–13. **staging and prod have never been de
 | §4 Key Vault secrets + Container Apps Key Vault references | verified | `django-secret-key` and `entra-client-secret` set; the app starts and completes the Entra code exchange with them |
 | §5 Entra app registration | verified | `create-entra-app.ps1`; real sign-in through the SWA host (Session 12) |
 | §6 PostgreSQL Entra admin + managed-identity role | verified | `/api/ready/` → `{"status": "ok", "database": "ok"}` through the SWA host (re-checked 2026-10-11) |
-| Migrate job | verified | executions Succeeded on every deploy (latest `caj-medsyn-dev-migrate-e8f7icb` applied `audit.0003`, read from `ContainerAppConsoleLogs_CL`); `grant_admin` run as a job execution |
+| Migrate job | verified | executions Succeeded on every deploy (latest deploy 2026-10-24, image `010cbb8`, applied `beneficiaries.0002`, `documents.0003`, `fees.0003`–`0006`; read back with a one-off execution); `grant_admin` run as a job execution |
 | SWA linked backend, same-origin `/api` | verified | `/api/health/`, `/api/ready/` 200 and the §46 401 envelope via the SWA host; the Container App FQDN answers 401 (SWA auth on the link) |
 | GitHub OIDC deploy identity, AcrPush, SWA token read | verified | `backend`, `infrastructure`, `frontend` deploy-dev jobs succeeded (runs `37990842638`, `37990842692`, `37988694152`) |
 | Blob upload + user-delegation SAS | **NOT VERIFIED** | needs a signed-in doctor (owner's Entra account) |

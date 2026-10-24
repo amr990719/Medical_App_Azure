@@ -84,15 +84,17 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
 
   it("asks before changing the kinship of a row with documents, and clears them after confirming", async () => {
     const bodies: unknown[] = [];
+    let stored = apiBeneficiary({ documents: wifeDocs });
+    const { user } = await renderInForm(<BeneficiaryTable />, { app: apiApplication({ beneficiaries: [stored] }) });
     server.use(
+      // The server removes the row's documents with the kinship change; its refetch shows that.
+      http.get(`${API}/applications/${APP_ID}/`, () => HttpResponse.json(apiApplication({ beneficiaries: [stored] }))),
       http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-wife/`, async ({ request }) => {
         bodies.push(await request.json());
-        return HttpResponse.json(apiBeneficiary({ kinship: "MOTHER", documents: [] }));
+        stored = apiBeneficiary({ kinship: "MOTHER", required_documents: MOTHER_REQUIREMENTS, documents: [] });
+        return HttpResponse.json(stored);
       }),
     );
-    const { user } = await renderInForm(<BeneficiaryTable />, {
-      app: apiApplication({ beneficiaries: [apiBeneficiary({ documents: wifeDocs })] }),
-    });
     const select = screen.getByRole("combobox", { name: "درجة القرابة — المستفيد رقم 1" });
 
     await user.selectOptions(select, "MOTHER");
@@ -107,6 +109,8 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     expect(select).toHaveValue("MOTHER");
     expect(screen.getByRole("button", { name: /مستندات المستفيد رقم 1/ })).toHaveAttribute("data-state", "missing");
     await waitFor(() => expect(bodies).toEqual([{ kinship: "MOTHER" }]));
+    // Still grey once the application was refetched after the save.
+    await waitFor(() => expect(screen.getByRole("button", { name: /مستندات المستفيد رقم 1/ })).toHaveAttribute("data-state", "missing"));
   });
 
   it("changes the kinship of a row without documents immediately", async () => {
