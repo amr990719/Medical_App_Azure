@@ -17,10 +17,30 @@ describe("ValidationErrorPanel", () => {
     for (const { message } of ERRORS) expect(panel).toHaveTextContent(message);
   });
 
-  it("scrolls itself into view on mount", () => {
-    const spy = vi.spyOn(Element.prototype, "scrollIntoView");
-    render(<ValidationErrorPanel errors={ERRORS} />);
-    expect(spy).toHaveBeenCalled();
+  it("scrolls into view once per failed attempt, never on re-renders or new errors", () => {
+    const spy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const { rerender } = render(<ValidationErrorPanel errors={ERRORS} />);
+    expect(spy).not.toHaveBeenCalled(); // shown without an attempt: no scroll
+
+    rerender(<ValidationErrorPanel errors={ERRORS} scrollKey={1} />);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+
+    rerender(<ValidationErrorPanel errors={[...ERRORS]} scrollKey={1} />);
+    rerender(<ValidationErrorPanel errors={ERRORS.slice(1)} scrollKey={1} />);
+    expect(spy).toHaveBeenCalledTimes(1); // the list changed while correcting: no scroll
+
+    rerender(<ValidationErrorPanel errors={ERRORS.slice(1)} scrollKey={2} />);
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
+  it("never moves the keyboard focus", () => {
+    render(<input aria-label="field" />);
+    const field = screen.getByLabelText("field");
+    field.focus();
+    render(<ValidationErrorPanel errors={ERRORS} scrollKey={1} />);
+    expect(field).toHaveFocus();
   });
 
   it("renders nothing without errors", () => {

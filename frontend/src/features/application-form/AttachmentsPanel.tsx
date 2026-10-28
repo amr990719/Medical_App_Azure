@@ -24,7 +24,6 @@ export function AttachmentsPanel() {
       <h2 id={titleId} className="font-extrabold text-charcoal">
         {ar.form.attachments.title}
       </h2>
-      <p className="mt-1 text-sm text-slate">{ar.form.attachments.hint}</p>
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
         {slots.map((slot) => (
           <div key={slot.type} className="flex min-w-0 flex-col">

@@ -10,20 +10,23 @@ export interface PanelError {
 
 export interface ValidationErrorPanelProps {
   errors: readonly PanelError[];
+  /**
+   * A new value per explicit submit/continue attempt that failed. The panel scrolls itself into
+   * view once for each new value, after the errors are rendered. Re-renders, refetched
+   * validation and a changing error list never scroll (nor move the focus).
+   */
+  scrollKey?: number;
   className?: string;
 }
 
-/**
- * Every server validation error at once (PROMPT.md §9.1, §22), above the form card.
- * Scrolls itself into view whenever a new set of errors arrives.
- */
-export function ValidationErrorPanel({ errors, className }: ValidationErrorPanelProps) {
+/** Every server validation error at once (PROMPT.md §9.1, §22), above the form card. */
+export function ValidationErrorPanel({ errors, scrollKey, className }: ValidationErrorPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
   const hasErrors = errors.length > 0;
 
   useEffect(() => {
-    if (hasErrors) ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [errors, hasErrors]);
+    if (scrollKey) ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [scrollKey]);
 
   if (!hasErrors) return null;
 

@@ -80,7 +80,7 @@ export function ReviewPage() {
   const resubmission = app.status === "NEEDS_CORRECTION";
 
   return (
-    <WizardFrame applicationId={id} fiscalYear={app.fiscalYear} step={5} completed={completed}>
+    <WizardFrame fiscalYear={app.fiscalYear} step={5} completed={completed}>
       <div className="mx-auto max-w-[900px] space-y-5 px-3 pb-36 pt-5 sm:px-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-extrabold text-charcoal">{R.title}</h1>
@@ -101,7 +101,8 @@ export function ReviewPage() {
             {R.checking}
           </p>
         ) : null}
-        <ValidationErrorPanel errors={panel} />
+        {/* Scrolls only after a refused submission (each attempt has its own submittedAt). */}
+        <ValidationErrorPanel errors={panel} scrollKey={submit.isError ? submit.submittedAt : undefined} />
         {panel.length > 0 ? (
           <Link to={`/application/${id}/form`} className={buttonClasses("outline")}>
             {R.goFix}

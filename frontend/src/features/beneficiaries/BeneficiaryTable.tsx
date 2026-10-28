@@ -40,6 +40,9 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
   // Like the name: a select clips a long label (ابن/ابنة (18 سنة أو أقل)) on paper, so print a
   // wrapping copy of the label instead.
   const kinshipLabel = reference?.kinships.find((k) => k.value === row.kinship)?.label ?? "";
+  // Retired kinships (DAUGHTER) are not offered, except as the row's stored value, so an older
+  // application shows it and never clears it silently.
+  const kinshipOptions = reference?.kinships.filter((k) => k.selectable || k.value === row.kinship) ?? [];
   const kinship = (
     <>
       <select
@@ -51,7 +54,7 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
         className={cx(cellInput, "cursor-pointer disabled:cursor-default print:hidden", row.kinship === "" && "text-muted")}
       >
         <option value="">{B.kinshipPlaceholder}</option>
-        {reference?.kinships.map((k) => (
+        {kinshipOptions.map((k) => (
           <option key={k.value} value={k.value} className="text-charcoal">
             {k.label}
           </option>
@@ -281,7 +284,10 @@ export function BeneficiaryTable({ layout = "auto" }: { layout?: "auto" | "table
   const conditional = reference?.documentRules.memberConditional ?? {};
   const modalMemberSlots = modalBeneficiary
     ? memberRequirementsOf(application).filter(
-        (slot) => conditional[slot.type]?.requiredWithKinship === modalBeneficiary.kinship,
+        (slot) => {
+          const kinship = conditional[slot.type]?.requiredWithKinship;
+          return kinship !== undefined && kinship === modalBeneficiary.kinship;
+        },
       )
     : [];
   const deletionName =

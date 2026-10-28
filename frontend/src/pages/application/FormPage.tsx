@@ -31,6 +31,8 @@ function FormScreen({ applicationId }: { applicationId: string }) {
   const freshValidation = useFreshValidation(applicationId);
   const fees = useFeeQuote(applicationId);
   const [showValidation, setShowValidation] = useState(false);
+  // One per failed "continue": the error summary scrolls into view only then (never on edits).
+  const [failedAttempt, setFailedAttempt] = useState(0);
   const [checking, setChecking] = useState(false);
   const [blocker, setBlocker] = useState<string | null>(null);
 
@@ -65,22 +67,18 @@ function FormScreen({ applicationId }: { applicationId: string }) {
       }
       if (!saved) setBlocker(ar.form.saveFailed);
       setShowValidation(true);
+      setFailedAttempt((n) => n + 1);
     } catch (error) {
       setBlocker(error instanceof Error ? error.message : ar.errors.unexpected);
       setShowValidation(true);
+      setFailedAttempt((n) => n + 1);
     } finally {
       setChecking(false);
     }
   };
 
-  const goPrint = async () => {
-    await draft.flush();
-    navigate(`/application/${applicationId}/print`);
-  };
-
   return (
     <WizardFrame
-      applicationId={applicationId}
       fiscalYear={app.fiscalYear}
       step={step}
       completed={completed}
@@ -106,7 +104,7 @@ function FormScreen({ applicationId }: { applicationId: string }) {
             </div>
           ) : null}
 
-          <ValidationErrorPanel errors={panelErrors} />
+          <ValidationErrorPanel errors={panelErrors} scrollKey={failedAttempt} />
           <PaperForm mode="edit" />
           <DocumentsChecklist />
           <FeeSummaryPanel
@@ -134,18 +132,12 @@ function FormScreen({ applicationId }: { applicationId: string }) {
           </Button>
         }
         end={
-          <>
-            <Button variant="outline" onClick={() => void goPrint()}>
-              <Icon name="print" className="size-4" />
-              {ar.actions.print}
+          !draft.readOnly ? (
+            <Button onClick={() => void onContinue()} disabled={checking} aria-busy={checking || undefined}>
+              {checking ? ar.form.validating : ar.actions.continueToReceipt}
+              <Icon name="arrow" mirror className="size-4" />
             </Button>
-            {!draft.readOnly ? (
-              <Button onClick={() => void onContinue()} disabled={checking} aria-busy={checking || undefined}>
-                {checking ? ar.form.validating : ar.actions.continueToReceipt}
-                <Icon name="arrow" mirror className="size-4" />
-              </Button>
-            ) : null}
-          </>
+          ) : null
         }
       />
     </WizardFrame>

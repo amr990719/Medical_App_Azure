@@ -294,10 +294,12 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     expect(items[1]).toHaveTextContent("تقديم الطلب");
   });
 
-  it("links to the admin print view", async () => {
+  it("offers no application print action (retired)", async () => {
     serve();
     await open();
-    expect(screen.getByRole("link", { name: "طباعة الاستمارة" })).toHaveAttribute("href", `${detailPath}/print`);
+    expect(screen.queryByRole("link", { name: /طباعة/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /طباعة/ })).not.toBeInTheDocument();
+    expect(document.querySelector(`a[href$="/print"]`)).toBeNull();
   });
 });
 

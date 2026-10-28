@@ -47,7 +47,7 @@ test("doctor completes and submits the form on a 390 × 844 phone", async ({ pag
   await expect(page.getByRole("table", { name: "بيانات المستفيدين مع العضو الأصلى" })).toBeHidden();
   await expect(rowField(page, "اسم المستفيد", 1)).toHaveValue("منى سعيد عبد الله");
 
-  // Second card: SON_MINOR (birth certificate required, from the server's rules).
+  // Second card: SON_MINOR (birth certificate optional for a male member; uploaded anyway).
   await rowField(page, "درجة القرابة", 2).selectOption("SON_MINOR");
   await rowField(page, "اسم المستفيد", 2).fill("عمر كريم سامي");
   await rowField(page, "سنة الميلاد", 2).fill("٢٠١٥"); // Eastern Arabic digits on a phone keyboard

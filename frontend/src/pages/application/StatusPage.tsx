@@ -64,7 +64,7 @@ export function StatusPage() {
             </div>
             <dl className="mt-4 grid gap-x-6 gap-y-1 text-sm text-slate sm:grid-cols-2">
               <div>
-                <dt className="inline">{ar.print.submittedAt} </dt>
+                <dt className="inline">{S.submittedAt} </dt>
                 <dd className="inline font-semibold text-charcoal">{formatDate(app.submittedAt)}</dd>
               </div>
               {total !== null ? (
@@ -108,10 +108,6 @@ export function StatusPage() {
                 {S.correct}
               </Link>
             ) : null}
-            <Link to={`/application/${id}/print`} className={buttonClasses("outline", "lg")}>
-              <Icon name="print" className="size-4" />
-              {S.print}
-            </Link>
             <Link to="/dashboard" className={buttonClasses("ghost", "lg")}>
               {S.backToDashboard}
             </Link>

@@ -73,13 +73,23 @@ describe("MemberSection (PROMPT.md §9.4)", () => {
     expect(screen.getByText("سنة الميلاد لا تطابق الرقم القومي")).toBeInTheDocument();
   });
 
-  it("prefills the e-mail from the signed-in account, read-only, left-to-right", async () => {
-    await renderInForm(<MemberSection />, { profile: apiProfile({ email: "doc@x.eg" }) });
-    const group = screen.getByRole("group", { name: "البريد الالكتروني :" });
-    expect(group).toHaveAttribute("dir", "ltr");
-    const boxes = within(group).getAllByRole("textbox");
-    expect(boxes[0]).toHaveValue("d");
-    expect(boxes[0]).toHaveAttribute("readonly");
+  it("shows the account e-mail as read-only LTR text on one dotted line (no character boxes)", async () => {
+    await renderInForm(<MemberSection />, { profile: apiProfile({ email: "doctor.name@example.eg" }) });
+    const email = screen.getByLabelText("البريد الالكتروني :");
+    expect(email).toHaveValue("doctor.name@example.eg");
+    expect(email).toHaveAttribute("readonly");
+    expect(email).toHaveAttribute("dir", "ltr");
+    expect(email).toHaveClass("w-full", "border-dotted");
+    expect(email).not.toHaveClass("border-dashed");
+    expect(screen.queryByRole("group", { name: "البريد الالكتروني :" })).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".paper-box")).toHaveLength(14); // only the national-ID boxes
+  });
+
+  it("keeps the e-mail read-only: typing does not change it", async () => {
+    const { user } = await renderInForm(<MemberSection />, { profile: apiProfile({ email: "doc@x.eg" }) });
+    const email = screen.getByLabelText("البريد الالكتروني :");
+    await user.type(email, "zzz");
+    expect(email).toHaveValue("doc@x.eg");
   });
 
   it("keeps LTR inputs for years and the mobile number", async () => {

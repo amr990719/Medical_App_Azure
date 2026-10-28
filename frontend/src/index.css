@@ -86,7 +86,7 @@
 }
 
 @layer components {
-  /* One cell of NidInput / BoxStringInput: a paper box with ink-blue content. */
+  /* One cell of NidInput: a paper box with ink-blue content. */
   .paper-box {
     @apply border-paper-line bg-paper text-ink text-center font-bold outline-none;
     border-width: var(--paper-rule);

@@ -10,10 +10,12 @@ export interface DashedFieldProps
   /** Digits only (Arabic digits normalized), LTR, numeric keyboard: years, phone, card numbers. */
   numeric?: boolean;
   error?: string;
+  /** The paper's line under the value: dashed (default) or dotted. */
+  underline?: "dashed" | "dotted";
 }
 
 /**
- * Paper-form field: bold label on the start side and a dashed underline "written in ink".
+ * Paper-form field: bold label on the start side and a dashed (or dotted) underline "written in ink".
  * Below 768px the label sits above the input (PROMPT.md §9.4).
  */
 export function DashedField({
@@ -22,6 +24,7 @@ export function DashedField({
   onChange,
   numeric = false,
   error,
+  underline = "dashed",
   maxLength,
   dir,
   inputMode,
@@ -53,7 +56,8 @@ export function DashedField({
             onChange(maxLength ? next.slice(0, maxLength) : next);
           }}
           className={cx(
-            "w-full min-w-0 border-0 border-b-[1.5px] border-dashed bg-transparent px-1 py-0.5",
+            "w-full min-w-0 border-0 bg-transparent px-1 py-0.5",
+            underline === "dotted" ? "border-b-2 border-dotted" : "border-b-[1.5px] border-dashed",
             "font-semibold text-ink outline-none placeholder:text-muted/70",
             "focus:border-solid focus:border-ink focus:bg-banana-light/60",
             numeric && "text-start tabular-nums",

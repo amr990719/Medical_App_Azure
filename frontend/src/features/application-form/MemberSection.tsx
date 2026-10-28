@@ -1,5 +1,4 @@
 import { useId, type ReactNode } from "react";
-import { BoxStringInput } from "@/components/form/BoxStringInput";
 import { DashedField } from "@/components/form/DashedField";
 import { DashedSelect } from "@/components/form/DashedSelect";
 import { NidInput } from "@/components/form/NidInput";
@@ -27,7 +26,7 @@ function Cell({ span, children }: { span: keyof typeof SPAN; children: ReactNode
   return <div className={cx("min-w-0", SPAN[span])}>{children}</div>;
 }
 
-/** Visible label + a box input that names itself (NidInput, BoxStringInput). */
+/** Visible label + a box input that names itself (NidInput). */
 function BoxRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1 md:flex-row md:items-start md:gap-2">
@@ -251,18 +250,17 @@ export function MemberSection() {
           />
         </Cell>
 
-        {/* Row 7 — from the Entra account, not editable here */}
+        {/* Row 7 — from the Entra account, not editable here: plain LTR text on a dotted line */}
         <Cell span={12}>
-          <BoxRow label={L.email}>
-            <BoxStringInput
-              label={L.email}
-              value={state.email}
-              onChange={() => {}}
-              length={Math.max(26, state.email.length)}
-              size="small"
-              readOnly
-            />
-          </BoxRow>
+          <DashedField
+            label={L.email}
+            value={state.email}
+            onChange={() => {}}
+            type="email"
+            dir="ltr"
+            underline="dotted"
+            readOnly
+          />
         </Cell>
       </div>
     </section>

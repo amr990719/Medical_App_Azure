@@ -86,42 +86,50 @@
     {
       "value": "MOTHER",
       "label": "أم",
-      "fee_key": "parent"
+      "fee_key": "parent",
+      "selectable": true
     },
     {
       "value": "FATHER",
       "label": "أب",
-      "fee_key": "parent"
+      "fee_key": "parent",
+      "selectable": true
     },
     {
       "value": "SON_MINOR",
       "label": "ابن/ابنة (18 سنة أو أقل)",
-      "fee_key": "child"
+      "fee_key": "child",
+      "selectable": true
     },
     {
       "value": "SON_UNIVERSITY",
       "label": "ابن/ابنة (طالب جامعي)",
-      "fee_key": "grad_son"
+      "fee_key": "grad_son",
+      "selectable": true
     },
     {
       "value": "SON_GRADUATE",
       "label": "ابن/ابنة (خريج)",
-      "fee_key": "grad_son"
+      "fee_key": "grad_son",
+      "selectable": true
     },
     {
       "value": "DAUGHTER",
       "label": "ابنة",
-      "fee_key": "child"
+      "fee_key": "child",
+      "selectable": false
     },
     {
       "value": "HUSBAND",
       "label": "زوج",
-      "fee_key": "spouse"
+      "fee_key": "spouse",
+      "selectable": true
     },
     {
       "value": "WIFE",
       "label": "زوجة",
-      "fee_key": "spouse"
+      "fee_key": "spouse",
+      "selectable": true
     }
   ],
   "application_types": [
@@ -313,6 +321,9 @@
       }
     ],
     "member_conditional": {
+      "PERSONAL_PHOTO": {
+        "required_with_application_type": "FIRST_TIME"
+      },
       "MEMBER_BIRTH_CERTIFICATE": {
         "required_with_kinship": "MOTHER"
       }
@@ -374,9 +385,7 @@
       },
       "child": {
         "below_age": {
-          "required": [
-            "BIRTH_CERTIFICATE"
-          ],
+          "required": [],
           "optional": [
             "BENEFICIARY_NATIONAL_ID",
             "BENEFICIARY_NATIONAL_ID_BACK"
@@ -388,9 +397,11 @@
             "BENEFICIARY_NATIONAL_ID_BACK"
           ]
         },
-        "female_member_always_requires": [
-          "BIRTH_CERTIFICATE"
-        ],
+        "birth_certificate": {
+          "type": "BIRTH_CERTIFICATE",
+          "required_when_member_gender": "FEMALE",
+          "otherwise": "optional"
+        },
         "unknown_birth_year": "below_age"
       }
     },
@@ -403,7 +414,6 @@
   },
   "ocr_enabled": true,
   "features": {
-    "require_member_photo": false,
     "allow_pdf": false,
     "allow_heic": false
   },

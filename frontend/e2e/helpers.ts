@@ -95,6 +95,7 @@ const FIXTURE_FOR: Record<string, string> = {
   NATIONAL_ID_FRONT: "id-front.png",
   NATIONAL_ID_BACK: "id-back.png",
   SYNDICATE_ID: "syndicate-card.png",
+  PERSONAL_PHOTO: "id-front.png",
   BENEFICIARY_NATIONAL_ID: "spouse-id.png",
   BENEFICIARY_NATIONAL_ID_BACK: "id-back.png",
   BENEFICIARY_PERSONAL_PHOTO: "id-front.png",
@@ -168,8 +169,9 @@ export async function createDraftApplication(
     }
   }
 
-  // Conditional member slots (the member's own birth certificate with a MOTHER) come from the
-  // server's application-specific list, never a copy of the rule here.
+  // Conditional member slots (the member photo of a FIRST_TIME application, the member's own
+  // birth certificate with a MOTHER) come from the server's application-specific list, never a
+  // copy of the rule here.
   if (beneficiaryDocuments) {
     const current = await ok<{ member_required_documents: { type: string; required: boolean; stage: string }[] }>(
       await request.get(base, { headers }),

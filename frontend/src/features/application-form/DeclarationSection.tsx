@@ -7,8 +7,8 @@ import { useMemberError } from "./inlineErrors";
 const D = ar.form.declaration;
 
 /**
- * `إقــــــــرار` exactly as on the paper (PROMPT.md §9.7): the inline dashed name, the red
- * underlined middle paragraph, and the signature block on the end side for the printed copy.
+ * `إقــــــــرار` (owner wording of 2026-10-28): the declarant's name on the dotted line of the
+ * first sentence, then the acceptance paragraph. The text wraps naturally on narrow screens.
  */
 export function DeclarationSection() {
   const titleId = useId();
@@ -35,17 +35,17 @@ export function DeclarationSection() {
             aria-describedby={error ? errorId : undefined}
             onChange={(event) => updateField("declarationName", event.target.value)}
             className={cx(
-              "mx-1 inline-block w-full max-w-72 border-0 border-b-[1.5px] border-dashed bg-transparent px-1 text-center align-baseline font-bold text-ink outline-none print:hidden",
+              "mx-1 inline-block w-full max-w-72 border-0 border-b-2 border-dotted bg-transparent px-1 text-center align-baseline font-bold text-ink outline-none print:hidden",
               "focus:border-solid focus:border-ink focus:bg-banana-light/60",
               error ? "border-danger" : "border-paper-line",
             )}
           />
-          {/* The input would clip a long name on paper: print the name itself, underlined. */}
+          {/* The input would clip a long name on paper: print the name itself, on the dotted line. */}
           <span
             data-print-value
             aria-hidden
             dir="auto"
-            className="mx-1 hidden border-b-[1.5px] border-dashed border-paper-line px-1 font-bold text-ink print:inline"
+            className="mx-1 hidden border-b-2 border-dotted border-paper-line px-1 font-bold text-ink print:inline"
           >
             {state.declarationName}
           </span>{" "}
@@ -56,16 +56,7 @@ export function DeclarationSection() {
             {error}
           </p>
         ) : null}
-        <p>
-          <u className="font-bold decoration-danger decoration-2 underline-offset-[6px]">{D.underlined}</u>
-        </p>
         <p>{D.closing}</p>
-      </div>
-      <div className="mt-6 flex justify-end">
-        <div className="w-56 text-center">
-          <p className="font-bold text-charcoal">{D.signature}</p>
-          <div className="mt-10 border-b-2 border-dotted border-paper-line" />
-        </div>
       </div>
     </section>
   );

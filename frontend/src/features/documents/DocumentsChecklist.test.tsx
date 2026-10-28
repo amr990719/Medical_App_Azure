@@ -45,8 +45,21 @@ describe("DocumentsChecklist (PROMPT.md §9.6)", () => {
     expect(item(member, "صورة البطاقة (وجه)")).toHaveTextContent("✓ مرفق");
     expect(item(member, "صورة البطاقة (ظهر)")).toHaveTextContent("غير مرفق");
     expect(item(member, "كارنيه النقابة")).toHaveTextContent("غير مرفق");
-    expect(item(member, "صورة العضو الأصلي")).toHaveTextContent("اختياري");
+    expect(item(member, "صورة العضو الأصلي")).toHaveTextContent("غير مرفق"); // FIRST_TIME: required
     expect(within(member).queryByText("إيصال الدفع")).toBeNull(); // step 4 has its own page
+  });
+
+  it("shows the member photo as optional when the server says so (ADDITION application)", async () => {
+    const addition = {
+      ...app,
+      application_type: "ADDITION" as const,
+      member_required_documents: app.member_required_documents.map((slot) =>
+        (slot as { type: string }).type === "PERSONAL_PHOTO" ? { ...slot, required: false } : slot,
+      ),
+    };
+    await renderInForm(<DocumentsChecklist />, { app: addition });
+    const member = screen.getByRole("group", { name: "العضو الأصلي" });
+    expect(item(member, "صورة العضو الأصلي")).toHaveTextContent("اختياري");
   });
 
   it("lists every active beneficiary with the documents its kinship and age need", async () => {

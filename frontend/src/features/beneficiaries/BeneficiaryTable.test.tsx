@@ -113,6 +113,50 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /مستندات المستفيد رقم 1/ })).toHaveAttribute("data-state", "missing"));
   });
 
+  it("offers every kinship from reference data except the retired standalone ابنة", async () => {
+    await renderInForm(<BeneficiaryTable />);
+    const select = screen.getByRole("combobox", { name: "درجة القرابة — المستفيد رقم 1" });
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "—",
+      "أم",
+      "أب",
+      "ابن/ابنة (18 سنة أو أقل)",
+      "ابن/ابنة (طالب جامعي)",
+      "ابن/ابنة (خريج)",
+      "زوج",
+      "زوجة",
+    ]);
+    expect(within(select).queryByRole("option", { name: "ابنة" })).toBeNull();
+  });
+
+  it("keeps a historical ابنة row: shown, selected, and never cleared by an edit", async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-daughter/`, async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        return HttpResponse.json(daughter({ full_name: "مريم أحمد محمد" }));
+      }),
+    );
+    const daughter = (overrides = {}) =>
+      apiBeneficiary({ id: "b-daughter", kinship: "DAUGHTER", full_name: "مريم أحمد", birth_year: 2018, ...overrides });
+    const wife = apiBeneficiary({ id: "b-2", row_number: 2 });
+    const { user } = await renderInForm(<BeneficiaryTable />, {
+      app: apiApplication({ beneficiaries: [daughter(), wife] }),
+    });
+    const row1 = screen.getByRole("combobox", { name: "درجة القرابة — المستفيد رقم 1" });
+    expect(row1).toHaveValue("DAUGHTER");
+    expect(within(row1).getByRole("option", { name: "ابنة" })).toBeInTheDocument();
+    // Other rows do not offer it.
+    const row2 = screen.getByRole("combobox", { name: "درجة القرابة — المستفيد رقم 2" });
+    expect(within(row2).queryByRole("option", { name: "ابنة" })).toBeNull();
+
+    await user.type(screen.getByRole("textbox", { name: "اسم المستفيد — المستفيد رقم 1" }), " محمد");
+    await waitFor(() => expect(bodies.at(-1)).toEqual({ full_name: "مريم أحمد محمد" }));
+    expect(bodies.every((body) => !("kinship" in (body as object)))).toBe(true); // never re-sent or cleared
+    expect(row1).toHaveValue("DAUGHTER");
+  });
+
   it("changes the kinship of a row without documents immediately", async () => {
     server.use(
       http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-wife/`, () =>
@@ -156,7 +200,7 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     );
   });
 
-  it("always renders the table when asked for the print layout", async () => {
+  it("always renders the table when asked for the table layout", async () => {
     mockViewport(false);
     await renderInForm(<BeneficiaryTable layout="table" />);
     expect(screen.getByRole("table")).toBeInTheDocument();

@@ -8,7 +8,6 @@ import { ApplicationRedirectPage } from "@/pages/application/ApplicationRedirect
 import { FormPage } from "@/pages/application/FormPage";
 import { NewApplicationPage } from "@/pages/application/NewApplicationPage";
 import { PaymentPage } from "@/pages/application/PaymentPage";
-import { PrintPage } from "@/pages/application/PrintPage";
 import { ReviewPage } from "@/pages/application/ReviewPage";
 import { StatusPage } from "@/pages/application/StatusPage";
 import { DashboardPage } from "@/pages/doctor/DashboardPage";
@@ -25,7 +24,8 @@ const admin = (path: string, load: () => Promise<{ Component: ComponentType }>):
 
 /**
  * Every route of PROMPT.md §8. Wizard steps (form, payment, review) bring their own frame
- * (top bar + stepper, §9.1) and the print views (doctor and admin) have no chrome.
+ * (top bar + stepper, §9.1). Application printing was retired (2026-10-28): there is no print
+ * route, so `/application/:id/print` and `/admin/applications/:id/print` are not found.
  */
 export const routes: RouteObject[] = [
   {
@@ -51,7 +51,6 @@ export const routes: RouteObject[] = [
       { path: "application/:id/form", element: <FormPage /> },
       { path: "application/:id/payment", element: <PaymentPage /> },
       { path: "application/:id/review", element: <ReviewPage /> },
-      { path: "application/:id/print", element: <PrintPage /> },
     ],
   },
   {
@@ -78,7 +77,6 @@ export const routes: RouteObject[] = [
           ),
         ],
       },
-      admin("applications/:id/print", () => import("@/pages/admin/AdminPrintPage").then((m) => ({ Component: m.AdminPrintPage }))),
     ],
   },
   {
