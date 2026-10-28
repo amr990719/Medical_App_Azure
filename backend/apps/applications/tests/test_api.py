@@ -359,7 +359,7 @@ def test_detail_query_count_does_not_grow_with_beneficiaries(django_assert_max_n
         client.get(url(small))
     big = build_submittable_application(doctor=DoctorFactory())
     for row in range(4, 10):
-        BeneficiaryFactory(application=big, row_number=row, kinship="DAUGHTER", full_name="ابنة")
+        BeneficiaryFactory(application=big, row_number=row, kinship="SON_MINOR", full_name="ابنة")
     client = client_for(big.doctor.user)
     with django_assert_max_num_queries(10) as big_ctx:
         client.get(url(big))

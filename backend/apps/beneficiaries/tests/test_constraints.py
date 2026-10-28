@@ -44,9 +44,10 @@ def test_malformed_national_id_rejected_by_database():
         BeneficiaryFactory(national_id="123")
 
 
-def test_unknown_kinship_rejected_by_database():
+@pytest.mark.parametrize("kinship", ["BROTHER", "DAUGHTER"])  # DAUGHTER removed 2026-10-28
+def test_unknown_kinship_rejected_by_database(kinship):
     with pytest.raises(IntegrityError):
-        BeneficiaryFactory(kinship="BROTHER")
+        BeneficiaryFactory(kinship=kinship)
 
 
 @pytest.mark.parametrize(

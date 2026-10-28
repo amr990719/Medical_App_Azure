@@ -53,8 +53,7 @@ export type ApiReferenceData = {
   work_statuses: Choice<Schemas["WorkStatusEnum"]>[];
   religions: Choice<Schemas["ReligionEnum"]>[];
   genders: Choice<Schemas["GenderEnum"]>[];
-  /** `selectable: false` = retired (DAUGHTER): never offered, still labels and prices stored rows. */
-  kinships: (Choice<Kinship> & { fee_key: string; selectable: boolean })[];
+  kinships: (Choice<Kinship> & { fee_key: string })[];
   application_types: Choice<ApplicationType>[];
   statuses: Choice<ApplicationStatus>[];
   payment_statuses: Choice<PaymentStatus>[];

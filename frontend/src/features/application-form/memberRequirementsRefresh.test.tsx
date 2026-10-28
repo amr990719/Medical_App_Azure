@@ -53,7 +53,7 @@ const gate = (): Gate => {
 
 const FISCAL_YEAR = 2026;
 const CHILD_ID_AGE = 16;
-const CHILD_KINSHIPS = new Set(["SON_MINOR", "DAUGHTER", "SON_UNIVERSITY", "SON_GRADUATE"]);
+const CHILD_KINSHIPS = new Set(["SON_MINOR", "SON_UNIVERSITY", "SON_GRADUATE"]);
 const slot = (type: string, label: string, required: boolean) => ({
   type, label, required, ocr_capable: false, stage: "form", images_only: false, hints: [] as string[],
 });  // fmt: skip
@@ -364,13 +364,12 @@ const child = (row: number, kinship: string, name: string, birthYear: number, ov
 /** Every child kinship, all aged 16 or more in FY 2026. */
 const OLDER_CHILDREN = [
   child(1, "SON_MINOR", "عمر", 2009),
-  child(2, "DAUGHTER", "مريم", 2008),
+  child(2, "SON_MINOR", "مريم", 2008),
   child(3, "SON_UNIVERSITY", "يوسف", 2005),
   child(4, "SON_GRADUATE", "خالد", 2000),
 ];
 const KINSHIP_LABEL: Record<string, string> = {
   SON_MINOR: "ابن/ابنة (18 سنة أو أقل)",
-  DAUGHTER: "ابنة",
   SON_UNIVERSITY: "ابن/ابنة (طالب جامعي)",
   SON_GRADUATE: "ابن/ابنة (خريج)",
 };
@@ -433,7 +432,7 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
   it("female → male: every child's certificate turns optional, uploads stay attached and visible", async () => {
     const university = child(1, "SON_UNIVERSITY", "يوسف", 2005);
     const minor = child(2, "SON_MINOR", "عمر", 2016);
-    const daughter = child(3, "DAUGHTER", "مريم", 2021);
+    const daughter = child(3, "SON_MINOR", "مريم", 2021);
     const uploaded = apiDocument({ id: "d-bc", document_type: "BIRTH_CERTIFICATE", beneficiary_id: "b-1" });
     const backend = fakeBackend({
       beneficiaries: [university, minor, daughter],
@@ -479,7 +478,7 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
   });
 
   it("a national ID whose stored gender differs refreshes the slots (only the ID is sent)", async () => {
-    const daughter = child(1, "DAUGHTER", "مريم", 2008);
+    const daughter = child(1, "SON_MINOR", "مريم", 2008);
     const backend = fakeBackend({
       beneficiaries: [daughter],
       profile: apiProfile({ gender: "MALE", national_id: MALE_ID, birth_year: 1985 }),
@@ -496,7 +495,7 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
   });
 
   it("refreshes after a partial profile save when the persisted part changed the gender", async () => {
-    const daughter = child(1, "DAUGHTER", "مريم", 2008);
+    const daughter = child(1, "SON_MINOR", "مريم", 2008);
     const backend = fakeBackend({
       beneficiaries: [daughter],
       profile: apiProfile({ gender: "MALE", national_id: MALE_ID, birth_year: 1985 }),
@@ -517,7 +516,7 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
 
   it("does not refetch the application for profile edits that cannot change the slots", async () => {
     const backend = fakeBackend({
-      beneficiaries: [child(1, "DAUGHTER", "مريم", 2008)],
+      beneficiaries: [child(1, "SON_MINOR", "مريم", 2008)],
       profile: apiProfile({ gender: "MALE" }),
     });
     const { user } = await renderForm({ withMember: true });

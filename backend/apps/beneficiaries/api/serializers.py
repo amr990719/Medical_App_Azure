@@ -5,7 +5,7 @@ from apps.beneficiaries.models import Beneficiary
 from apps.beneficiaries.services import MSG_INVALID_KINSHIP
 from apps.common.fields import CollapsedCharField, NationalIdField, YearField
 from apps.documents.api.serializers import DocumentSummarySerializer
-from apps.reference.constants import WRITABLE_KINSHIP_CHOICES
+from apps.reference.constants import Kinship
 
 
 def required_documents(beneficiary: Beneficiary) -> list[dict]:
@@ -34,9 +34,8 @@ class BeneficiaryWriteSerializer(serializers.Serializer):
     """Draft-level shape checks; the beneficiary service applies the business rules."""
 
     row_number = serializers.IntegerField(required=False, min_value=1)
-    # Retired kinships (DAUGHTER) are not accepted, whatever the row's stored value.
     kinship = serializers.ChoiceField(
-        choices=WRITABLE_KINSHIP_CHOICES,
+        choices=Kinship.choices,
         allow_blank=True,
         required=False,
         error_messages={"invalid_choice": MSG_INVALID_KINSHIP},

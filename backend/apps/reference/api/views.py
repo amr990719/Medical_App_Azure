@@ -11,7 +11,6 @@ from apps.documents.validators import accepted_content_types
 from apps.reference.constants import (
     GOVERNORATES,
     KINSHIP_FEE_KEY,
-    RETIRED_KINSHIPS,
     ApplicationStatus,
     ApplicationType,
     DocumentType,
@@ -39,14 +38,7 @@ def reference_data() -> dict:
         "religions": _choices(Religion),
         "genders": _choices(Gender),
         "kinships": [
-            {
-                "value": k.value,
-                "label": k.label,
-                "fee_key": KINSHIP_FEE_KEY[k],
-                # False: kept only to display and price stored rows, never offered for new ones.
-                "selectable": k not in RETIRED_KINSHIPS,
-            }
-            for k in Kinship
+            {"value": k.value, "label": k.label, "fee_key": KINSHIP_FEE_KEY[k]} for k in Kinship
         ],
         "application_types": _choices(ApplicationType),
         "statuses": _choices(ApplicationStatus),

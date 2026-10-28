@@ -86,50 +86,37 @@
     {
       "value": "MOTHER",
       "label": "أم",
-      "fee_key": "parent",
-      "selectable": true
+      "fee_key": "parent"
     },
     {
       "value": "FATHER",
       "label": "أب",
-      "fee_key": "parent",
-      "selectable": true
+      "fee_key": "parent"
     },
     {
       "value": "SON_MINOR",
       "label": "ابن/ابنة (18 سنة أو أقل)",
-      "fee_key": "child",
-      "selectable": true
+      "fee_key": "child"
     },
     {
       "value": "SON_UNIVERSITY",
       "label": "ابن/ابنة (طالب جامعي)",
-      "fee_key": "grad_son",
-      "selectable": true
+      "fee_key": "grad_son"
     },
     {
       "value": "SON_GRADUATE",
       "label": "ابن/ابنة (خريج)",
-      "fee_key": "grad_son",
-      "selectable": true
-    },
-    {
-      "value": "DAUGHTER",
-      "label": "ابنة",
-      "fee_key": "child",
-      "selectable": false
+      "fee_key": "grad_son"
     },
     {
       "value": "HUSBAND",
       "label": "زوج",
-      "fee_key": "spouse",
-      "selectable": true
+      "fee_key": "spouse"
     },
     {
       "value": "WIFE",
       "label": "زوجة",
-      "fee_key": "spouse",
-      "selectable": true
+      "fee_key": "spouse"
     }
   ],
   "application_types": [
@@ -348,10 +335,6 @@
         "extra_required": []
       },
       "SON_MINOR": {
-        "base_rule": "child",
-        "extra_required": []
-      },
-      "DAUGHTER": {
         "base_rule": "child",
         "extra_required": []
       },

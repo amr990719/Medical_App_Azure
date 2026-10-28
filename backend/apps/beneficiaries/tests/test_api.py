@@ -100,14 +100,14 @@ def test_list_is_ordered_by_row():
 def test_patch_updates_only_given_fields():
     app = ApplicationFactory()
     b = BeneficiaryFactory(
-        application=app, kinship=Kinship.DAUGHTER, full_name="مريم", birth_year=2018
+        application=app, kinship=Kinship.SON_MINOR, full_name="مريم", birth_year=2018
     )
     response = client_for(app.doctor.user).patch(
         item(app, b), {"birth_year": "٢٠١٧"}, format="json"
     )
     assert response.status_code == 200
     b.refresh_from_db()
-    assert (b.kinship, b.full_name, b.birth_year) == (Kinship.DAUGHTER, "مريم", 2017)
+    assert (b.kinship, b.full_name, b.birth_year) == (Kinship.SON_MINOR, "مريم", 2017)
 
 
 def test_kinship_change_removes_documents():
@@ -167,7 +167,7 @@ def test_invalid_kinship_rejected():
     assert "kinship" in response.json()["error"]["fields"]
 
 
-def test_retired_daughter_is_rejected_on_create():
+def test_removed_daughter_is_rejected_on_create():
     app = ApplicationFactory()
     response = client_for(app.doctor.user).post(
         collection(app), {"kinship": "DAUGHTER", "full_name": "مريم"}, format="json"
@@ -177,7 +177,7 @@ def test_retired_daughter_is_rejected_on_create():
     assert not app.beneficiaries.exists()
 
 
-def test_retired_daughter_is_rejected_on_update():
+def test_removed_daughter_is_rejected_on_update():
     app = ApplicationFactory()
     b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, full_name="مريم")
     response = client_for(app.doctor.user).patch(
@@ -187,17 +187,6 @@ def test_retired_daughter_is_rejected_on_update():
     assert response.json()["error"]["fields"]["kinship"] == ["درجة القرابة غير صحيحة"]
     b.refresh_from_db()
     assert (b.kinship, b.full_name) == (Kinship.SON_MINOR, "مريم")
-
-
-def test_retired_daughter_is_rejected_even_when_resent_for_a_stored_daughter_row():
-    app = ApplicationFactory()
-    b = BeneficiaryFactory(application=app, kinship=Kinship.DAUGHTER, full_name="مريم")
-    response = client_for(app.doctor.user).patch(
-        item(app, b), {"kinship": "DAUGHTER", "full_name": "مريم أحمد"}, format="json"
-    )
-    assert response.status_code == 400
-    b.refresh_from_db()
-    assert b.full_name == "مريم"
 
 
 @pytest.mark.parametrize("status", [S.SUBMITTED, S.UNDER_REVIEW, S.APPROVED, S.REJECTED])
@@ -333,7 +322,7 @@ def test_kinship_change_keeps_the_first_time_answer():
 
 
 @pytest.mark.parametrize(("gender", "required"), [("MALE", False), ("FEMALE", True)])
-@pytest.mark.parametrize("kinship", ["SON_MINOR", "SON_UNIVERSITY", "SON_GRADUATE", "DAUGHTER"])
+@pytest.mark.parametrize("kinship", ["SON_MINOR", "SON_UNIVERSITY", "SON_GRADUATE"])
 @pytest.mark.parametrize("birth_year", [2024, 2015, 2005])
 def test_child_birth_certificate_slot_follows_the_members_gender(gender, required, kinship,
                                                                  birth_year):  # fmt: skip
@@ -342,15 +331,3 @@ def test_child_birth_certificate_slot_follows_the_members_gender(gender, require
     body = client_for(app.doctor.user).get(f"/api/v1/applications/{app.pk}/").json()
     slots = {r["type"]: r["required"] for r in body["beneficiaries"][0]["required_documents"]}
     assert slots["BIRTH_CERTIFICATE"] is required  # always offered, required for a female member
-
-
-def test_historical_daughter_row_still_loads_and_edits():
-    app = ApplicationFactory()
-    b = BeneficiaryFactory(application=app, kinship=Kinship.DAUGHTER, full_name="مريم",
-                           birth_year=2018, is_first_time=False)  # fmt: skip
-    DocumentFactory(application=app, beneficiary=b, document_type=DocumentType.BIRTH_CERTIFICATE)
-    client = client_for(app.doctor.user)
-    body = client.patch(item(app, b), {"full_name": "مريم أحمد"}, format="json").json()
-    assert (body["kinship"], body["full_name"]) == ("DAUGHTER", "مريم أحمد")
-    assert {r["type"] for r in body["required_documents"]} >= {"BIRTH_CERTIFICATE"}
-    assert Document.objects.filter(beneficiary=b).count() == 1  # documents untouched

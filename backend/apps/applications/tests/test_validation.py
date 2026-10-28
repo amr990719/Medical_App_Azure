@@ -383,7 +383,7 @@ def test_draft_validation_reports_but_tolerates_the_missing_answer(app):
 
 
 def test_inactive_row_needs_no_first_time_answer(app):
-    _beneficiary(app, 4, kinship=Kinship.DAUGHTER, full_name="", is_first_time=None)
+    _beneficiary(app, 4, kinship=Kinship.SON_MINOR, full_name="", is_first_time=None)
     assert validate_for_submission(app).is_valid is True
 
 
@@ -414,8 +414,7 @@ def test_photo_rule_applies_to_every_category(app, kinship, birth_year):
 
 @pytest.mark.parametrize(
     ("kinship", "birth_year", "needed"),
-    [(Kinship.SON_MINOR, 2024, False), (Kinship.SON_MINOR, 2023, True),  # ages 2 / 3
-     (Kinship.DAUGHTER, 2024, False), (Kinship.DAUGHTER, 2023, True)],
+    [(Kinship.SON_MINOR, 2024, False), (Kinship.SON_MINOR, 2023, True)],  # ages 2 / 3
 )  # fmt: skip
 def test_first_time_child_under_3_needs_no_photo(app, kinship, birth_year, needed):
     child = _beneficiary(app, 4, kinship=kinship, full_name="طفل جديد", birth_year=birth_year,
@@ -514,7 +513,7 @@ def test_member_birth_certificate_not_required_without_an_active_mother(app):
 
 @pytest.mark.parametrize(
     ("kinship", "birth_year", "extra"),
-    [(Kinship.SON_MINOR, 2009, None), (Kinship.DAUGHTER, 2000, None),
+    [(Kinship.SON_MINOR, 2009, None),
      (Kinship.SON_UNIVERSITY, 2005, D.UNIVERSITY_ID),
      (Kinship.SON_GRADUATE, 1998, D.INSURANCE_PRINT)],
 )  # fmt: skip
@@ -539,7 +538,7 @@ def test_female_member_older_child_needs_birth_certificate_and_both_id_sides(
 
 CHILD_ROWS = [
     (Kinship.SON_MINOR, 2024), (Kinship.SON_MINOR, 2015), (Kinship.SON_MINOR, 2010),
-    (Kinship.DAUGHTER, 2018), (Kinship.DAUGHTER, 2000), (Kinship.DAUGHTER, None),
+    (Kinship.SON_MINOR, None),
     (Kinship.SON_UNIVERSITY, 2012), (Kinship.SON_UNIVERSITY, 2005),
     (Kinship.SON_GRADUATE, 2011), (Kinship.SON_GRADUATE, 1998),
 ]  # fmt: skip

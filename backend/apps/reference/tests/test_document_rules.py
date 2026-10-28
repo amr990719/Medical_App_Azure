@@ -113,16 +113,14 @@ def test_parent_requires_both_id_sides(kinship):
     assert D.BIRTH_CERTIFICATE not in by_type(reqs)  # the MEMBER's certificate is a member slot
 
 
-@pytest.mark.parametrize("kinship", [Kinship.SON_MINOR, Kinship.DAUGHTER])
-def test_male_member_child_under_16_has_only_optional_documents(kinship):
-    reqs = reqs_for(kinship, 15)
+def test_male_member_child_under_16_has_only_optional_documents():
+    reqs = reqs_for(Kinship.SON_MINOR, 15)
     assert required(reqs) == set()
     assert optional(reqs) == ID_SIDES | {D.BIRTH_CERTIFICATE, PHOTO}
 
 
-@pytest.mark.parametrize("kinship", [Kinship.SON_MINOR, Kinship.DAUGHTER])
-def test_child_16_with_male_member_needs_both_id_sides_only(kinship):
-    reqs = reqs_for(kinship, 16)
+def test_child_16_with_male_member_needs_both_id_sides_only():
+    reqs = reqs_for(Kinship.SON_MINOR, 16)
     assert required(reqs) == ID_SIDES
     assert by_type(reqs)[D.BIRTH_CERTIFICATE].required is False  # offered, never lost
 
@@ -182,7 +180,7 @@ def test_female_member_older_children_keep_their_kinship_documents():
     assert required(reqs_for(Kinship.SON_GRADUATE, 25, member_gender=Gender.FEMALE)) == (
         ID_SIDES | {D.BIRTH_CERTIFICATE, D.INSURANCE_PRINT}
     )
-    assert required(reqs_for(Kinship.DAUGHTER, 20, member_gender=Gender.FEMALE)) == (
+    assert required(reqs_for(Kinship.SON_MINOR, 17, member_gender=Gender.FEMALE)) == (
         ID_SIDES | {D.BIRTH_CERTIFICATE}
     )
 
@@ -207,8 +205,8 @@ def test_unknown_member_gender_does_not_require_the_birth_certificate(kinship):
 
 
 def test_birth_certificate_follows_the_members_gender_not_the_childs():
-    # A daughter of a male member: optional; a son of a female member: required.
-    assert by_type(reqs_for(Kinship.DAUGHTER, 5))[D.BIRTH_CERTIFICATE].required is False
+    # A child of a male member: optional; a child of a female member: required.
+    assert by_type(reqs_for(Kinship.SON_MINOR, 5))[D.BIRTH_CERTIFICATE].required is False
     son = reqs_for(Kinship.SON_MINOR, 5, member_gender=Gender.FEMALE)
     assert by_type(son)[D.BIRTH_CERTIFICATE].required is True
 
@@ -244,7 +242,7 @@ def test_unknown_age_never_grants_the_photo_exemption():
 
 
 def test_photo_exemption_age_is_configurable():
-    reqs = reqs_for(Kinship.DAUGHTER, 3, is_first_time=True, photo_exempt_child_age=4)
+    reqs = reqs_for(Kinship.SON_MINOR, 3, is_first_time=True, photo_exempt_child_age=4)
     assert PHOTO not in required(reqs)
 
 

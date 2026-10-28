@@ -70,7 +70,6 @@ KINSHIP_DOCUMENT_RULES: dict[Kinship, KinshipRule] = {
     Kinship.MOTHER: KinshipRule("parent"),
     Kinship.FATHER: KinshipRule("parent"),
     Kinship.SON_MINOR: KinshipRule("child"),
-    Kinship.DAUGHTER: KinshipRule("child"),
     Kinship.SON_UNIVERSITY: KinshipRule("child", (DocumentType.UNIVERSITY_ID,)),
     Kinship.SON_GRADUATE: KinshipRule("child", (DocumentType.INSURANCE_PRINT,)),
 }

@@ -5,8 +5,9 @@ that flag).
 * FY 2026 fee schedule  ensured (normally already created by the fees migrations: version 2)
 * admin@dev.local       ADMIN role
 * doctor@dev.local      complete profile, registered 2014 (tier 3), WIFE, SON_MINOR (first time,
-                        with photo), DAUGHTER — application SUBMITTED, receipt waiting for
-                        confirmation (825 + 1,100 + 605 + 605 + 200 + 3 × 175 = 3,860 EGP)
+                        with photo), SON_MINOR (daughter) — application SUBMITTED, receipt
+                        waiting for confirmation
+                        (825 + 1,100 + 605 + 605 + 200 + 3 × 175 = 3,860 EGP)
 * doctor2@dev.local     female member registered 2018 (tier 2) with her MOTHER (first time) and
                         her own birth certificate — application NEEDS_CORRECTION with review
                         notes from the admin (770 + 1,320 + 375 = 2,465 EGP)

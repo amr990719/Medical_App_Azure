@@ -31,7 +31,6 @@ def test_kinship_labels_are_exact():
         "SON_MINOR": "ابن/ابنة (18 سنة أو أقل)",
         "SON_UNIVERSITY": "ابن/ابنة (طالب جامعي)",
         "SON_GRADUATE": "ابن/ابنة (خريج)",
-        "DAUGHTER": "ابنة",
         "HUSBAND": "زوج",
         "WIFE": "زوجة",
     }
@@ -41,7 +40,7 @@ def test_every_kinship_has_a_fee_key():
     assert set(KINSHIP_FEE_KEY) == set(Kinship)
     assert KINSHIP_FEE_KEY[Kinship.WIFE] == "spouse"
     assert KINSHIP_FEE_KEY[Kinship.SON_GRADUATE] == "grad_son"
-    assert KINSHIP_FEE_KEY[Kinship.DAUGHTER] == "child"
+    assert KINSHIP_FEE_KEY[Kinship.SON_MINOR] == "child"
     assert KINSHIP_FEE_KEY[Kinship.FATHER] == "parent"
 
 

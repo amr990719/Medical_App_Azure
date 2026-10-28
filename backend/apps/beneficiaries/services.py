@@ -13,7 +13,7 @@ from apps.applications.models import InsuranceApplication
 from apps.common.exceptions import FieldError, ValidationFailed
 from apps.documents.models import Document
 from apps.documents.services import soft_delete_documents
-from apps.reference.constants import RETIRED_KINSHIPS, ApplicationStatus, Gender, Kinship
+from apps.reference.constants import ApplicationStatus, Gender, Kinship
 from apps.reference.national_id import (
     INVALID_NATIONAL_ID_MESSAGE,
     InvalidNationalId,
@@ -39,18 +39,13 @@ def _collapse(text: str | None) -> str:
     return " ".join((text or "").split())
 
 
-def _clean(
-    application: InsuranceApplication, row_number, kinship, birth_year, national_id, stored_kinship
-):
+def _clean(application: InsuranceApplication, row_number, kinship, birth_year, national_id):
     errors: dict[str, list[str]] = {}
     max_rows = settings.MAX_BENEFICIARIES
     if not (1 <= row_number <= max_rows):
         errors["row_number"] = [MSG_ROW_LIMIT.format(max=max_rows)]
     kinship = kinship or ""
-    # A retired kinship is never written; only a value already stored is carried over unchanged
-    # by partial updates that do not send a kinship (the API refuses it in any request).
-    retired = kinship in RETIRED_KINSHIPS and kinship != stored_kinship
-    if kinship and (kinship not in Kinship.values or retired):
+    if kinship and kinship not in Kinship.values:
         errors["kinship"] = [MSG_INVALID_KINSHIP]
     if birth_year is not None and not (1000 <= birth_year <= 9999):
         errors["birth_year"] = [MSG_INVALID_BIRTH_YEAR]
@@ -91,10 +86,9 @@ def upsert_beneficiary(
     because the required document set changes (the UI confirms before calling)."""
     application = lock_application(application.pk)
     ensure_editable_by_owner(application, actor)
-    beneficiary = application.beneficiaries.filter(row_number=row_number).first()
-    stored_kinship = beneficiary.kinship if beneficiary is not None else None
-    kinship, nid = _clean(application, row_number, kinship, birth_year, national_id, stored_kinship)
+    kinship, nid = _clean(application, row_number, kinship, birth_year, national_id)
 
+    beneficiary = application.beneficiaries.filter(row_number=row_number).first()
     if beneficiary is None:
         beneficiary = Beneficiary(application=application, row_number=row_number)
     elif beneficiary.kinship != kinship:

@@ -40,9 +40,7 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
   // Like the name: a select clips a long label (ابن/ابنة (18 سنة أو أقل)) on paper, so print a
   // wrapping copy of the label instead.
   const kinshipLabel = reference?.kinships.find((k) => k.value === row.kinship)?.label ?? "";
-  // Retired kinships (DAUGHTER) are not offered, except as the row's stored value, so an older
-  // application shows it and never clears it silently.
-  const kinshipOptions = reference?.kinships.filter((k) => k.selectable || k.value === row.kinship) ?? [];
+  const kinshipOptions = reference?.kinships ?? [];
   const kinship = (
     <>
       <select

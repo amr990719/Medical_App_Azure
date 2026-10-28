@@ -27,7 +27,7 @@ class ApplicationFactory(factory.django.DjangoModelFactory):
 
 def build_submittable_application(**application_fields) -> InsuranceApplication:
     """Worked example 2 (PROMPT.md §17.4), complete and valid for submission:
-    male member born 1985, registered 2014, WIFE 1988, SON_MINOR 2015, DAUGHTER 2018 (none of
+    male member born 1985, registered 2014, WIFE 1988, SON_MINOR 2015, SON_MINOR 2018 (none of
     them first-time, so no beneficiary photos), every required document — both national-ID
     sides, the member photo of a FIRST_TIME application — and the receipt uploaded, declaration
     signed and accepted.

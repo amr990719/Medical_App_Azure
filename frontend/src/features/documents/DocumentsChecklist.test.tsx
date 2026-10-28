@@ -27,7 +27,7 @@ const son = apiBeneficiary({
   birth_year: 2015,
   required_documents: CHILD_REQUIREMENTS,
 });
-const inactive = apiBeneficiary({ id: "b-x", row_number: 3, kinship: "DAUGHTER", full_name: "", is_active: false });
+const inactive = apiBeneficiary({ id: "b-x", row_number: 3, kinship: "SON_MINOR", full_name: "", is_active: false });
 
 const app = apiApplication({
   documents: [apiDocument({ id: "d-front", document_type: "NATIONAL_ID_FRONT" })],

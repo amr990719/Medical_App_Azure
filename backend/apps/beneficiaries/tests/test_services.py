@@ -94,15 +94,15 @@ def test_unknown_kinship_rejected():
     assert "kinship" in exc.value.fields
 
 
-def test_retired_daughter_is_never_written_to_a_new_row():
+def test_removed_daughter_is_never_written_to_a_new_row():
     app = ApplicationFactory()
     with pytest.raises(ValidationFailed) as exc:
-        upsert(app, kinship=Kinship.DAUGHTER)
+        upsert(app, kinship="DAUGHTER")
     assert exc.value.fields == {"kinship": ["درجة القرابة غير صحيحة"]}
     assert not app.beneficiaries.exists()
 
 
-def test_retired_daughter_is_never_written_over_another_kinship():
+def test_removed_daughter_is_never_written_over_another_kinship():
     app = ApplicationFactory()
     b = upsert(app)
     with pytest.raises(ValidationFailed):
