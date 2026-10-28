@@ -89,17 +89,14 @@ maps to:
 | SON_UNIVERSITY | ابن/ابنة (طالب جامعي) | grad_son |
 | SON_GRADUATE | ابن/ابنة (خريج) | grad_son |
 | HUSBAND / WIFE | زوج / زوجة | spouse |
-| DAUGHTER (retired) | ابنة | child |
 
 The `SON_*` labels were changed on 2026-10-23 (owner); values and fee columns are unchanged and
-stored rows are not migrated. **The standalone `DAUGHTER` («ابنة») is retired from the dropdowns
-(owner, 2026-10-28)**: reference data marks it `selectable: false`, the SPA offers it only as the
-stored value of an existing row (so an older application shows it and never clears it), and stored
-`DAUGHTER` rows keep their label, fee (child), document rules and validation. Nothing is deleted or
-converted. **Every beneficiary create or update that sends `DAUGHTER` is refused** (400,
-`درجة القرابة غير صحيحة`; owner, 2026-10-28), also for a row already stored as DAUGHTER; the
-request schema no longer lists it. The owner states no such row exists; the read support above is
-removed once a read-only check of the deployed database confirms it.
+stored rows are not migrated. **The standalone `DAUGHTER` («ابنة») was removed (owner,
+2026-10-28)**: daughters use the combined `ابن/ابنة (...)` options. Every beneficiary create or
+update that sends `DAUGHTER` is refused (400, `درجة القرابة غير صحيحة`) and the database CHECK
+constraint no longer allows it (`beneficiaries.0003`/`0004`). A read-only check of the dev database
+found none left (after the owner's cleanup of the dev applications); `0004` fails, without
+converting anything, if one appears before deployment.
 
 Brothers, sisters and "other" are not supported because the schedule has no fee for them.
 
@@ -243,4 +240,4 @@ with the codes listed in SKILL.md §7. The UI never shows stack traces.
 | 20 | When a correction is requested and the doctor resubmits, does a CONFIRMED payment stay confirmed? (Q-B21) | Yes, unless the doctor replaces the receipt (→ `PENDING_REVIEW`) | `applications/services.py` |
 | 21 | Legal / organizational decisions L1–L8 (religion field, OCR by an AI service, region, retention, admin access, breach procedure, production access, malware scanning) (Q-B22) | See `docs/security.md` §6 | — |
 | 22 | The under-3 photo note says "3"; if `PHOTO_EXEMPT_CHILD_AGE` changes, should the note follow? | Note text fixed as given by the owner; threshold configurable | `document_rules.py` `HINT_PHOTO_CHILD_EXEMPT`, `PHOTO_EXEMPT_CHILD_AGE` |
-| 23 | Should the under-3 note also appear on `DAUGHTER` rows? | Shown for `SON_MINOR` only (as specified); the exemption itself applies to every child kinship | `document_rules.py` |
+| 23 | Should the under-3 note also appear on other child rows? | Shown for `SON_MINOR` only (as specified); the exemption itself applies to every child kinship | `document_rules.py` |

@@ -499,8 +499,7 @@ Below 768px, stack fields one per row with the label above the input.
   م | درجة القرابة | اسم المستفيد | سنة الميلاد | الرقم القومي (14 small boxes) | أول مرة؟
   ```
 
-- `درجة القرابة` is a select with the kinship list from section 14 (labels from reference data). Only `selectable` kinships
-  are offered; a retired one (`DAUGHTER`) appears only as a row's stored value, so it is never cleared silently.
+- `درجة القرابة` is a select with the kinship list from section 14 (labels from reference data).
 - `أول مرة؟` is the per-beneficiary answer to `هل يشترك المستفيد لأول مرة؟` (— / نعم / لا), autosaved
   like the other cells (section 14, `is_first_time`). It is independent of the application type.
 - The browser's own print (not intercepted) prints kinship and name as wrapping text (a select or input would clip them).
@@ -698,9 +697,9 @@ leave it unanswered; every ACTIVE beneficiary needs an explicit yes/no before su
 was introduced keep NULL until the doctor answers. It is stored in the submitted snapshot.
 
 Kinship enum (Arabic labels; the three `SON_*` labels were changed by the owner on 2026-10-23 —
-values and fee keys unchanged, existing rows are not migrated). The standalone `DAUGHTER` is **retired from
-the dropdowns** (owner requirement of 2026-10-28): reference data sends `selectable: false`; the API refuses `DAUGHTER` on every
-beneficiary create or update; stored rows (none expected) keep label, fee, documents and validation and are never deleted or converted:
+values and fee keys unchanged, existing rows are not migrated). The standalone `DAUGHTER` («ابنة») was **removed**
+(owner requirement of 2026-10-28): daughters use the combined `ابن/ابنة (...)` options; the API refuses `DAUGHTER` on every create or update
+and the database CHECK constraint no longer allows it:
 
 | Value | Arabic | Fee key |
 |---|---|---|
@@ -709,7 +708,6 @@ beneficiary create or update; stored rows (none expected) keep label, fee, docum
 | `SON_MINOR` | ابن/ابنة (18 سنة أو أقل) | child |
 | `SON_UNIVERSITY` | ابن/ابنة (طالب جامعي) | gradSon |
 | `SON_GRADUATE` | ابن/ابنة (خريج) | gradSon |
-| `DAUGHTER` (retired, stored rows only) | ابنة | child |
 | `HUSBAND` | زوج | spouse |
 | `WIFE` | زوجة | spouse |
 
@@ -754,10 +752,10 @@ Beneficiaries (age = fiscal year − birth year). "ID (both sides)" = `BENEFICIA
 |---|---|
 | HUSBAND / WIFE | ID (both sides), `MARRIAGE_CERTIFICATE`, `INSURANCE_PRINT` (برينت تأميني) |
 | MOTHER / FATHER | ID (both sides) |
-| SON_MINOR / DAUGHTER | `BIRTH_CERTIFICATE` required only when the MEMBER is female (any age), optional otherwise — also below 16 (owner requirement of 2026-10-28); ID (both sides) if age ≥ 16 (both optional below 16) |
+| SON_MINOR | `BIRTH_CERTIFICATE` required only when the MEMBER is female (any age), optional otherwise — also below 16 (owner requirement of 2026-10-28); ID (both sides) if age ≥ 16 (both optional below 16) |
 | SON_UNIVERSITY | child rule above + `UNIVERSITY_ID` (كارنيه الجامعة) |
 | SON_GRADUATE | child rule above + `INSURANCE_PRINT` |
-| every kinship | `BENEFICIARY_PERSONAL_PHOTO` (white background) when `is_first_time` is yes — except children (`SON_*`, `DAUGHTER`) younger than `PHOTO_EXEMPT_CHILD_AGE` (3). Unknown age never grants the exemption. Otherwise offered as optional. |
+| every kinship | `BENEFICIARY_PERSONAL_PHOTO` (white background) when `is_first_time` is yes — except children (`SON_*`) younger than `PHOTO_EXEMPT_CHILD_AGE` (3). Unknown age never grants the exemption. Otherwise offered as optional. |
 
 - Female member: every child (all `CHILD_KINSHIPS`, university/graduate included) needs a birth
   certificate at ANY age — in addition to both ID sides from 16 and the kinship-specific documents —
@@ -931,7 +929,7 @@ Amounts are whole Egyptian pounds; use `Decimal`/integers, never floats.
 | B | 2026 / WORKING | 1990 | SON_MINOR | tier 0: 400 + 550 + 375 = **1325** |
 | C | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015 | tier 3: 825 + 1100 + 605 + 550 = **3080** |
 | 1 | 2023 / WORKING | 1995 | none | tier 1: 660 + 200 = **860** |
-| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, DAUGHTER 2018 | tier 3: 825 + 1100 + 605 + 605 + 725 = **3860** |
+| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, SON_MINOR 2018 | tier 3: 825 + 1100 + 605 + 605 + 725 = **3860** |
 | 3 | 1990 / PENSIONER | 1950 (age 76) | WIFE 1955 (age 71), SON_GRADUATE 1995 | tier 4: 500 (cap) + 500 (cap) + 1925 + 550 = **3475** |
 | 4 | 2018 / WORKING | 1990 | MOTHER 1960, SON_UNIVERSITY 2005 | tier 2: 770 + 1320 + 1540 + 550 = **4180** |
 | 5 | boundaries | — | — | 2026 → 0, 2025 → 1, 2021 → 1, 2020 → 2, 2016 → 2, 2015 → 3, 2011 → 3, 2010 → 4 |

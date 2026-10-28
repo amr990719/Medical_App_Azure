@@ -1104,6 +1104,33 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
   snapshot contains DAUGHTER. Totals: 3 applications; beneficiaries DAUGHTER 1, FATHER 1, MOTHER 1,
   SON_GRADUATE 1, SON_MINOR 1, SON_UNIVERSITY 2. Nothing deleted or converted; legacy read support
   kept (Q-B29).
+- **Dev cleanup (owner request, 2026-10-28):** every application with its beneficiaries, document
+  rows and stored files removed in one transaction (execution `caj-medsyn-dev-migrate-ewivnqb`,
+  image `010cbb8`; aborts unless exactly 3 applications / 7 beneficiaries and `AdminNote` is the
+  only other referencing model): 3 applications, 7 beneficiaries, 10 document rows, 0 admin notes,
+  10 blobs under `applications/` deleted through the job's managed identity (the owner's CLI token
+  for storage is refused by security defaults). Kept: 4 users, 3 doctor profiles, the fee schedule,
+  60 audit entries (no FK to applications), `ReferenceCounter` FY 2026 at 3. Recoverable for 7
+  days: PostgreSQL PITR to before 2026-10-28T18:00Z, blob soft delete + versioning.
+- **Read-only re-check** (`caj-medsyn-dev-migrate-5mm3rw5`): no beneficiaries, no DAUGHTER rows,
+  no snapshots, 0 applications.
+- **DAUGHTER removed (D175):** `Kinship.DAUGHTER`, its fee key, document rule and `CHILD_KINSHIPS`
+  entry deleted; `RETIRED_KINSHIPS`, `WRITABLE_KINSHIP_CHOICES`, reference-data `selectable` and the
+  SPA's stored-value option removed with it (nothing else was retired). The API still answers
+  `درجة القرابة غير صحيحة` for DAUGHTER (now an unknown value). `beneficiaries.0003` re-creates
+  `beneficiary_kinship_valid` without DAUGHTER (`lock_timeout` 2s, `NOT VALID`) and `0004`
+  validates it (`atomic = False`); reversible. Tests that used DAUGHTER as legacy data were removed
+  or moved to `SON_MINOR` (worked example 2: daughter as `SON_MINOR` 2018, same 605). Fixtures:
+  reference data re-captured (only DAUGHTER and `selectable` differ).
+- **Local compose database:** holds 72 DAUGHTER rows from earlier seed / Playwright runs, so `0004`
+  is refused there (`check constraint … is violated by some row`, as designed) and the local
+  `doctor@dev.local` application list answers 500 (`'DAUGHTER' is not a valid Kinship`). Not
+  touched; resetting the local volumes fixes it.
+- **Verification:** backend `pytest` **1234 passed, 1 skipped** (DAUGHTER cases removed), ruff
+  clean, `makemigrations --check` clean, `spectacular --validate --fail-on-warn` OK, 0003 reversed
+  and re-applied locally; frontend `gen:api`, `typecheck`, `lint`, `vitest` **332 passed**,
+  `rtl:check` 0 errors, `build` OK; Playwright **8 passed, 4 skipped, 2 failed** — both
+  `foundation.spec.ts` (desktop + mobile), caused by the local DAUGHTER data above.
   Backend `pytest` **1273 passed, 1 skipped**, ruff clean, no migrations, `spectacular --validate
   --fail-on-warn` OK; frontend `gen:api` (only the request enum), `typecheck`, `lint`, `vitest`
   **333 passed**, `rtl:check` 0 errors; Playwright **10 passed, 4 skipped** (a first run had one
@@ -1602,6 +1629,10 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
   even when re-sent for a stored DAUGHTER row follows the owner's "without exceptions"; a PATCH
   that does not send `kinship` carries the stored value over, so a legacy row (none expected) can
   still be corrected to another kinship. Read support is removed only after the dev check (Q-B29).
+- **D175 — DAUGHTER removed, with the retirement mechanism:** once the dev check was clean, the
+  value was deleted rather than kept retired; `selectable` and the stored-value option existed only
+  for it. The constraint is replaced NOT VALID + VALIDATE so a deployment with an unexpected row
+  stops at the migrate job (old revision keeps serving) instead of converting it.
 
 ## Deviations from PROMPT.md
 
@@ -1772,7 +1803,7 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B23** The under-3 note text says "3"; if `PHOTO_EXEMPT_CHILD_AGE` changes, should the text
   follow? (Default: fixed text as given, threshold configurable.)
 - **Q-B24** The under-3 note is shown only on `SON_MINOR` rows as specified, while the exemption
-  itself also applies to `DAUGHTER` (and any child kinship). Confirm.
+  itself applies to every child kinship. Confirm.
 - **Q-B25** Applications submitted before 2026-10-23 have unanswered first-time questions and may
   lack the ID back side / mother proof. They are not re-validated; if one is sent back for
   correction, the doctor must complete them before resubmitting. Confirm this is wanted.
@@ -1787,13 +1818,10 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B29** Run the read-only `DAUGHTER` check on the dev database (`psql-medsyn-dev-…`,
   database `medical`) as a one-off migrate-job execution inside a `READ ONLY` transaction: count
   beneficiaries by kinship, list DAUGHTER rows (ids, application status, reference only) and
-  submitted snapshots containing it. **Ran 2026-10-28: one DAUGHTER row** (draft application
-  `5dfcb21d-…`, beneficiary `326b855f-…`), so the legacy read support stays. The row still loads,
-  prices and validates; the doctor can edit its other fields (the SPA never re-sends the kinship)
-  or pick a combined «ابن/ابنة (...)» option, but cannot re-save DAUGHTER. Owner: should the row be
-  left for the doctor to change, or corrected by an operator? Re-run the check before removing
-  `Kinship.DAUGHTER` (constraint migration), its fee key, document and reference-data entries and
-  the SPA's stored-value option.
+  submitted snapshots containing it. **Resolved 2026-10-28:** the first run found one DAUGHTER
+  row (draft `5dfcb21d-…`); the owner then had every dev application removed, the re-check was
+  empty and DAUGHTER was removed (D175). Before deploying, dev still runs `010cbb8`, which offers
+  «ابنة»: if a row appears, `beneficiaries.0004` stops the deployment; report it, never convert.
 - **Q-B28** Applications submitted before 2026-10-28 as FIRST_TIME may lack the member photo, and
   their children's certificates were required under the old rule. They are not re-validated; if
   one is sent back for correction, the doctor must add the photo before resubmitting. Confirm.
@@ -1811,10 +1839,10 @@ Sessions 16–17 (D166–D167) were merged into `main` as PR #9.
 
 **Local branch `feat/owner-requirements-2026-10-28`** (Session 18, D168–D173) is committed, not
 pushed: children's birth certificate only for a female member, member photo for FIRST_TIME only,
-«ابنة» retired from the dropdowns, new declaration, dotted email, application printing removed,
-error summary scrolls only after a failed attempt; the API refuses «ابنة» on every write (D174).
-Push and PR on confirmation; answer Q-B28 and Q-B29 (dev holds one DAUGHTER row on a draft, so
-the legacy read support stays). The owner smoke list on dev no longer includes printing.
+«ابنة» removed (D174–D175, constraint migration `beneficiaries.0003`/`0004`), new declaration,
+dotted email, application printing removed, error summary scrolls only after a failed attempt.
+Push and PR on confirmation; answer Q-B28. Dev was emptied of applications on 2026-10-28. Reset the
+local compose volumes (72 old DAUGHTER rows) before the next local run. The owner smoke list on dev no longer includes printing.
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve. Enable Arabic

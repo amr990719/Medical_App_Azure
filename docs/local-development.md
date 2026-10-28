@@ -40,7 +40,7 @@ In Windows PowerShell 5.1 use `curl.exe` (plain `curl` is an alias of `Invoke-We
 | User | Role | Data |
 |---|---|---|
 | `admin@dev.local` | ADMIN | — |
-| `doctor@dev.local` | DOCTOR | worked example 2 (WIFE, SON_MINOR first time with photo, DAUGHTER), application **SUBMITTED**, receipt waiting for confirmation, 3٬860 ج.م (FY 2026 v2) |
+| `doctor@dev.local` | DOCTOR | worked example 2 (WIFE, SON_MINOR first time with photo, a daughter as SON_MINOR), application **SUBMITTED**, receipt waiting for confirmation, 3٬860 ج.م (FY 2026 v2) |
 | `doctor2@dev.local` | DOCTOR | female member + MOTHER (first time) + `MEMBER_BIRTH_CERTIFICATE`, application **NEEDS_CORRECTION** with review notes from the admin, 2٬465 ج.م |
 | `new.doctor@dev.local` | DOCTOR | empty profile, no application (first sign-in experience) |
 

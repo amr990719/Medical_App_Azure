@@ -48,18 +48,15 @@ Never a primary key.
 | `SON_MINOR` | ابن/ابنة (18 سنة أو أقل) | child |
 | `SON_UNIVERSITY` | ابن/ابنة (طالب جامعي) | grad_son |
 | `SON_GRADUATE` | ابن/ابنة (خريج) | grad_son |
-| `DAUGHTER` | ابنة | child — **retired** from the dropdowns (2026-10-28) |
 | `HUSBAND` | زوج | spouse |
 | `WIFE` | زوجة | spouse |
 
 Brother / sister / other are intentionally unsupported (no fee). Keep the enum extensible.
 The `SON_*` labels changed on 2026-10-23 (values, fee keys and stored rows unchanged).
-`DAUGHTER` is in `constants.RETIRED_KINSHIPS`: reference data sends every kinship with
-`selectable` (`false` for DAUGHTER); the SPA offers a non-selectable kinship only as a row's stored
-value. Stored DAUGHTER rows keep label, fee key, document rules and validation; never delete or
-convert them. Every create or update that sends DAUGHTER is refused
-(`WRITABLE_KINSHIP_CHOICES` on the write serializer, `upsert_beneficiary` never writes a retired
-kinship as a new or changed value) — no exceptions, also for a stored DAUGHTER row.
+The standalone `DAUGHTER` («ابنة») was **removed** on 2026-10-28 (owner): daughters use the
+combined `ابن/ابنة (...)` options. It is not in the enum, the fee keys, the document rules or
+reference data; the API refuses it (`درجة القرابة غير صحيحة`) and the CHECK constraint
+`beneficiary_kinship_valid` excludes it (`beneficiaries.0003`/`0004`). Never re-add it.
 
 Beneficiary rules:
 - Belongs to one application. `row_number` 1..`MAX_BENEFICIARIES` (default **10**, configurable), unique per application.
@@ -104,7 +101,7 @@ kept so old uploads count) + `BENEFICIARY_NATIONAL_ID_BACK`; independent slots.
 |---|---|
 | HUSBAND / WIFE | ID (both), `MARRIAGE_CERTIFICATE`, `INSURANCE_PRINT` |
 | MOTHER / FATHER | ID (both) |
-| SON_MINOR / DAUGHTER | `BIRTH_CERTIFICATE` always offered, required **iff the member is female** (any age; the member's gender, never the child's); ID (both) if age ≥ 16 (both optional below 16) |
+| SON_MINOR | `BIRTH_CERTIFICATE` always offered, required **iff the member is female** (any age; the member's gender, never the child's); ID (both) if age ≥ 16 (both optional below 16) |
 | SON_UNIVERSITY | child rule + `UNIVERSITY_ID` |
 | SON_GRADUATE | child rule + `INSURANCE_PRINT` |
 | every kinship | `BENEFICIARY_PERSONAL_PHOTO` (always offered) required iff `is_first_time is True` and NOT (child kinship and known age < 3) |
@@ -175,7 +172,7 @@ Worked examples (FY 2026 v2) — table-driven tests (`apps/fees/tests/test_engin
 | B | 2026 / WORKING | 1990 | SON_MINOR | tier 0: 400+550+375 = **1325** |
 | C | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015 | tier 3: 825+1100+605+550 = **3080** |
 | 1 | 2023 / WORKING | 1995 | — | tier 1: 660+200 = **860** |
-| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, DAUGHTER 2018 | tier 3: 825+1100+605+605+725 = **3860** |
+| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, SON_MINOR 2018 | tier 3: 825+1100+605+605+725 = **3860** |
 | 3 | 1990 / PENSIONER | 1950 | WIFE 1955, SON_GRADUATE 1995 | tier 4: 500+500+1925+550 = **3475** |
 | 4 | 2018 / WORKING | 1990 | MOTHER 1960, SON_UNIVERSITY 2005 | tier 2: 770+1320+1540+550 = **4180** |
 | 5 | boundaries | — | — | 2026→0, 2025→1, 2021→1, 2020→2, 2016→2, 2015→3, 2011→3, 2010→4 |

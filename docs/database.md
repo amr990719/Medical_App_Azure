@@ -99,7 +99,7 @@ erDiagram
         uuid id PK
         uuid application_id FK
         smallint row_number "1..20, unique per application"
-        varchar kinship "MOTHER FATHER SON_MINOR SON_UNIVERSITY SON_GRADUATE DAUGHTER HUSBAND WIFE"
+        varchar kinship "MOTHER FATHER SON_MINOR SON_UNIVERSITY SON_GRADUATE HUSBAND WIFE"
         varchar full_name
         smallint birth_year
         varchar national_id "optional; unique per application"
