@@ -699,8 +699,8 @@ was introduced keep NULL until the doctor answers. It is stored in the submitted
 
 Kinship enum (Arabic labels; the three `SON_*` labels were changed by the owner on 2026-10-23 —
 values and fee keys unchanged, existing rows are not migrated). The standalone `DAUGHTER` is **retired from
-the dropdowns** (owner requirement of 2026-10-28): reference data sends `selectable: false`; stored rows keep label, fee, documents and
-validation and are never deleted or converted:
+the dropdowns** (owner requirement of 2026-10-28): reference data sends `selectable: false`; the API refuses `DAUGHTER` on every
+beneficiary create or update; stored rows (none expected) keep label, fee, documents and validation and are never deleted or converted:
 
 | Value | Arabic | Fee key |
 |---|---|---|

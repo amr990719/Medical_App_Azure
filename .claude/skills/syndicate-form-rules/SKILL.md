@@ -57,7 +57,9 @@ The `SON_*` labels changed on 2026-10-23 (values, fee keys and stored rows uncha
 `DAUGHTER` is in `constants.RETIRED_KINSHIPS`: reference data sends every kinship with
 `selectable` (`false` for DAUGHTER); the SPA offers a non-selectable kinship only as a row's stored
 value. Stored DAUGHTER rows keep label, fee key, document rules and validation; never delete or
-convert them (the API still accepts the value).
+convert them. Every create or update that sends DAUGHTER is refused
+(`WRITABLE_KINSHIP_CHOICES` on the write serializer, `upsert_beneficiary` never writes a retired
+kinship as a new or changed value) — no exceptions, also for a stored DAUGHTER row.
 
 Beneficiary rules:
 - Belongs to one application. `row_number` 1..`MAX_BENEFICIARIES` (default **10**, configurable), unique per application.

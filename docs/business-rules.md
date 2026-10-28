@@ -96,7 +96,10 @@ stored rows are not migrated. **The standalone `DAUGHTER` («ابنة») is reti
 (owner, 2026-10-28)**: reference data marks it `selectable: false`, the SPA offers it only as the
 stored value of an existing row (so an older application shows it and never clears it), and stored
 `DAUGHTER` rows keep their label, fee (child), document rules and validation. Nothing is deleted or
-converted; the API still accepts the value for those rows.
+converted. **Every beneficiary create or update that sends `DAUGHTER` is refused** (400,
+`درجة القرابة غير صحيحة`; owner, 2026-10-28), also for a row already stored as DAUGHTER; the
+request schema no longer lists it. The owner states no such row exists; the read support above is
+removed once a read-only check of the deployed database confirms it.
 
 Brothers, sisters and "other" are not supported because the schedule has no fee for them.
 

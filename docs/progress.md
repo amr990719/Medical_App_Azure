@@ -1083,6 +1083,23 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
   (project-specific skips; one spec fewer). Screenshots of the 1280 / 390 px form were inspected
   (dotted email, declaration wrapping at 390 px, optional slots) and the regenerated files
   restored, not committed. **NOT VERIFIED — requires Azure credentials:** nothing deployed.
+- **DAUGHTER refused on every write (owner, 2026-10-28, D174; Q-B27 answered):** the owner states
+  no beneficiary is stored as `DAUGHTER`. `BeneficiaryWriteSerializer.kinship` accepts only
+  `WRITABLE_KINSHIP_CHOICES` (every kinship except `RETIRED_KINSHIPS`), so any POST or PATCH that
+  sends `DAUGHTER` gets 400 `درجة القرابة غير صحيحة` — also when the row is already DAUGHTER; the
+  OpenAPI request enum (`BeneficiaryWriteKinshipEnum`) no longer lists it. `upsert_beneficiary`
+  refuses writing it as a new or changed value (internal callers such as `seed_dev_data`). The
+  seed data, `build_submittable_application` and the e2e flow use `SON_MINOR` for the daughter.
+- **Azure read-only check not run:** the owner asked to verify on the dev database (read-only)
+  that no `DAUGHTER` rows exist before removing the legacy read support. Both credentials on this
+  machine were refused (`az`: `AADSTS530035` security defaults, needs an interactive MFA sign-in;
+  the Azure MCP server is signed in to another tenant), so the enum value, the
+  `beneficiary_kinship_valid` constraint, the label / fee key / document rules, reference data
+  (`selectable: false`) and the SPA's stored-value option stay until the check runs (Q-B29).
+  Backend `pytest` **1273 passed, 1 skipped**, ruff clean, no migrations, `spectacular --validate
+  --fail-on-warn` OK; frontend `gen:api` (only the request enum), `typecheck`, `lint`, `vitest`
+  **333 passed**, `rtl:check` 0 errors; Playwright **10 passed, 4 skipped** (a first run had one
+  `admin-approve` failure that passed alone and on the full re-run).
 
 ## Decisions
 
@@ -1560,8 +1577,7 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
   disappear from the doctor's view, and Q-B26 is resolved without a separate "uploaded" branch.
 - **D170 — Retiring a kinship is a reference-data flag, not an enum change:** stored values must
   keep labels, fees and rules, so `Kinship.DAUGHTER` stays; `selectable: false` hides it in the SPA
-  except as a row's current value. The API still accepts `DAUGHTER` (old rows, old clients); a
-  server-side refusal of new DAUGHTER rows was not added (Q-B27).
+  except as a row's current value. (Superseded for writes by D174: the API refuses it.)
 - **D171 — Retired routes fall through to the not-found page:** no redirect, so a bookmarked print
   URL shows nothing of the application. Code that only served printing (admin preset, print mode,
   banner, unused prop and strings) was deleted with it; `print.css` stays because the browser's
@@ -1573,6 +1589,11 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
 - **D173 — Email as a read-only dotted field:** a labelled read-only `input` (not plain text) keeps
   the label association, the read-only semantics and LTR; `DashedField` gained an `underline`
   option instead of a second component.
+- **D174 — A retired kinship is refused at the API, not only hidden:** the request enum excludes
+  it and the service refuses writing it, with the same message as an unknown kinship. Refusing it
+  even when re-sent for a stored DAUGHTER row follows the owner's "without exceptions"; a PATCH
+  that does not send `kinship` carries the stored value over, so a legacy row (none expected) can
+  still be corrected to another kinship. Read support is removed only after the dev check (Q-B29).
 
 ## Deviations from PROMPT.md
 
@@ -1753,9 +1774,14 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B26** ~~After a female → male correction, an older child's uploaded birth certificate is no
   longer listed by the server.~~ **Resolved in Session 18 (D169):** the slot is always offered
   (optional for a male member), so an upload stays visible.
-- **Q-B27** The standalone `DAUGHTER` is hidden from the dropdowns only; the API still accepts it
-  for new rows (D170). Should the server refuse assigning it to a row that is not already
-  DAUGHTER? (Default: accepted, the SPA never offers it.)
+- **Q-B27** ~~Should the server refuse new DAUGHTER rows?~~ **Answered 2026-10-28 (D174):**
+  refused on every create or update.
+- **Q-B29** Run the read-only `DAUGHTER` check on the dev database (`psql-medsyn-dev-…`,
+  database `medical`) as a one-off migrate-job execution inside a `READ ONLY` transaction: count
+  beneficiaries by kinship, list DAUGHTER rows (ids, application status, reference only) and
+  submitted snapshots containing it. Blocked on 2026-10-28 (`AADSTS530035`). If none: remove
+  `Kinship.DAUGHTER` (constraint migration), its fee key, document and reference-data entries and
+  the SPA's stored-value option. If any: report them, never delete or convert them.
 - **Q-B28** Applications submitted before 2026-10-28 as FIRST_TIME may lack the member photo, and
   their children's certificates were required under the old rule. They are not re-validated; if
   one is sent back for correction, the doctor must add the photo before resubmitting. Confirm.
@@ -1774,8 +1800,9 @@ Sessions 16–17 (D166–D167) were merged into `main` as PR #9.
 **Local branch `feat/owner-requirements-2026-10-28`** (Session 18, D168–D173) is committed, not
 pushed: children's birth certificate only for a female member, member photo for FIRST_TIME only,
 «ابنة» retired from the dropdowns, new declaration, dotted email, application printing removed,
-error summary scrolls only after a failed attempt. Push and PR on confirmation; answer Q-B27 and
-Q-B28. The owner smoke list on dev no longer includes printing.
+error summary scrolls only after a failed attempt; the API refuses «ابنة» on every write (D174).
+Push and PR on confirmation; answer Q-B28. First run the read-only dev check of Q-B29 (needs
+`az login --tenant 448ad25b-… --scope https://management.core.windows.net//.default` with MFA). The owner smoke list on dev no longer includes printing.
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve. Enable Arabic
