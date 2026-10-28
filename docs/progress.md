@@ -1096,6 +1096,14 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
   the Azure MCP server is signed in to another tenant), so the enum value, the
   `beneficiary_kinship_valid` constraint, the label / fee key / document rules, reference data
   (`selectable: false`) and the SPA's stored-value option stay until the check runs (Q-B29).
+- **Dev read-only check (after the owner's MFA sign-in):** execution
+  `caj-medsyn-dev-migrate-lh0wiys` (image `010cbb8`, args only, `SET TRANSACTION READ ONLY`
+  confirmed `on`, database `medical`). **One `DAUGHTER` row found**, contrary to the expectation:
+  beneficiary `326b855f-fad2-46ca-8e3d-8627eabb1cd7` on application
+  `5dfcb21d-c708-4589-a88b-e20ec24657d5` (`DRAFT`, no reference number, FY 2026). No submitted
+  snapshot contains DAUGHTER. Totals: 3 applications; beneficiaries DAUGHTER 1, FATHER 1, MOTHER 1,
+  SON_GRADUATE 1, SON_MINOR 1, SON_UNIVERSITY 2. Nothing deleted or converted; legacy read support
+  kept (Q-B29).
   Backend `pytest` **1273 passed, 1 skipped**, ruff clean, no migrations, `spectacular --validate
   --fail-on-warn` OK; frontend `gen:api` (only the request enum), `typecheck`, `lint`, `vitest`
   **333 passed**, `rtl:check` 0 errors; Playwright **10 passed, 4 skipped** (a first run had one
@@ -1779,9 +1787,13 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B29** Run the read-only `DAUGHTER` check on the dev database (`psql-medsyn-dev-…`,
   database `medical`) as a one-off migrate-job execution inside a `READ ONLY` transaction: count
   beneficiaries by kinship, list DAUGHTER rows (ids, application status, reference only) and
-  submitted snapshots containing it. Blocked on 2026-10-28 (`AADSTS530035`). If none: remove
+  submitted snapshots containing it. **Ran 2026-10-28: one DAUGHTER row** (draft application
+  `5dfcb21d-…`, beneficiary `326b855f-…`), so the legacy read support stays. The row still loads,
+  prices and validates; the doctor can edit its other fields (the SPA never re-sends the kinship)
+  or pick a combined «ابن/ابنة (...)» option, but cannot re-save DAUGHTER. Owner: should the row be
+  left for the doctor to change, or corrected by an operator? Re-run the check before removing
   `Kinship.DAUGHTER` (constraint migration), its fee key, document and reference-data entries and
-  the SPA's stored-value option. If any: report them, never delete or convert them.
+  the SPA's stored-value option.
 - **Q-B28** Applications submitted before 2026-10-28 as FIRST_TIME may lack the member photo, and
   their children's certificates were required under the old rule. They are not re-validated; if
   one is sent back for correction, the doctor must add the photo before resubmitting. Confirm.
@@ -1801,8 +1813,8 @@ Sessions 16–17 (D166–D167) were merged into `main` as PR #9.
 pushed: children's birth certificate only for a female member, member photo for FIRST_TIME only,
 «ابنة» retired from the dropdowns, new declaration, dotted email, application printing removed,
 error summary scrolls only after a failed attempt; the API refuses «ابنة» on every write (D174).
-Push and PR on confirmation; answer Q-B28. First run the read-only dev check of Q-B29 (needs
-`az login --tenant 448ad25b-… --scope https://management.core.windows.net//.default` with MFA). The owner smoke list on dev no longer includes printing.
+Push and PR on confirmation; answer Q-B28 and Q-B29 (dev holds one DAUGHTER row on a draft, so
+the legacy read support stays). The owner smoke list on dev no longer includes printing.
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve. Enable Arabic
