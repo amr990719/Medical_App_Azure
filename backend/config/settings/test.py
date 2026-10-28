@@ -14,7 +14,6 @@ OCR_PROVIDER = "mock"
 # Business defaults pinned so tests do not depend on the developer's environment.
 CURRENT_FISCAL_YEAR = 2026
 MAX_BENEFICIARIES = 10
-REQUIRE_MEMBER_PHOTO = False
 CHILD_NATIONAL_ID_AGE = 16
 PHOTO_EXEMPT_CHILD_AGE = 3
 ENFORCE_SPOUSE_GENDER = True

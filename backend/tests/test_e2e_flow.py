@@ -114,7 +114,7 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
         return response.json()
 
     front = upload("NATIONAL_ID_FRONT")
-    for doc_type in ("NATIONAL_ID_BACK", "SYNDICATE_ID"):
+    for doc_type in ("NATIONAL_ID_BACK", "SYNDICATE_ID", "PERSONAL_PHOTO"):  # FIRST_TIME
         upload(doc_type)
     wife, son, daughter = rows
     for doc_type in (
@@ -134,7 +134,7 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
     assert re.fullmatch(
         rf"applications/{app_id}/doctor/national-id-front-[0-9a-f-]{{36}}\.png", blob_name
     )
-    step("POST /documents/ x10", f"stored in Azurite container {settings.BLOB_CONTAINER}")
+    step("POST /documents/ x11", f"stored in Azurite container {settings.BLOB_CONTAINER}")
 
     response = browser.get(f"/api/v1/documents/{front['id']}/content/")
     assert response.status_code == 200 and response.content[:4] == b"\x89PNG"

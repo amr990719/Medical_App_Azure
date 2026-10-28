@@ -9,7 +9,7 @@ requirement list), so labels and enforcement cannot drift apart (prototype defec
 from dataclasses import dataclass
 from typing import Literal
 
-from .constants import CHILD_KINSHIPS, DocumentType, Gender, Kinship
+from .constants import CHILD_KINSHIPS, ApplicationType, DocumentType, Gender, Kinship
 
 Stage = Literal["form", "submit"]
 BaseRule = Literal["spouse", "parent", "child"]
@@ -125,19 +125,20 @@ def _requirement(
 
 def member_document_requirements(
     *,
-    require_photo: bool,
+    application_type: ApplicationType | str | None = None,
     has_active_mother: bool = False,
     has_member_birth_certificate: bool = False,
 ) -> list[DocumentRequirement]:
     """Member slots. Called without the application facts it returns the global list
-    (reference data); `has_active_mother` adds the member's own birth certificate as a required
+    (reference data). The member photo is always offered and required only for a FIRST_TIME
+    application; `has_active_mother` adds the member's own birth certificate as a required
     slot. An already uploaded certificate stays visible (optional) once it is no longer needed.
     """
     reqs = [
         _requirement(DocumentType.NATIONAL_ID_FRONT, True),
         _requirement(DocumentType.NATIONAL_ID_BACK, True),
         _requirement(DocumentType.SYNDICATE_ID, True),
-        _requirement(DocumentType.PERSONAL_PHOTO, require_photo),
+        _requirement(DocumentType.PERSONAL_PHOTO, application_type == ApplicationType.FIRST_TIME),
     ]
     if has_active_mother or has_member_birth_certificate:
         reqs.append(
@@ -156,11 +157,12 @@ def _child_requirements(
 ) -> list[DocumentRequirement]:
     # Unknown birth year → treated as younger than the threshold (Review Focus 3).
     under_threshold = age is None or age < child_id_age
+    # The certificate proves the kinship to a female member (the MEMBER's gender, never the
+    # child's); for any other member it is offered as optional, so an upload stays visible.
     female_member = member_gender == Gender.FEMALE
     reqs = [_requirement(t, not under_threshold) for t in BENEFICIARY_NATIONAL_ID_SIDES]
-    if under_threshold or female_member:
-        hints = (HINT_FEMALE_MEMBER_BIRTH_CERTIFICATE,) if female_member else ()
-        reqs.append(_requirement(DocumentType.BIRTH_CERTIFICATE, True, hints=hints))
+    hints = (HINT_FEMALE_MEMBER_BIRTH_CERTIFICATE,) if female_member else ()
+    reqs.append(_requirement(DocumentType.BIRTH_CERTIFICATE, female_member, hints=hints))
     return reqs
 
 
@@ -228,13 +230,12 @@ def beneficiary_document_requirements(
     return reqs
 
 
-def rules_as_reference_data(
-    *, require_photo: bool, child_id_age: int, photo_exempt_child_age: int = 3
-) -> dict:
+def rules_as_reference_data(*, child_id_age: int, photo_exempt_child_age: int = 3) -> dict:
     """Serializable description of this table for `GET /api/v1/reference-data/`.
 
     `member` is the global list; the application's own list (with conditional slots such as the
-    member birth certificate) is `member_required_documents` on the application.
+    member photo and the member birth certificate) is `member_required_documents` on the
+    application.
     """
     national_id_sides = [t.value for t in BENEFICIARY_NATIONAL_ID_SIDES]
     return {
@@ -247,9 +248,12 @@ def rules_as_reference_data(
             }
             for t in DocumentType
         ],
-        "member": [r.as_dict() for r in member_document_requirements(require_photo=require_photo)],
+        "member": [r.as_dict() for r in member_document_requirements()],
         "member_conditional": {
-            DocumentType.MEMBER_BIRTH_CERTIFICATE.value: {"required_with_kinship": "MOTHER"}
+            DocumentType.PERSONAL_PHOTO.value: {
+                "required_with_application_type": ApplicationType.FIRST_TIME.value
+            },
+            DocumentType.MEMBER_BIRTH_CERTIFICATE.value: {"required_with_kinship": "MOTHER"},
         },
         "child_national_id_age": child_id_age,
         "photo_exempt_child_age": photo_exempt_child_age,
@@ -264,12 +268,13 @@ def rules_as_reference_data(
             "spouse": {"required": [t.value for t in _SPOUSE_DOCUMENTS]},
             "parent": {"required": national_id_sides},
             "child": {
-                "below_age": {
-                    "required": [DocumentType.BIRTH_CERTIFICATE.value],
-                    "optional": national_id_sides,
-                },
+                "below_age": {"required": [], "optional": national_id_sides},
                 "at_or_above_age": {"required": national_id_sides},
-                "female_member_always_requires": [DocumentType.BIRTH_CERTIFICATE.value],
+                "birth_certificate": {
+                    "type": DocumentType.BIRTH_CERTIFICATE.value,
+                    "required_when_member_gender": Gender.FEMALE.value,
+                    "otherwise": "optional",
+                },
                 "unknown_birth_year": "below_age",
             },
         },

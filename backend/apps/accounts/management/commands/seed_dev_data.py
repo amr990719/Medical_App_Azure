@@ -88,7 +88,10 @@ DOCTOR2_BENEFICIARIES = [
 ]  # fmt: skip
 CORRECTION_NOTES = "صورة بطاقة الأم غير واضحة، يرجى رفع صورة أوضح ثم إعادة التقديم."
 
-MEMBER_DOCUMENTS = ("NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PAYMENT_RECEIPT")
+# The member photo is required because the seeded applications are FIRST_TIME.
+MEMBER_DOCUMENTS = (
+    "NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PERSONAL_PHOTO", "PAYMENT_RECEIPT",
+)  # fmt: skip
 # Only while an active MOTHER is listed (the member's OWN birth certificate).
 MOTHER_MEMBER_DOCUMENTS = ("MEMBER_BIRTH_CERTIFICATE",)
 

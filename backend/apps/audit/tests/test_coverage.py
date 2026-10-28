@@ -66,6 +66,7 @@ def full_lifecycle(settings):
     upload(doctor, app_id, T.SYNDICATE_ID)
     extra = upload(doctor, app_id, T.PERSONAL_PHOTO)
     doctor.delete(f"/api/v1/documents/{extra}/")  # DOCUMENT_DELETED
+    upload(doctor, app_id, T.PERSONAL_PHOTO)  # required for a FIRST_TIME application
     doctor.get(f"/api/v1/documents/{front}/content/")  # DOCUMENT_VIEWED (replaced → 404)
     wife = doctor.post(f"{base}beneficiaries/", {
         "kinship": "WIFE", "full_name": "سارة محمود علي", "birth_year": 1988,

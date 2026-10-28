@@ -134,6 +134,9 @@ PARENT_KINSHIPS = frozenset({Kinship.MOTHER, Kinship.FATHER})
 CHILD_KINSHIPS = frozenset(
     {Kinship.SON_MINOR, Kinship.SON_UNIVERSITY, Kinship.SON_GRADUATE, Kinship.DAUGHTER}
 )
+# No longer offered in the kinship dropdowns (owner requirement of 2026-10-28; the combined
+# `ابن/ابنة (...)` options replace it). Stored rows keep their value, label, fee and documents.
+RETIRED_KINSHIPS = frozenset({Kinship.DAUGHTER})
 
 BENEFICIARY_BIRTH_YEAR_MIN = 1920
 REGISTRATION_YEAR_MIN = 1950

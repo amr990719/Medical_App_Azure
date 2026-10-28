@@ -211,7 +211,6 @@ Production settings **refuse to start** when a required value is missing or unsa
 |---|---|---|
 | `CURRENT_FISCAL_YEAR` | 2026 | fiscal year of new applications and fee quotes |
 | `MAX_BENEFICIARIES` | 10 | beneficiaries per application |
-| `REQUIRE_MEMBER_PHOTO` | `false` | personal photo mandatory |
 | `CHILD_NATIONAL_ID_AGE` | 16 | children from this age need both national-ID sides instead of only a birth certificate |
 | `PHOTO_EXEMPT_CHILD_AGE` | 3 | first-time child beneficiaries younger than this need no personal photo |
 | `ENFORCE_SPOUSE_GENDER` | `true` | WIFE needs a male member, HUSBAND a female member |

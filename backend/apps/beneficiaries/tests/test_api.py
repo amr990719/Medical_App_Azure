@@ -297,3 +297,27 @@ def test_kinship_change_keeps_the_first_time_answer():
         .json()
     )
     assert body["is_first_time"] is True
+
+
+@pytest.mark.parametrize(("gender", "required"), [("MALE", False), ("FEMALE", True)])
+@pytest.mark.parametrize("kinship", ["SON_MINOR", "SON_UNIVERSITY", "SON_GRADUATE", "DAUGHTER"])
+@pytest.mark.parametrize("birth_year", [2024, 2015, 2005])
+def test_child_birth_certificate_slot_follows_the_members_gender(gender, required, kinship,
+                                                                 birth_year):  # fmt: skip
+    app = ApplicationFactory(doctor=DoctorFactory(gender=gender))
+    BeneficiaryFactory(application=app, kinship=kinship, birth_year=birth_year)
+    body = client_for(app.doctor.user).get(f"/api/v1/applications/{app.pk}/").json()
+    slots = {r["type"]: r["required"] for r in body["beneficiaries"][0]["required_documents"]}
+    assert slots["BIRTH_CERTIFICATE"] is required  # always offered, required for a female member
+
+
+def test_historical_daughter_row_still_loads_and_edits():
+    app = ApplicationFactory()
+    b = BeneficiaryFactory(application=app, kinship=Kinship.DAUGHTER, full_name="مريم",
+                           birth_year=2018, is_first_time=False)  # fmt: skip
+    DocumentFactory(application=app, beneficiary=b, document_type=DocumentType.BIRTH_CERTIFICATE)
+    client = client_for(app.doctor.user)
+    body = client.patch(item(app, b), {"full_name": "مريم أحمد"}, format="json").json()
+    assert (body["kinship"], body["full_name"]) == ("DAUGHTER", "مريم أحمد")
+    assert {r["type"] for r in body["required_documents"]} >= {"BIRTH_CERTIFICATE"}
+    assert Document.objects.filter(beneficiary=b).count() == 1  # documents untouched

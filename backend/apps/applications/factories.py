@@ -28,8 +28,9 @@ class ApplicationFactory(factory.django.DjangoModelFactory):
 def build_submittable_application(**application_fields) -> InsuranceApplication:
     """Worked example 2 (PROMPT.md §17.4), complete and valid for submission:
     male member born 1985, registered 2014, WIFE 1988, SON_MINOR 2015, DAUGHTER 2018 (none of
-    them first-time, so no photos), every required document — both national-ID sides — and the
-    receipt uploaded, declaration signed and accepted.
+    them first-time, so no beneficiary photos), every required document — both national-ID
+    sides, the member photo of a FIRST_TIME application — and the receipt uploaded, declaration
+    signed and accepted.
     Expected fee (FY 2026 v2, tier 3): 825 + 1100 + 605 + 605 + (200 + 3 × 175) = 3860."""
     from apps.beneficiaries.factories import BeneficiaryFactory
     from apps.documents.factories import DocumentFactory
@@ -50,6 +51,8 @@ def build_submittable_application(**application_fields) -> InsuranceApplication:
         DocumentType.PAYMENT_RECEIPT,
     ):
         DocumentFactory(application=app, document_type=doc_type)
+    if app.application_type == ApplicationType.FIRST_TIME:
+        DocumentFactory(application=app, document_type=DocumentType.PERSONAL_PHOTO)
 
     wife = BeneficiaryFactory(
         application=app, row_number=1, kinship=Kinship.WIFE, full_name="سارة محمود علي",
