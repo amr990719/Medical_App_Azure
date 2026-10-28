@@ -30,14 +30,15 @@ class Religion(models.TextChoices):
 
 
 class Kinship(models.TextChoices):
-    """Supported kinships. Brother/sister/other are intentionally absent (no fee exists)."""
+    """Supported kinships. Brother/sister/other are intentionally absent (no fee exists).
+    The standalone DAUGHTER («ابنة») was removed on 2026-10-28: the combined `ابن/ابنة (...)`
+    options cover daughters."""
 
     MOTHER = "MOTHER", "أم"
     FATHER = "FATHER", "أب"
     SON_MINOR = "SON_MINOR", "ابن/ابنة (18 سنة أو أقل)"
     SON_UNIVERSITY = "SON_UNIVERSITY", "ابن/ابنة (طالب جامعي)"
     SON_GRADUATE = "SON_GRADUATE", "ابن/ابنة (خريج)"
-    DAUGHTER = "DAUGHTER", "ابنة"
     HUSBAND = "HUSBAND", "زوج"
     WIFE = "WIFE", "زوجة"
 
@@ -124,16 +125,13 @@ KINSHIP_FEE_KEY: dict[Kinship, FeeKey] = {
     Kinship.SON_MINOR: "child",
     Kinship.SON_UNIVERSITY: "grad_son",
     Kinship.SON_GRADUATE: "grad_son",
-    Kinship.DAUGHTER: "child",
     Kinship.HUSBAND: "spouse",
     Kinship.WIFE: "spouse",
 }
 
 SPOUSE_KINSHIPS = frozenset({Kinship.HUSBAND, Kinship.WIFE})
 PARENT_KINSHIPS = frozenset({Kinship.MOTHER, Kinship.FATHER})
-CHILD_KINSHIPS = frozenset(
-    {Kinship.SON_MINOR, Kinship.SON_UNIVERSITY, Kinship.SON_GRADUATE, Kinship.DAUGHTER}
-)
+CHILD_KINSHIPS = frozenset({Kinship.SON_MINOR, Kinship.SON_UNIVERSITY, Kinship.SON_GRADUATE})
 
 BENEFICIARY_BIRTH_YEAR_MIN = 1920
 REGISTRATION_YEAR_MIN = 1950

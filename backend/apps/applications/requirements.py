@@ -1,7 +1,7 @@
 """Document requirements of ONE application, evaluated on the server from THE rules table
 (`apps/reference/document_rules.py`). The validator, the doctor API and the admin API all call
-these functions, so a conditional slot (the member birth certificate while a MOTHER is listed)
-is decided in exactly one place.
+these functions, so a conditional slot (the member photo of a FIRST_TIME application, the member
+birth certificate while a MOTHER is listed) is decided in exactly one place.
 """
 
 from django.conf import settings
@@ -28,7 +28,7 @@ def member_requirements(
             d.document_type for d in application.documents.all() if d.beneficiary_id is None
         }
     return member_document_requirements(
-        require_photo=settings.REQUIRE_MEMBER_PHOTO,
+        application_type=application.application_type,
         has_active_mother=has_active_mother(application),
         has_member_birth_certificate=DocumentType.MEMBER_BIRTH_CERTIFICATE in member_documents,
     )

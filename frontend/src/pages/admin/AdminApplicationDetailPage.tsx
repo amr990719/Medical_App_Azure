@@ -227,7 +227,7 @@ function BeneficiariesPanel({
 /**
  * `/admin/applications/:id` (PROMPT.md §44): member data with an audited "show full national
  * ID", beneficiaries and documents in a viewer, the fee SNAPSHOT, receipt confirm/reject,
- * duplicate warnings, the server's allowed transitions, review and internal notes, audit, print.
+ * duplicate warnings, the server's allowed transitions, review and internal notes, audit.
  */
 export function AdminApplicationDetailPage() {
   const { id = "" } = useParams();
@@ -274,10 +274,6 @@ export function AdminApplicationDetailPage() {
             {app.submittedAt ? <span>{t(D.submittedAt, { date: formatDate(app.submittedAt) })}</span> : null}
           </div>
         </div>
-        <Link to={`/admin/applications/${id}/print`} className={buttonClasses("outline")}>
-          <Icon name="print" className="size-4" />
-          {D.print}
-        </Link>
       </header>
 
       {flash ? (

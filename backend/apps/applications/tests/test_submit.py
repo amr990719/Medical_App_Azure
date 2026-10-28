@@ -65,7 +65,7 @@ def test_submit_writes_snapshot_and_audit():
     assert snapshot["member"]["full_name"] == app.doctor.full_name
     assert snapshot["member"]["national_id"] == app.doctor.national_id
     assert snapshot["application"]["work_status"] == "WORKING"
-    assert [b["kinship"] for b in snapshot["beneficiaries"]] == ["WIFE", "SON_MINOR", "DAUGHTER"]
+    assert [b["kinship"] for b in snapshot["beneficiaries"]] == ["WIFE", "SON_MINOR", "SON_MINOR"]
     assert [b["is_first_time"] for b in snapshot["beneficiaries"]] == [False, False, False]
     assert len(snapshot["documents"]) == Document.objects.filter(application=app).count()
     assert actions() == [AuditAction.APPLICATION_SUBMITTED, AuditAction.FEE_SNAPSHOT_CREATED]

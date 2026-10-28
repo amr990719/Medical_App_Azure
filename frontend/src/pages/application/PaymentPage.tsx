@@ -201,7 +201,7 @@ export function PaymentPage() {
   const receipt = app.documents.find((doc) => doc.documentType === "PAYMENT_RECEIPT");
 
   return (
-    <WizardFrame applicationId={id} fiscalYear={app.fiscalYear} step={4} completed={completedSteps(validation.data?.stepsComplete)}>
+    <WizardFrame fiscalYear={app.fiscalYear} step={4} completed={completedSteps(validation.data?.stepsComplete)}>
       <div className="mx-auto max-w-[720px] space-y-5 px-3 pb-36 pt-5 sm:px-4">
         <Link
           to={`/application/${id}/form`}

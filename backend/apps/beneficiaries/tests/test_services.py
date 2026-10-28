@@ -94,6 +94,23 @@ def test_unknown_kinship_rejected():
     assert "kinship" in exc.value.fields
 
 
+def test_removed_daughter_is_never_written_to_a_new_row():
+    app = ApplicationFactory()
+    with pytest.raises(ValidationFailed) as exc:
+        upsert(app, kinship="DAUGHTER")
+    assert exc.value.fields == {"kinship": ["درجة القرابة غير صحيحة"]}
+    assert not app.beneficiaries.exists()
+
+
+def test_removed_daughter_is_never_written_over_another_kinship():
+    app = ApplicationFactory()
+    b = upsert(app)
+    with pytest.raises(ValidationFailed):
+        upsert(app, kinship="DAUGHTER")
+    b.refresh_from_db()
+    assert b.kinship == Kinship.SON_MINOR
+
+
 @pytest.mark.parametrize("status", [ApplicationStatus.SUBMITTED, ApplicationStatus.APPROVED])
 def test_not_editable_raises(status):
     app = ApplicationFactory(status=status, reference_number="MED-2026-000001")
@@ -125,7 +142,7 @@ def test_kinship_change_soft_deletes_documents():
     app = ApplicationFactory()
     b = upsert(app)
     doc = DocumentFactory(application=app, beneficiary=b, document_type=D.BIRTH_CERTIFICATE)
-    upsert(app, kinship=Kinship.DAUGHTER)
+    upsert(app, kinship=Kinship.SON_UNIVERSITY)
     doc.refresh_from_db()
     assert doc.deleted_at is not None
     assert not Document.objects.filter(beneficiary=b).exists()

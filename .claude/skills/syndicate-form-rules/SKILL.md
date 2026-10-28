@@ -48,12 +48,15 @@ Never a primary key.
 | `SON_MINOR` | ابن/ابنة (18 سنة أو أقل) | child |
 | `SON_UNIVERSITY` | ابن/ابنة (طالب جامعي) | grad_son |
 | `SON_GRADUATE` | ابن/ابنة (خريج) | grad_son |
-| `DAUGHTER` | ابنة | child |
 | `HUSBAND` | زوج | spouse |
 | `WIFE` | زوجة | spouse |
 
 Brother / sister / other are intentionally unsupported (no fee). Keep the enum extensible.
-The `SON_*` labels changed on 2026-10-23 (values, fee keys and stored rows unchanged; `DAUGHTER` stays).
+The `SON_*` labels changed on 2026-10-23 (values, fee keys and stored rows unchanged).
+The standalone `DAUGHTER` («ابنة») was **removed** on 2026-10-28 (owner): daughters use the
+combined `ابن/ابنة (...)` options. It is not in the enum, the fee keys, the document rules or
+reference data; the API refuses it (`درجة القرابة غير صحيحة`) and the CHECK constraint
+`beneficiary_kinship_valid` excludes it (`beneficiaries.0003`/`0004`). Never re-add it.
 
 Beneficiary rules:
 - Belongs to one application. `row_number` 1..`MAX_BENEFICIARIES` (default **10**, configurable), unique per application.
@@ -78,13 +81,15 @@ Member:
 | `NATIONAL_ID_FRONT` | صورة البطاقة (وجه) | yes |
 | `NATIONAL_ID_BACK` | صورة البطاقة (ظهر) | yes |
 | `SYNDICATE_ID` | كارنيه النقابة | yes |
-| `PERSONAL_PHOTO` | صورة العضو الأصلي | `REQUIRE_MEMBER_PHOTO` (default false); image only |
+| `PERSONAL_PHOTO` | صورة العضو الأصلي | iff `application_type == FIRST_TIME` (optional for ADDITION / other types; always offered; no global setting); image only |
 | `MEMBER_BIRTH_CERTIFICATE` | شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم | while an ACTIVE `MOTHER` exists; else hidden, or optional if already uploaded (never deleted) |
 | `PAYMENT_RECEIPT` | إيصال الدفع | yes, at submission (step 4) |
 
 The member list is application-specific: `apps/applications/requirements.py::member_requirements(app)`
 → `member_required_documents` on `ApplicationSerializer` and `AdminApplicationDetailSerializer`.
-Reference data keeps the global list + `member_conditional: {MEMBER_BIRTH_CERTIFICATE: {required_with_kinship: MOTHER}}`.
+Reference data keeps the global list (photo optional) + `member_conditional:
+{PERSONAL_PHOTO: {required_with_application_type: FIRST_TIME}, MEMBER_BIRTH_CERTIFICATE: {required_with_kinship: MOTHER}}`.
+A type change refreshes the slot through the application PATCH response; an uploaded photo stays.
 The member certificate is member-owned (no beneficiary), not OCR-capable, and the mother's/children's
 `BIRTH_CERTIFICATE` never satisfies it.
 
@@ -96,14 +101,15 @@ kept so old uploads count) + `BENEFICIARY_NATIONAL_ID_BACK`; independent slots.
 |---|---|
 | HUSBAND / WIFE | ID (both), `MARRIAGE_CERTIFICATE`, `INSURANCE_PRINT` |
 | MOTHER / FATHER | ID (both) |
-| SON_MINOR / DAUGHTER | `BIRTH_CERTIFICATE` if age < 16 **or** member is female; ID (both) if age ≥ 16 (both optional below 16) |
+| SON_MINOR | `BIRTH_CERTIFICATE` always offered, required **iff the member is female** (any age; the member's gender, never the child's); ID (both) if age ≥ 16 (both optional below 16) |
 | SON_UNIVERSITY | child rule + `UNIVERSITY_ID` |
 | SON_GRADUATE | child rule + `INSURANCE_PRINT` |
 | every kinship | `BENEFICIARY_PERSONAL_PHOTO` (always offered) required iff `is_first_time is True` and NOT (child kinship and known age < 3) |
 
-Unknown birth year for a child → treat as age < 16 (birth certificate required, ID optional) and it never
-grants the photo exemption. Female member → children's `BIRTH_CERTIFICATE` at any age with hint
-`شهادة ميلاد الابن/الابنة مطلوبة لإثبات صلة القرابة بالأم (العضوة) مهما كان العمر.`
+Unknown birth year for a child → treat as age < 16 (ID optional) and it never grants the photo
+exemption. Female member → children's `BIRTH_CERTIFICATE` required at any age with hint
+`شهادة ميلاد الابن/الابنة مطلوبة لإثبات صلة القرابة بالأم (العضوة) مهما كان العمر.`; male (or unknown)
+member → optional at every age, also below 16, no hint (owner, 2026-10-28).
 Photo hints: `صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.` (+ `لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.`
 for `SON_MINOR` only). No automatic white-background detection. Requirement dicts:
 `{type, required, label, ocr_capable, stage, images_only, hints}`.
@@ -166,7 +172,7 @@ Worked examples (FY 2026 v2) — table-driven tests (`apps/fees/tests/test_engin
 | B | 2026 / WORKING | 1990 | SON_MINOR | tier 0: 400+550+375 = **1325** |
 | C | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015 | tier 3: 825+1100+605+550 = **3080** |
 | 1 | 2023 / WORKING | 1995 | — | tier 1: 660+200 = **860** |
-| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, DAUGHTER 2018 | tier 3: 825+1100+605+605+725 = **3860** |
+| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, SON_MINOR 2018 | tier 3: 825+1100+605+605+725 = **3860** |
 | 3 | 1990 / PENSIONER | 1950 | WIFE 1955, SON_GRADUATE 1995 | tier 4: 500+500+1925+550 = **3475** |
 | 4 | 2018 / WORKING | 1990 | MOTHER 1960, SON_UNIVERSITY 2005 | tier 2: 770+1320+1540+550 = **4180** |
 | 5 | boundaries | — | — | 2026→0, 2025→1, 2021→1, 2020→2, 2016→2, 2015→3, 2011→3, 2010→4 |

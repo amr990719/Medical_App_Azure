@@ -3,7 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { fetchApplication } from "@/api/endpoints/applications";
 import { fetchProfile } from "@/api/endpoints/profile";
 import { queryKeys } from "@/api/keys";
-import type { Application, Beneficiary, DocumentSummary, DocumentType, DoctorProfile } from "@/api/types";
+import type { Beneficiary, DocumentSummary, DocumentType } from "@/api/types";
 import { useReferenceData } from "@/features/reference/useReferenceData";
 import { ar } from "@/i18n/ar";
 import { DraftController, type DraftOptions } from "./draftController";
@@ -32,37 +32,23 @@ function nationalIdErrors(state: ApplicationFormState | null, readOnly: boolean)
  * loads application + profile + reference data, exposes the form state, the edit operations,
  * autosave status and the server documents of each row.
  */
-/**
- * Data given by the caller instead of the doctor endpoints: the admin print view feeds the
- * sheet from GET /admin/applications/{id}/ (always read-only).
- */
-export type DraftPreset = { application: Application; profile: DoctorProfile };
-
-export function useApplicationDraft(
-  applicationId: string,
-  options: DraftOptions = {},
-  forceReadOnly = false,
-  preset?: DraftPreset,
-) {
+export function useApplicationDraft(applicationId: string, options: DraftOptions = {}, forceReadOnly = false) {
   const queryClient = useQueryClient();
   const reference = useReferenceData();
-  const fetched = useQuery({
+  const application = useQuery({
     queryKey: queryKeys.applications.detail(applicationId),
     queryFn: () => fetchApplication(applicationId),
-    enabled: !preset,
   });
-  const fetchedProfile = useQuery({ queryKey: queryKeys.profile, queryFn: fetchProfile, enabled: !preset });
-  const application = preset ? { data: preset.application, error: null, refetch: fetched.refetch } : fetched;
-  const profile = preset ? { data: preset.profile, error: null, refetch: fetchedProfile.refetch } : fetchedProfile;
+  const profile = useQuery({ queryKey: queryKeys.profile, queryFn: fetchProfile });
   const [controller] = useState(() => new DraftController(queryClient, applicationId, options));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
 
   const maxRows = reference.data?.maxBeneficiaries;
   useEffect(() => {
     if (application.data && profile.data && maxRows) {
-      controller.initialize(application.data, profile.data, maxRows, forceReadOnly || Boolean(preset));
+      controller.initialize(application.data, profile.data, maxRows, forceReadOnly);
     }
-  }, [controller, application.data, profile.data, maxRows, forceReadOnly, preset]);
+  }, [controller, application.data, profile.data, maxRows, forceReadOnly]);
 
   // Leaving the page sends what the debounce was still holding.
   useEffect(() => () => controller.release(), [controller]);

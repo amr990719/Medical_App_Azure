@@ -80,7 +80,7 @@ describe("first-time answer on reload", () => {
       ...(toCamel(apiApplication()).beneficiaries[0] ?? {}),
       id: `b${index}`,
       rowNumber: index + 1,
-      kinship: "DAUGHTER" as const,
+      kinship: "SON_MINOR" as const,
       fullName: "مريم",
       birthYear: 2015,
       nationalId: null,

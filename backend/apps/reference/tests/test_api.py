@@ -30,22 +30,21 @@ def test_reference_data_shape_and_27_governorates():
     assert {"value": "PENSIONER", "label": "معاش"} in data["work_statuses"]
     assert {"value": "MUSLIM", "label": "مسلم"} in data["religions"]
     assert {"value": "FEMALE", "label": "أنثى"} in data["genders"]
-    assert [(k["value"], k["label"], k["fee_key"]) for k in data["kinships"]] == [
-        ("MOTHER", "أم", "parent"),
-        ("FATHER", "أب", "parent"),
-        ("SON_MINOR", "ابن/ابنة (18 سنة أو أقل)", "child"),
-        ("SON_UNIVERSITY", "ابن/ابنة (طالب جامعي)", "grad_son"),
-        ("SON_GRADUATE", "ابن/ابنة (خريج)", "grad_son"),
-        ("DAUGHTER", "ابنة", "child"),
-        ("HUSBAND", "زوج", "spouse"),
-        ("WIFE", "زوجة", "spouse"),
+    # The standalone DAUGHTER («ابنة») was removed on 2026-10-28.
+    assert data["kinships"] == [
+        {"value": "MOTHER", "label": "أم", "fee_key": "parent"},
+        {"value": "FATHER", "label": "أب", "fee_key": "parent"},
+        {"value": "SON_MINOR", "label": "ابن/ابنة (18 سنة أو أقل)", "fee_key": "child"},
+        {"value": "SON_UNIVERSITY", "label": "ابن/ابنة (طالب جامعي)", "fee_key": "grad_son"},
+        {"value": "SON_GRADUATE", "label": "ابن/ابنة (خريج)", "fee_key": "grad_son"},
+        {"value": "HUSBAND", "label": "زوج", "fee_key": "spouse"},
+        {"value": "WIFE", "label": "زوجة", "fee_key": "spouse"},
     ]
     assert {"value": "ADDITION", "label": "إضافة"} in data["application_types"]
     assert {"value": "NEEDS_CORRECTION", "label": "يحتاج تصحيح"} in data["statuses"]
     assert {"value": "PENDING_REVIEW", "label": "بانتظار التأكيد"} in data["payment_statuses"]
     assert data["ocr_enabled"] is False
     assert data["features"] == {
-        "require_member_photo": False,
         "allow_pdf": False,
         "allow_heic": False,
     }
@@ -63,7 +62,7 @@ def test_document_rules_come_from_the_single_rules_table():
 
     data = get(UserFactory()).json()
     assert data["document_rules"] == rules_as_reference_data(
-        require_photo=False, child_id_age=16, photo_exempt_child_age=3
+        child_id_age=16, photo_exempt_child_age=3
     )
     ocr = {t["type"] for t in data["document_rules"]["document_types"] if t["ocr_capable"]}
     assert ocr == {

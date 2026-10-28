@@ -194,7 +194,7 @@
         },
         {
           "type": "BIRTH_CERTIFICATE",
-          "required": true,
+          "required": false,
           "label": "شهادة ميلاد المستفيد",
           "ocr_capable": true,
           "stage": "form",
@@ -355,7 +355,7 @@
     },
     {
       "type": "PERSONAL_PHOTO",
-      "required": false,
+      "required": true,
       "label": "صورة العضو الأصلي",
       "ocr_capable": false,
       "stage": "form",

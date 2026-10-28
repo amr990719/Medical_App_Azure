@@ -53,15 +53,15 @@ const gate = (): Gate => {
 
 const FISCAL_YEAR = 2026;
 const CHILD_ID_AGE = 16;
-const CHILD_KINSHIPS = new Set(["SON_MINOR", "DAUGHTER", "SON_UNIVERSITY", "SON_GRADUATE"]);
+const CHILD_KINSHIPS = new Set(["SON_MINOR", "SON_UNIVERSITY", "SON_GRADUATE"]);
 const slot = (type: string, label: string, required: boolean) => ({
   type, label, required, ocr_capable: false, stage: "form", images_only: false, hints: [] as string[],
 });  // fmt: skip
 
 /**
  * A child's slots as the server lists them (`document_rules.py`): both ID sides required from
- * CHILD_ID_AGE (optional below), the birth certificate while younger OR when the member is female
- * (absent otherwise), plus the kinship's own document.
+ * CHILD_ID_AGE (optional below), the birth certificate always offered and required only when the
+ * MEMBER is female (whatever the child's age), plus the kinship's own document.
  */
 function childSlots(kinship: string, birthYear: number | null | undefined, memberGender: string | undefined) {
   const age = birthYear === null || birthYear === undefined ? null : FISCAL_YEAR - birthYear;
@@ -70,7 +70,7 @@ function childSlots(kinship: string, birthYear: number | null | undefined, membe
     slot("BENEFICIARY_NATIONAL_ID", "بطاقة الرقم القومي للمستفيد (وجه)", !younger),
     slot("BENEFICIARY_NATIONAL_ID_BACK", "بطاقة الرقم القومي للمستفيد (ظهر)", !younger),
   ];
-  if (younger || memberGender === "FEMALE") slots.push(slot("BIRTH_CERTIFICATE", BIRTH_CERTIFICATE, true));
+  slots.push(slot("BIRTH_CERTIFICATE", BIRTH_CERTIFICATE, memberGender === "FEMALE"));
   if (kinship === "SON_UNIVERSITY") slots.push(slot("UNIVERSITY_ID", "كارنيه الجامعة", true));
   if (kinship === "SON_GRADUATE") slots.push(slot("INSURANCE_PRINT", "برينت تأميني", true));
   return slots;
@@ -364,13 +364,12 @@ const child = (row: number, kinship: string, name: string, birthYear: number, ov
 /** Every child kinship, all aged 16 or more in FY 2026. */
 const OLDER_CHILDREN = [
   child(1, "SON_MINOR", "عمر", 2009),
-  child(2, "DAUGHTER", "مريم", 2008),
+  child(2, "SON_MINOR", "مريم", 2008),
   child(3, "SON_UNIVERSITY", "يوسف", 2005),
   child(4, "SON_GRADUATE", "خالد", 2000),
 ];
 const KINSHIP_LABEL: Record<string, string> = {
   SON_MINOR: "ابن/ابنة (18 سنة أو أقل)",
-  DAUGHTER: "ابنة",
   SON_UNIVERSITY: "ابن/ابنة (طالب جامعي)",
   SON_GRADUATE: "ابن/ابنة (خريج)",
 };
@@ -396,7 +395,7 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
       profile: apiProfile({ gender: "MALE", full_name: "منى حسن علي" }),
     });
     const { user } = await renderForm({ withMember: true });
-    for (const b of OLDER_CHILDREN) expect(slotState(groupOf(b), BIRTH_CERTIFICATE)).toBeNull();
+    for (const b of OLDER_CHILDREN) expect(slotState(groupOf(b), BIRTH_CERTIFICATE)).toBe("optional");
     expect(paperclip(4)).toHaveAttribute("data-state", "complete");
     const before = { ...backend.calls };
 
@@ -430,10 +429,10 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
     expect({ ...backend.calls, profilePatches: backend.calls.profilePatches.length }).toEqual(settled);
   });
 
-  it("female → male: the server's slots apply — older children lose it, younger keep it, uploads are kept", async () => {
+  it("female → male: every child's certificate turns optional, uploads stay attached and visible", async () => {
     const university = child(1, "SON_UNIVERSITY", "يوسف", 2005);
     const minor = child(2, "SON_MINOR", "عمر", 2016);
-    const daughter = child(3, "DAUGHTER", "مريم", 2021);
+    const daughter = child(3, "SON_MINOR", "مريم", 2021);
     const uploaded = apiDocument({ id: "d-bc", document_type: "BIRTH_CERTIFICATE", beneficiary_id: "b-1" });
     const backend = fakeBackend({
       beneficiaries: [university, minor, daughter],
@@ -447,12 +446,12 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
 
     await user.click(genderRadio("ذكر"));
 
-    // The server no longer lists it for the 21-year-old (both ID sides are required instead) …
-    await waitFor(() => expect(slotState(groupOf(university), BIRTH_CERTIFICATE)).toBeNull());
+    // Below the ID age too, a male member's children need no certificate: it becomes optional …
+    await waitFor(() => expect(slotState(groupOf(minor), BIRTH_CERTIFICATE)).toBe("optional"));
+    expect(slotState(groupOf(daughter), BIRTH_CERTIFICATE)).toBe("optional");
+    // … the 21-year-old's uploaded one stays listed and attached; both ID sides remain required …
+    expect(slotState(groupOf(university), BIRTH_CERTIFICATE)).toBe("attached");
     expect(slotState(groupOf(university), "بطاقة الرقم القومي للمستفيد (وجه)")).toBe("missing");
-    // … the younger children still need theirs …
-    expect(slotState(groupOf(minor), BIRTH_CERTIFICATE)).toBe("missing");
-    expect(slotState(groupOf(daughter), BIRTH_CERTIFICATE)).toBe("missing");
     // … and the uploaded certificate is kept on the server and in the refetched application.
     expect(backend.db.documents).toEqual([uploaded]);
     expect(backend.calls.documentDeletes).toBe(0);
@@ -462,14 +461,30 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
     expect(app?.beneficiaries.find((b) => b.id === "b-1")?.documents.map((d) => d.id)).toEqual(["d-bc"]);
   });
 
+  it("male → female: children below the ID age get a required certificate, without a reload", async () => {
+    const minor = child(1, "SON_MINOR", "عمر", 2020);
+    const university = child(2, "SON_UNIVERSITY", "يوسف", 2012);
+    fakeBackend({ beneficiaries: [minor, university], profile: apiProfile({ gender: "MALE" }) });
+    const { user } = await renderForm({ withMember: true });
+    expect(slotState(groupOf(minor), BIRTH_CERTIFICATE)).toBe("optional");
+    expect(slotState(groupOf(university), BIRTH_CERTIFICATE)).toBe("optional");
+    expect(slotState(groupOf(minor), "بطاقة الرقم القومي للمستفيد (وجه)")).toBe("optional");
+
+    await user.click(genderRadio("أنثى"));
+
+    await waitFor(() => expect(slotState(groupOf(minor), BIRTH_CERTIFICATE)).toBe("missing"));
+    expect(slotState(groupOf(university), BIRTH_CERTIFICATE)).toBe("missing");
+    expect(slotState(groupOf(minor), "بطاقة الرقم القومي للمستفيد (وجه)")).toBe("optional");
+  });
+
   it("a national ID whose stored gender differs refreshes the slots (only the ID is sent)", async () => {
-    const daughter = child(1, "DAUGHTER", "مريم", 2008);
+    const daughter = child(1, "SON_MINOR", "مريم", 2008);
     const backend = fakeBackend({
       beneficiaries: [daughter],
       profile: apiProfile({ gender: "MALE", national_id: MALE_ID, birth_year: 1985 }),
     });
     const { user } = await renderForm({ withMember: true });
-    expect(slotState(groupOf(daughter), BIRTH_CERTIFICATE)).toBeNull();
+    expect(slotState(groupOf(daughter), BIRTH_CERTIFICATE)).toBe("optional");
 
     await user.click(memberIdDigit());
     await user.paste(FEMALE_ID);
@@ -480,7 +495,7 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
   });
 
   it("refreshes after a partial profile save when the persisted part changed the gender", async () => {
-    const daughter = child(1, "DAUGHTER", "مريم", 2008);
+    const daughter = child(1, "SON_MINOR", "مريم", 2008);
     const backend = fakeBackend({
       beneficiaries: [daughter],
       profile: apiProfile({ gender: "MALE", national_id: MALE_ID, birth_year: 1985 }),
@@ -501,7 +516,7 @@ describe("children's document slots follow the member's gender", { timeout: 15_0
 
   it("does not refetch the application for profile edits that cannot change the slots", async () => {
     const backend = fakeBackend({
-      beneficiaries: [child(1, "DAUGHTER", "مريم", 2008)],
+      beneficiaries: [child(1, "SON_MINOR", "مريم", 2008)],
       profile: apiProfile({ gender: "MALE" }),
     });
     const { user } = await renderForm({ withMember: true });

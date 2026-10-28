@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   API,
   APP_ID,
@@ -58,9 +58,12 @@ describe("ReviewPage (PROMPT.md §8, §9.7, §16.2)", () => {
       is_valid: false,
       errors: [{ step: 1, field: "member.phone_number", code: "INVALID", message: "رقم الهاتف المحمول غير صحيح" }],
     });
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     await openReview();
     const title = await screen.findByText("يرجى تصحيح الأخطاء التالية قبل المتابعة:");
     expect(title.closest("[role=alert]")).toHaveTextContent("رقم الهاتف المحمول غير صحيح");
+    expect(scroll).not.toHaveBeenCalled(); // no submit attempt yet: the page does not jump
+    scroll.mockRestore();
     expect(screen.getByRole("link", { name: "الذهاب لتصحيح الاستمارة" })).toHaveAttribute(
       "href",
       `/application/${APP_ID}/form`,
@@ -131,6 +134,7 @@ describe("ReviewPage (PROMPT.md §8, §9.7, §16.2)", () => {
         ),
       ),
     );
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     const { user } = await openReview();
     await user.click(screen.getByRole("button", { name: "تقديم الطلب" }));
     const title = await screen.findByText("يرجى تصحيح الأخطاء التالية قبل المتابعة:");
@@ -139,6 +143,12 @@ describe("ReviewPage (PROMPT.md §8, §9.7, §16.2)", () => {
       "يرجى رفع إيصال الدفع",
       "اسم المقر يجب أن يطابق اسم العضو",
     ]);
+    // The refused submission scrolls to the rendered summary, once per attempt.
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    expect(scroll.mock.contexts[0]).toBe(panel);
+    await user.click(screen.getByRole("button", { name: "تقديم الطلب" }));
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(2));
+    scroll.mockRestore();
   });
 
   it("calls it resubmission after a correction request", async () => {

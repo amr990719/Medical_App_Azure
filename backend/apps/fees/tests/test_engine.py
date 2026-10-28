@@ -66,7 +66,7 @@ WORKED_EXAMPLES = [
     pytest.param(
         2014, 1985, W,
         [(Kinship.WIFE, "سارة", 1988), (Kinship.SON_MINOR, "عمر", 2015),
-         (Kinship.DAUGHTER, "مريم", 2018)],
+         (Kinship.SON_MINOR, "مريم", 2018)],
         3, [(MEMBER_LABEL, 825), ("سارة", 1100), ("عمر", 605), ("مريم", 605),
             (ADMIN_FEE_LABEL, 725)], 725, 3860,
         id="ex2-family-tier3-3860",
@@ -204,7 +204,7 @@ def test_ineligibility_message_helper():
 @pytest.mark.parametrize(("count", "fee"), [(0, 200), (1, 375), (2, 550), (3, 725), (10, 1950)])
 def test_admin_fee_formula(count, fee):
     assert admin_fee_for(SCHEDULE, count) == fee
-    bens = [(Kinship.DAUGHTER, f"ابنة {i}", 2015) for i in range(count)]
+    bens = [(Kinship.SON_MINOR, f"ابنة {i}", 2015) for i in range(count)]
     assert quote(2023, 1995, bens).admin_fee == fee
 
 
@@ -213,7 +213,7 @@ def test_admin_fee_counts_only_active_rows():
         (Kinship.WIFE, "سارة", 1996),
         (Kinship.SON_MINOR, "", 2020),  # no name: inactive
         (None, "اسم بلا قرابة", 2020),  # no kinship: inactive
-        (Kinship.DAUGHTER, "مريم", 2021),
+        (Kinship.SON_MINOR, "مريم", 2021),
     ]
     q = quote(2023, 1995, bens)
     assert q.admin_fee == 550
@@ -296,7 +296,7 @@ def test_parents_are_never_capped(kinship):
 
 def test_beneficiary_without_birth_year_gets_tier_fee():
     # Review Focus 3: a kinship + name row with no birth year still gets a fee line, no cap.
-    q = quote(2014, 1985, [(Kinship.WIFE, "سارة", None), (Kinship.DAUGHTER, "مريم", None)])
+    q = quote(2014, 1985, [(Kinship.WIFE, "سارة", None), (Kinship.SON_MINOR, "مريم", None)])
     assert lines(q)[1:3] == [("سارة", 1100), ("مريم", 605)]
 
 
@@ -312,12 +312,11 @@ def test_row_without_kinship_is_ignored():
 def test_fee_key_per_kinship_tier4():
     q = quote(2000, 1980, [
         (Kinship.WIFE, "a", 1980), (Kinship.HUSBAND, "b", 1980), (Kinship.SON_MINOR, "c", 2015),
-        (Kinship.DAUGHTER, "d", 2015), (Kinship.SON_UNIVERSITY, "e", 2005),
-        (Kinship.SON_GRADUATE, "f", 2000), (Kinship.MOTHER, "g", 1955),
-        (Kinship.FATHER, "h", 1950),
+        (Kinship.SON_UNIVERSITY, "e", 2005), (Kinship.SON_GRADUATE, "f", 2000),
+        (Kinship.MOTHER, "g", 1955), (Kinship.FATHER, "h", 1950),
     ])  # fmt: skip
     assert [line.fee for line in q.breakdown] == [
-        935, 1155, 1155, 660, 660, 1925, 1925, 1540, 1540, 200 + 8 * 175,
+        935, 1155, 1155, 660, 1925, 1925, 1540, 1540, 200 + 7 * 175,
     ]  # fmt: skip
 
 

@@ -39,7 +39,9 @@ describe("StatusPage (PROMPT.md §43)", () => {
     expect(screen.getByText("مقدم")).toBeInTheDocument();
     expect(screen.getByText(/٣ أكتوبر ٢٠٢٦/)).toBeInTheDocument();
     expect(screen.getByText("3٬025 ج.م")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "طباعة الاستمارة" })).toHaveAttribute("href", `/application/${APP_ID}/print`);
+    // Application printing was retired: no print link or button.
+    expect(screen.queryByRole("link", { name: /طباعة/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /طباعة/ })).not.toBeInTheDocument();
   });
 
   it("draws the timeline تم التقديم ✓ → قيد المراجعة → إشعار بالنتيجة", async () => {

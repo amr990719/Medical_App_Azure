@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from apps.applications.requirements import beneficiary_requirements
 from apps.beneficiaries.models import Beneficiary
+from apps.beneficiaries.services import MSG_INVALID_KINSHIP
 from apps.common.fields import CollapsedCharField, NationalIdField, YearField
 from apps.documents.api.serializers import DocumentSummarySerializer
 from apps.reference.constants import Kinship
@@ -33,7 +34,12 @@ class BeneficiaryWriteSerializer(serializers.Serializer):
     """Draft-level shape checks; the beneficiary service applies the business rules."""
 
     row_number = serializers.IntegerField(required=False, min_value=1)
-    kinship = serializers.ChoiceField(choices=Kinship.choices, allow_blank=True, required=False)
+    kinship = serializers.ChoiceField(
+        choices=Kinship.choices,
+        allow_blank=True,
+        required=False,
+        error_messages={"invalid_choice": MSG_INVALID_KINSHIP},
+    )
     full_name = CollapsedCharField(max_length=200, allow_blank=True, required=False)
     birth_year = YearField()
     national_id = NationalIdField()

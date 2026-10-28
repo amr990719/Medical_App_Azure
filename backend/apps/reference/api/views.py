@@ -44,13 +44,11 @@ def reference_data() -> dict:
         "statuses": _choices(ApplicationStatus),
         "payment_statuses": _choices(PaymentStatus),
         "document_rules": rules_as_reference_data(
-            require_photo=settings.REQUIRE_MEMBER_PHOTO,
             child_id_age=settings.CHILD_NATIONAL_ID_AGE,
             photo_exempt_child_age=settings.PHOTO_EXEMPT_CHILD_AGE,
         ),
         "ocr_enabled": settings.OCR_ENABLED,
         "features": {
-            "require_member_photo": settings.REQUIRE_MEMBER_PHOTO,
             "allow_pdf": settings.ALLOW_PDF_DOCUMENTS,
             "allow_heic": settings.ALLOW_HEIC,
         },

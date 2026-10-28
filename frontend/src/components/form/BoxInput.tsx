@@ -34,7 +34,7 @@ const SIZE_CLASSES: Record<BoxSize, { box: string; fixed: string }> = {
 };
 
 /**
- * Paper-form character boxes (PROMPT.md §11) shared by NidInput and BoxStringInput.
+ * Paper-form character boxes (PROMPT.md §11) behind NidInput.
  *
  * The value is always contiguous: focus never lands past the first empty box, typing replaces
  * or appends, Backspace on an empty box steps back and clears, paste distributes characters.

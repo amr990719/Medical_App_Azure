@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { BeneficiaryTable } from "@/features/beneficiaries/BeneficiaryTable";
 import { cx } from "@/utils/cx";
 import { AttachmentsPanel } from "./AttachmentsPanel";
@@ -7,19 +6,10 @@ import { FormHeader } from "./FormHeader";
 import { MemberSection } from "./MemberSection";
 
 /**
- * The A4 sheet (PROMPT.md §9.2–9.7): header and photo, member grid, beneficiaries table,
- * declaration. "edit" adds the attachments panel; "print" forces the table layout.
+ * The paper sheet (PROMPT.md §9.2–9.7): header and photo, member grid, beneficiaries table,
+ * declaration. "edit" adds the attachments panel.
  */
-export function PaperForm({
-  mode = "edit",
-  banner,
-  className,
-}: {
-  mode?: "edit" | "review" | "print";
-  /** Reference number / submission date line on printed copies. */
-  banner?: ReactNode;
-  className?: string;
-}) {
+export function PaperForm({ mode = "edit", className }: { mode?: "edit" | "review"; className?: string }) {
   return (
     <article
       className={cx(
@@ -27,11 +17,10 @@ export function PaperForm({
         className,
       )}
     >
-      {banner}
       <FormHeader />
       {mode === "edit" ? <AttachmentsPanel /> : null}
       <MemberSection />
-      <BeneficiaryTable layout={mode === "print" ? "table" : "auto"} />
+      <BeneficiaryTable />
       <DeclarationSection />
     </article>
   );

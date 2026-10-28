@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -7,10 +7,11 @@ import { pageDevLogin, uniqueEmail, uniqueMaleNationalId } from "./helpers";
 /**
  * Session 5 doctor journey against the real backend (development settings: DEV_AUTH_ENABLED,
  * mock OCR, Azurite blobs) through the Vite proxy — PROMPT.md §42 "Doctor" scenario with the
- * worked example 2 data (2014 / WORKING / 1985, WIFE 1988 first time, SON_MINOR 2015, DAUGHTER 2018
- * → FY 2026 v2 tier 3: 825 + 1100 + 605 + 605 + (200 + 3 × 175) = 3860).
+ * worked example 2 data (2014 / WORKING / 1985, WIFE 1988 first time, two children 2015 and 2018
+ * as «ابن/ابنة (18 سنة أو أقل)» — the standalone «ابنة» is retired — → FY 2026 v2 tier 3:
+ * 825 + 1100 + 605 + 605 + (200 + 3 × 175) = 3860).
  *
- * Artefacts: docs/screenshots/session-5/{form-1280.png, form-390.png, status-1280.png, print-a4.pdf}.
+ * Artefacts: docs/screenshots/session-5/{form-1280.png, form-390.png, status-1280.png}.
  */
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name: string) => join(here, "fixtures", name);
@@ -75,6 +76,11 @@ test("doctor fills the paper form with OCR, adds family, pays, submits and gets 
   await expect(page.getByLabel("سنة قيد النقابة :")).toHaveValue("2014");
   await expect(page.getByLabel("رقم قيد النقابة :")).toHaveValue("12345");
 
+  // A FIRST_TIME application needs the member's own photo (uploaded from the checklist).
+  const memberGroup = page.getByRole("group", { name: "العضو الأصلي" });
+  await memberGroup.locator('input[type="file"][aria-label="رفع صورة العضو الأصلي"]').setInputFiles(fixture("id-front.png"));
+  await expect(memberGroup.getByRole("listitem").filter({ hasText: "صورة العضو الأصلي" })).toContainText("✓ مرفق");
+
   // 3. What OCR cannot read.
   await page.getByText("يعمل", { exact: true }).click();
   await page.getByLabel("المحمول :").fill("01012345678");
@@ -112,8 +118,9 @@ test("doctor fills the paper form with OCR, adds family, pays, submits and gets 
   await waitSaved(page);
   await expect(page.getByRole("button", { name: /^مستندات المستفيد رقم 2/ })).toHaveAttribute("data-state", "complete");
 
-  // DAUGHTER (worked example 2).
-  await rowField(page, "درجة القرابة", 3).selectOption("DAUGHTER");
+  // The second child (worked example 2's daughter): the standalone «ابنة» is no longer offered.
+  await expect(rowField(page, "درجة القرابة", 3).locator('option[value="DAUGHTER"]')).toHaveCount(0);
+  await rowField(page, "درجة القرابة", 3).selectOption("SON_MINOR");
   await rowField(page, "اسم المستفيد", 3).fill("مريم أحمد محمد");
   await rowField(page, "سنة الميلاد", 3).fill("2018");
   await rowField(page, "هل يشترك المستفيد لأول مرة؟", 3).selectOption("no");
@@ -166,17 +173,8 @@ test("doctor fills the paper form with OCR, adds family, pays, submits and gets 
   console.log(`submitted ${await reference.textContent()}`);
   await page.screenshot({ path: join(ARTEFACTS, "status-1280.png"), fullPage: true });
 
-  // 9. A4 print view → PDF within two pages.
+  // 9. Application printing is retired: no print action, and the old URL is not found.
+  await expect(page.getByRole("link", { name: /طباعة/ })).toHaveCount(0);
   await page.goto(`${applicationUrl}/print`);
-  await expect(page.getByRole("table", { name: "بيانات المستفيدين مع العضو الأصلى" })).toBeVisible();
-  await expect(page.getByText(/^MED-2026-\d{6}$/)).toBeVisible();
-  await page.emulateMedia({ media: "print" });
-  await page.setViewportSize({ width: 794, height: 1123 }); // A4 at 96 dpi
-  await page.screenshot({ path: join(ARTEFACTS, "print-a4-preview.png"), fullPage: true });
-  const pdfPath = join(ARTEFACTS, "print-a4.pdf");
-  await page.pdf({ path: pdfPath, format: "A4", printBackground: true, preferCSSPageSize: true });
-  const pages = (readFileSync(pdfPath, "latin1").match(/\/Type\s*\/Page(?!s)/g) ?? []).length;
-  console.log(`print-a4.pdf pages: ${pages}`);
-  expect(pages).toBeGreaterThanOrEqual(1);
-  expect(pages).toBeLessThanOrEqual(2);
+  await expect(page.getByRole("heading", { name: "الصفحة غير موجودة" })).toBeVisible();
 });

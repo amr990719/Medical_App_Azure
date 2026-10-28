@@ -42,7 +42,7 @@ A doctor should be able to:
 - Receive a reference number (for example `MED-2026-000123`).
 - Track the application status and read reviewer notes.
 - Correct and resubmit when the reviewer asks for corrections.
-- Print the completed form on A4 paper.
+- ~~Print the completed form on A4 paper.~~ Retired (owner requirement of 2026-10-28): no application print view.
 
 An administrator should be able to:
 
@@ -53,7 +53,7 @@ An administrator should be able to:
 - Confirm or reject the payment receipt.
 - Change application status according to the allowed transitions.
 - Write doctor-visible review notes and internal administrative notes.
-- Print an application.
+- ~~Print an application.~~ Retired (owner requirement of 2026-10-28).
 - View basic audit history.
 - Maintain the fee schedule for a fiscal year.
 
@@ -408,8 +408,10 @@ Registration, email verification and password reset are handled by Entra Externa
 /application/:id/payment           step 4 — fee summary + payment receipt upload
 /application/:id/review            step 5 — read-only review, server validation, declaration, submit
 /application/:id/status            confirmation + status timeline + review notes
-/application/:id/print             A4 print view
 ```
+
+`/application/:id/print` and `/admin/applications/:id/print` were removed (owner requirement of 2026-10-28); those URLs
+show the not-found page. Payment slips and other non-application printing are unaffected.
 
 ## Administrator
 
@@ -417,7 +419,6 @@ Registration, email verification and password reset are handled by Entra Externa
 /admin/dashboard
 /admin/applications
 /admin/applications/:id
-/admin/applications/:id/print
 /admin/doctors
 /admin/doctors/:id
 /admin/fee-schedules
@@ -440,11 +441,11 @@ The main doctor screen is a faithful digital replica of the paper form, ported f
   ```
 
   Completed steps show a teal check, the current step a pulsing banana circle, upcoming steps grey. Labels hide below 640px. Steps 1–3 are sections of the form page (scroll anchors `#member`, `#beneficiaries`, `#documents`); steps 4 and 5 are separate routes. Step completion comes from the server validation endpoint (section 24).
-- Sticky top bar: sign-out icon button, title `استمارة اشتراك — {fiscal year}`, print icon button, and an autosave indicator (`جارٍ الحفظ…` / `تم الحفظ` / `تعذّر الحفظ — إعادة المحاولة`).
+- Sticky top bar: sign-out icon button, title `استمارة اشتراك — {fiscal year}` and an autosave indicator (`جارٍ الحفظ…` / `تم الحفظ` / `تعذّر الحفظ — إعادة المحاولة`).
 - Centered card (max width ~900px) holding the A4 form.
-- **Validation error panel** above the card when the doctor tries to continue with errors: title `يرجى تصحيح الأخطاء التالية قبل المتابعة:`, a bullet list of ALL errors, red start border, scrolled into view. Also show each error inline under its field.
+- **Validation error panel** above the card when the doctor tries to continue with errors: title `يرجى تصحيح الأخطاء التالية قبل المتابعة:`, a bullet list of ALL errors, red start border. It is scrolled into view **once per explicit continue / submit attempt that fails**, after it is rendered (owner requirement of 2026-10-28); edits, uploads, autosave, refetched validation and a changing error list update it without scrolling or moving the focus. Also show each error inline under its field.
 - **Fee summary card** below the form (section 17.6).
-- Fixed bottom **action bar**: text button `تسجيل الخروج` (start side), outlined teal `طباعة`, primary banana `متابعة لرفع الإيصال`. Continuing runs server validation for steps 1–3 and navigates to `/application/:id/payment` only when they pass.
+- Fixed bottom **action bar**: text button `تسجيل الخروج` (start side) and primary banana `متابعة لرفع الإيصال` (the `طباعة` button was retired 2026-10-28). Continuing runs server validation for steps 1–3 and navigates to `/application/:id/payment` only when they pass.
 
 ## 9.2 Form header (inside the card)
 
@@ -466,7 +467,7 @@ Add an application-type selector styled like the paper boxes: `أول مرة` / 
 
 Placed BEFORE the member fields so OCR can fill them:
 
-- Title `مرفقات العضو الأصلي الإلزامية` and hint: `بعد رفع كل صورة، اضغط مسح تلقائي لاستخراج البيانات منها تلقائياً — يمكنك التعديل يدوياً بعد ذلك.`
+- Title `مرفقات العضو الأصلي الإلزامية` (the former OCR instruction hint below it was removed (owner requirement of 2026-10-28); upload and «مسح تلقائي» are unchanged).
 - Three **SmartUpload** slots in a 3-column grid (1 column on mobile):
   - `صورة البطاقة (وجه)` → `NATIONAL_ID_FRONT`
   - `صورة البطاقة (ظهر)` → `NATIONAL_ID_BACK`
@@ -484,7 +485,7 @@ Placed BEFORE the member fields so OCR can fill them:
 | 4 | `الرقم القومي :` 14-box NidInput (8) · `النوع :` radio boxes ذكر / أنثى (4) |
 | 5 | `سنة الميلاد :` (5) · `محافظة السكن :` select of the 27 governorates (3) · `الحي :` (4) |
 | 6 | `العنوان :` (8) · `المحمول :` (4, `dir="ltr"`) |
-| 7 | `البريد الالكتروني :` 26-box BoxStringInput (12), prefilled from the Entra account |
+| 7 | `البريد الالكتروني :` one read-only field on a single dotted underline spanning the row (12), the account email as LTR text (owner requirement of 2026-10-28); no character boxes |
 
 Below 768px, stack fields one per row with the label above the input.
 
@@ -501,12 +502,11 @@ Below 768px, stack fields one per row with the label above the input.
 - `درجة القرابة` is a select with the kinship list from section 14 (labels from reference data).
 - `أول مرة؟` is the per-beneficiary answer to `هل يشترك المستفيد لأول مرة؟` (— / نعم / لا), autosaved
   like the other cells (section 14, `is_first_time`). It is independent of the application type.
-- Print: kinship and name print as wrapping text (a select or input would clip them); ten long rows
-  still fit two A4 pages.
+- The browser's own print (not intercepted) prints kinship and name as wrapping text (a select or input would clip them).
 - When a row has a kinship, a paperclip button appears beside the row number (screen only). Grey = documents missing, green = all required documents attached. It opens the **DocumentModal** for that beneficiary.
 - Changing a row's kinship asks for confirmation if documents exist, then removes that row's documents (prototype behavior) because the required set changes.
 - Clearing a row (empty name and kinship) deletes the beneficiary and its documents after confirmation.
-- Below 768px, show each beneficiary as a card instead of a table row; print always uses the table.
+- Below 768px, show each beneficiary as a card instead of a table row.
 
 ## 9.6 Documents section (step 3, `#documents`)
 
@@ -514,24 +514,24 @@ A checklist generated from the rules in section 15 for the member and every acti
 
 ## 9.7 Declaration — `إقــــــــرار`
 
-Render this text exactly (the underlined part in red-underlined bold), with an inline dashed input for the name:
+Render this text exactly (owner requirement of 2026-10-28), with the inline declaration-name input on a dotted underline in
+the dotted-name position; the text wraps naturally on mobile:
 
 ```text
-أقر أنا / [declaration_name] أن جميع البيانات بعاليه صحيحة وكذلك صور المستفيدين وأن الأولاد في الدراسة ولم يتخرجوا وأن بناتي المدونة أسماءهم لم يتزوجوا بعد واتعهد باخطار المشروع فور زواجهم
-<u>مع العلم انه لا يجوز استفادة الابن بعد التخرج أو الابنة بعد الزواج واذا ثبت عكس ذلك أتحمل المسئولية المالية والقانونية فورا مع عدم رد قيمة الاشتراك وتحمل كافة التكاليف وللمشروع الحق في اتخاذ اي اجراء مناسب لذلك .</u>
-وأقر بالموافقة علي النظام العلاجي الذي يسير عليه المشروع وأي تعديلات تتم اثناء العام الصادرة من لجنة العلاج العليا للمشروع وأتبرع تكافلا بمبلغ اشتراكي لعلاج زملائى المشتركين وأتعاون معهم في سداد قيمة العلاج.
+أقر أنا / [declaration_name] بأن جميع البيانات بعاليه صحيحة وكذلك صور المستفيدين، وأنها مطابقة لشروط الاشتراك بالمشروع، وإذا ثبت عكس ذلك أتحمل المسئولية المالية والقانونية فورا مع عدم رد قيمة الاشتراك وأتحمل كافة التكاليف، وللمشروع الحق في اتخاذ أي إجراء مناسب لذلك.
+وأقر بالموافقة على النظام العلاجي الذي يسير عليه المشروع وكذلك أية تعديلات تتم أثناء العام تصدر من إدارة المشروع، وأتبرع تكافلا بمبلغ اشتراكي لعلاج زملائي المشتركين وأتعاون معهم في سداد قيمة العلاج .
 ```
 
-Then a signature block on the end side: `المقر بما فيه` above a dotted line (for the printed copy).
+The previous wording (studying children / unmarried daughters, the red-underlined paragraph) and
+the signature block `المقر بما فيه` are removed.
 
 `declaration_name` must match the member name (normalized: trimmed, collapsed spaces, unified Arabic letter variants such as أ/إ/آ→ا and ة/ه, ى/ي). On the review page the doctor must also tick an explicit acceptance checkbox; store `declaration_accepted_at`.
 
-## 9.8 Print (A4)
+## 9.8 Print (A4) — retired
 
-- `@page { size: A4; margin: 0; }` with internal padding, `print-color-adjust: exact`.
-- Hide app chrome, stepper, action bar, attachments panel, paperclips and modals.
-- Show header, photo, all fields, the full beneficiaries table, the declaration and signature line, plus the reference number and submission date when they exist.
-- Fit on one or two A4 pages. Verify with a Playwright PDF render in Phase 9.
+Application printing was removed for doctors and admins (owner requirement of 2026-10-28): no print buttons, links or menu
+actions, and no print routes. `src/print.css` only keeps the browser's own print command tidy; it is
+not intercepted.
 
 ---
 
@@ -599,7 +599,7 @@ Main member documents (`NATIONAL_ID_FRONT`, `NATIONAL_ID_BACK`, `SYNDICATE_ID`, 
 Port and type these components; keep their look and keyboard behavior:
 
 - **NidInput**: 14 single-character boxes, `dir="ltr"`, digits only (normalize Arabic-Indic), auto-advance on type, Backspace on an empty box moves back, paste fills all boxes, `size="large" | "small"`. Accessible: one `role="group"` with an `aria-label`, one visually-hidden full-value input or equivalent so screen readers read a single value. On narrow screens it may switch to a single masked input that displays digits in boxes.
-- **BoxStringInput**: same pattern for free text (email, length 26), `dir="ltr"`, wraps on small screens.
+- ~~**BoxStringInput**~~: removed (owner requirement of 2026-10-28); the email is a dotted-underline `DashedField` (`underline="dotted"`, read-only, `dir="ltr"`).
 - **DashedField**: label + dashed-underline input.
 - **RadioBoxGroup**: label + bordered boxes acting as a radio group (selected = grey inset). Real radio inputs underneath for accessibility and keyboard arrows.
 - **SmartUpload**: file picker (images + PDF), thumbnail, upload progress, `مسح تلقائي` button for OCR-capable document types, progress bar while scanning, messages `✓ تم الإرفاق: {name}`, `✓ تم استخراج البيانات — راجع الحقول أدناه وعدّل إن لزم`, `فشل المسح التلقائي. يمكنك إدخال البيانات يدوياً.`
@@ -697,7 +697,9 @@ leave it unanswered; every ACTIVE beneficiary needs an explicit yes/no before su
 was introduced keep NULL until the doctor answers. It is stored in the submitted snapshot.
 
 Kinship enum (Arabic labels; the three `SON_*` labels were changed by the owner on 2026-10-23 —
-values and fee keys unchanged, existing rows are not migrated; `DAUGHTER` stays a separate option):
+values and fee keys unchanged, existing rows are not migrated). The standalone `DAUGHTER` («ابنة») was **removed**
+(owner requirement of 2026-10-28): daughters use the combined `ابن/ابنة (...)` options; the API refuses `DAUGHTER` on every create or update
+and the database CHECK constraint no longer allows it:
 
 | Value | Arabic | Fee key |
 |---|---|---|
@@ -706,7 +708,6 @@ values and fee keys unchanged, existing rows are not migrated; `DAUGHTER` stays 
 | `SON_MINOR` | ابن/ابنة (18 سنة أو أقل) | child |
 | `SON_UNIVERSITY` | ابن/ابنة (طالب جامعي) | gradSon |
 | `SON_GRADUATE` | ابن/ابنة (خريج) | gradSon |
-| `DAUGHTER` | ابنة | child |
 | `HUSBAND` | زوج | spouse |
 | `WIFE` | زوجة | spouse |
 
@@ -733,7 +734,7 @@ Member:
 | `NATIONAL_ID_FRONT` | yes |
 | `NATIONAL_ID_BACK` | yes |
 | `SYNDICATE_ID` | yes |
-| `PERSONAL_PHOTO` | configurable (`REQUIRE_MEMBER_PHOTO`, default false) — image only |
+| `PERSONAL_PHOTO` | yes for a `FIRST_TIME` application, optional for `ADDITION` and any other type (owner requirement of 2026-10-28); no global setting; always offered; image only |
 | `MEMBER_BIRTH_CERTIFICATE` | yes **while an active `MOTHER` beneficiary exists** (the member's OWN birth certificate proves the relation; the mother's certificate never satisfies it) |
 | `PAYMENT_RECEIPT` | yes, before submission (step 4) |
 
@@ -751,10 +752,10 @@ Beneficiaries (age = fiscal year − birth year). "ID (both sides)" = `BENEFICIA
 |---|---|
 | HUSBAND / WIFE | ID (both sides), `MARRIAGE_CERTIFICATE`, `INSURANCE_PRINT` (برينت تأميني) |
 | MOTHER / FATHER | ID (both sides) |
-| SON_MINOR / DAUGHTER | `BIRTH_CERTIFICATE` if age < 16 OR the member is female; ID (both sides) if age ≥ 16 (both optional below 16) |
+| SON_MINOR | `BIRTH_CERTIFICATE` required only when the MEMBER is female (any age), optional otherwise — also below 16 (owner requirement of 2026-10-28); ID (both sides) if age ≥ 16 (both optional below 16) |
 | SON_UNIVERSITY | child rule above + `UNIVERSITY_ID` (كارنيه الجامعة) |
 | SON_GRADUATE | child rule above + `INSURANCE_PRINT` |
-| every kinship | `BENEFICIARY_PERSONAL_PHOTO` (white background) when `is_first_time` is yes — except children (`SON_*`, `DAUGHTER`) younger than `PHOTO_EXEMPT_CHILD_AGE` (3). Unknown age never grants the exemption. Otherwise offered as optional. |
+| every kinship | `BENEFICIARY_PERSONAL_PHOTO` (white background) when `is_first_time` is yes — except children (`SON_*`) younger than `PHOTO_EXEMPT_CHILD_AGE` (3). Unknown age never grants the exemption. Otherwise offered as optional. |
 
 - Female member: every child (all `CHILD_KINSHIPS`, university/graduate included) needs a birth
   certificate at ANY age — in addition to both ID sides from 16 and the kinship-specific documents —
@@ -928,7 +929,7 @@ Amounts are whole Egyptian pounds; use `Decimal`/integers, never floats.
 | B | 2026 / WORKING | 1990 | SON_MINOR | tier 0: 400 + 550 + 375 = **1325** |
 | C | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015 | tier 3: 825 + 1100 + 605 + 550 = **3080** |
 | 1 | 2023 / WORKING | 1995 | none | tier 1: 660 + 200 = **860** |
-| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, DAUGHTER 2018 | tier 3: 825 + 1100 + 605 + 605 + 725 = **3860** |
+| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, SON_MINOR 2018 | tier 3: 825 + 1100 + 605 + 605 + 725 = **3860** |
 | 3 | 1990 / PENSIONER | 1950 (age 76) | WIFE 1955 (age 71), SON_GRADUATE 1995 | tier 4: 500 (cap) + 500 (cap) + 1925 + 550 = **3475** |
 | 4 | 2018 / WORKING | 1990 | MOTHER 1960, SON_UNIVERSITY 2005 | tier 2: 770 + 1320 + 1540 + 550 = **4180** |
 | 5 | boundaries | — | — | 2026 → 0, 2025 → 1, 2021 → 1, 2020 → 2, 2016 → 2, 2015 → 3, 2011 → 3, 2010 → 4 |
@@ -1467,9 +1468,9 @@ React (Zod + React Hook Form) for instant feedback; Django is authoritative. Nev
 
 ## End-to-end (Playwright)
 
-- Doctor: sign in (dev auth) → upload ID front → mock OCR fills fields → complete form → add WIFE (first time, with photo), SON_MINOR and DAUGHTER with documents → fee shows 3860 for example 2 data (FY 2026 v2) → upload receipt → review → submit → reference number shown.
+- Doctor: sign in (dev auth) → upload ID front → mock OCR fills fields → complete form → upload the member photo (FIRST_TIME) → add WIFE (first time, with photo) and two `SON_MINOR` children with documents → fee shows 3860 for example 2 data (FY 2026 v2) → upload receipt → review → submit → reference number shown.
 - Admin: find the application → confirm payment → approve. Separate run: request correction → doctor resubmits.
-- Print view renders to an A4 PDF within two pages.
+- ~~Print view renders to an A4 PDF within two pages.~~ Retired 2026-10-28 (the print URLs are not found).
 - Mobile viewport (390×844) form is usable without horizontal scrolling.
 
 ---
@@ -1695,7 +1696,7 @@ Before considering the project complete, verify:
 ✓ Blob integration exists
 ✓ Entra OIDC BFF implemented (NOT VERIFIED against a real tenant if no credentials)
 ✓ Playwright e2e passes (doctor submit, admin approve, correction loop)
-✓ Print view fits A4
+✓ ~~Print view fits A4~~ (printing retired 2026-10-28)
 ✓ Bicep validates
 ✓ CI/CD files exist
 ✓ No secrets committed (scan the repo)
@@ -1743,12 +1744,12 @@ Give exact file paths and exact commands. No vague statements like "configure Az
 | 1 | Are the FY 2026 fee amounts, tiers, admin fees and the 70+ cap final? | Values in 17.1, stored in an editable schedule |
 | 2 | How are fees calculated for a deceased (متوفى) member's family? | Same as WORKING |
 | 3 | What are the fees for an `ADDITION` (إضافة) application — only the new beneficiaries? | Same as FIRST_TIME |
-| 4 | Children's documents: is the age-16 rule correct (birth certificate below 16, national ID from 16; birth certificate always if the member is female)? | Age-aware rule in section 15, threshold configurable |
+| 4 | Children's documents: national ID from 16; birth certificate only for a female member's children? | Section 15 (owner, 2026-10-28); ID threshold configurable |
 | 5 | Maximum beneficiaries: 10 (prototype) or 11 (paper rows)? | 10, configurable |
 | 6 | Must `SON_MINOR` be ≤ 18, and must spouse kinship match the member's gender? | Both enforced, configurable |
 | 7 | Can a rejected applicant re-apply in the same fiscal year? | Yes, a new application |
 | 8 | How do members pay (bank, Fawry, syndicate office)? What instructions should be shown? | Configurable placeholder text |
-| 9 | Is the member photo mandatory? | Optional (`REQUIRE_MEMBER_PHOTO=false`) |
+| 9 | Is the member photo mandatory? | For `FIRST_TIME` applications only (owner, 2026-10-28) |
 | 10 | Is `(syndicate_type, registration_number)` unique? | Indexed, not unique |
 | 11 | Is sending ID images to Azure OpenAI for OCR legally approved, and in which region? | OCR behind a feature flag, off in prod until approved |
 | 12 | Data retention period for applications and documents? | Not auto-deleted; documented as a decision |

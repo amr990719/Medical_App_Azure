@@ -109,11 +109,6 @@
       "fee_key": "grad_son"
     },
     {
-      "value": "DAUGHTER",
-      "label": "ابنة",
-      "fee_key": "child"
-    },
-    {
       "value": "HUSBAND",
       "label": "زوج",
       "fee_key": "spouse"
@@ -313,6 +308,9 @@
       }
     ],
     "member_conditional": {
+      "PERSONAL_PHOTO": {
+        "required_with_application_type": "FIRST_TIME"
+      },
       "MEMBER_BIRTH_CERTIFICATE": {
         "required_with_kinship": "MOTHER"
       }
@@ -337,10 +335,6 @@
         "extra_required": []
       },
       "SON_MINOR": {
-        "base_rule": "child",
-        "extra_required": []
-      },
-      "DAUGHTER": {
         "base_rule": "child",
         "extra_required": []
       },
@@ -374,9 +368,7 @@
       },
       "child": {
         "below_age": {
-          "required": [
-            "BIRTH_CERTIFICATE"
-          ],
+          "required": [],
           "optional": [
             "BENEFICIARY_NATIONAL_ID",
             "BENEFICIARY_NATIONAL_ID_BACK"
@@ -388,9 +380,11 @@
             "BENEFICIARY_NATIONAL_ID_BACK"
           ]
         },
-        "female_member_always_requires": [
-          "BIRTH_CERTIFICATE"
-        ],
+        "birth_certificate": {
+          "type": "BIRTH_CERTIFICATE",
+          "required_when_member_gender": "FEMALE",
+          "otherwise": "optional"
+        },
         "unknown_birth_year": "below_age"
       }
     },
@@ -403,7 +397,6 @@
   },
   "ocr_enabled": true,
   "features": {
-    "require_member_photo": false,
     "allow_pdf": false,
     "allow_heic": false
   },

@@ -5,8 +5,9 @@ that flag).
 * FY 2026 fee schedule  ensured (normally already created by the fees migrations: version 2)
 * admin@dev.local       ADMIN role
 * doctor@dev.local      complete profile, registered 2014 (tier 3), WIFE, SON_MINOR (first time,
-                        with photo), DAUGHTER — application SUBMITTED, receipt waiting for
-                        confirmation (825 + 1,100 + 605 + 605 + 200 + 3 × 175 = 3,860 EGP)
+                        with photo), SON_MINOR (daughter) — application SUBMITTED, receipt
+                        waiting for confirmation
+                        (825 + 1,100 + 605 + 605 + 200 + 3 × 175 = 3,860 EGP)
 * doctor2@dev.local     female member registered 2018 (tier 2) with her MOTHER (first time) and
                         her own birth certificate — application NEEDS_CORRECTION with review
                         notes from the admin (770 + 1,320 + 375 = 2,465 EGP)
@@ -60,7 +61,7 @@ DOCTOR_BENEFICIARIES = [
     {"kinship": "SON_MINOR", "full_name": "عمر أحمد محمد", "birth_year": 2015,
      "national_id": None, "is_first_time": True,
      "documents": ["BIRTH_CERTIFICATE", "BENEFICIARY_PERSONAL_PHOTO"]},
-    {"kinship": "DAUGHTER", "full_name": "مريم أحمد محمد", "birth_year": 2018,
+    {"kinship": "SON_MINOR", "full_name": "مريم أحمد محمد", "birth_year": 2018,
      "national_id": None, "is_first_time": False, "documents": ["BIRTH_CERTIFICATE"]},
 ]  # fmt: skip
 
@@ -88,7 +89,10 @@ DOCTOR2_BENEFICIARIES = [
 ]  # fmt: skip
 CORRECTION_NOTES = "صورة بطاقة الأم غير واضحة، يرجى رفع صورة أوضح ثم إعادة التقديم."
 
-MEMBER_DOCUMENTS = ("NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PAYMENT_RECEIPT")
+# The member photo is required because the seeded applications are FIRST_TIME.
+MEMBER_DOCUMENTS = (
+    "NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PERSONAL_PHOTO", "PAYMENT_RECEIPT",
+)  # fmt: skip
 # Only while an active MOTHER is listed (the member's OWN birth certificate).
 MOTHER_MEMBER_DOCUMENTS = ("MEMBER_BIRTH_CERTIFICATE",)
 

@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { draftDefaults } from "@/features/application-form/draftController";
 import {
   API,
@@ -48,16 +48,19 @@ describe("FormPage (PROMPT.md §9)", () => {
     expect(screen.getByRole("heading", { name: "إقــــــــرار" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "مع العلم انه لا يجوز استفادة الابن بعد التخرج أو الابنة بعد الزواج واذا ثبت عكس ذلك أتحمل المسئولية المالية والقانونية فورا مع عدم رد قيمة الاشتراك وتحمل كافة التكاليف وللمشروع الحق في اتخاذ اي اجراء مناسب لذلك .",
-      ).tagName,
-    ).toBe("U");
-    expect(screen.getByText("المقر بما فيه")).toBeInTheDocument();
+        "وأقر بالموافقة على النظام العلاجي الذي يسير عليه المشروع وكذلك أية تعديلات تتم أثناء العام تصدر من إدارة المشروع، وأتبرع تكافلا بمبلغ اشتراكي لعلاج زملائي المشتركين وأتعاون معهم في سداد قيمة العلاج .",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("المقر بما فيه")).not.toBeInTheDocument();
+    expect(screen.queryByText(/اضغط مسح تلقائي لاستخراج البيانات/)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "مرفقات العضو الأصلي الإلزامية" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "ملخص الاشتراك — السنة المالية 2026" })).toHaveTextContent(
       "3٬025 ج.م",
     );
     const bar = screen.getByRole("toolbar", { name: "إجراءات الاستمارة" });
     expect(within(bar).getByRole("button", { name: "تسجيل الخروج" })).toBeInTheDocument();
-    expect(within(bar).getByRole("button", { name: "طباعة" })).toBeInTheDocument();
+    expect(within(bar).queryByRole("button", { name: "طباعة" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "طباعة الاستمارة" })).not.toBeInTheDocument();
     expect(within(bar).getByRole("button", { name: "متابعة لرفع الإيصال" })).toBeInTheDocument();
   });
 
@@ -154,6 +157,66 @@ describe("FormPage (PROMPT.md §9)", () => {
     expect(screen.getByLabelText("اسم المقر")).toHaveAccessibleDescription("اسم المقر يجب أن يطابق اسم العضو");
     expect(router.state.location.pathname).toBe(`/application/${APP_ID}/form`);
   });
+
+  it("scrolls to the error summary once per failed continue, never while the errors are corrected", async () => {
+    const issue = (field: string, message: string) => ({ step: 1, field, code: "X", message });
+    const failing = (errors: object[]) => ({
+      ...cleanValidation,
+      is_valid: false,
+      errors,
+      steps_complete: { "1": false, "2": true, "3": true, "4": false, "5": false },
+    });
+    let current: object = failing([
+      issue("member.address", "يرجى إدخال العنوان"),
+      issue("member.syndicate_type", "يرجى اختيار نوع النقابة"),
+    ]);
+    let validationRequests = 0;
+    serve();
+    server.use(
+      http.get(`${API}/applications/${APP_ID}/validation/`, () => {
+        validationRequests += 1;
+        return HttpResponse.json(current);
+      }),
+      http.patch(`${API}/profile/`, () => {
+        // The server now accepts the address: the next validation lists one error fewer.
+        current = failing([issue("member.syndicate_type", "يرجى اختيار نوع النقابة")]);
+        return HttpResponse.json(apiProfile({ address: "شارع" }));
+      }),
+      http.get(`${API}/applications/`, () => HttpResponse.json({ count: 0, next: null, previous: null, results: [] })),
+    );
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const { user, router } = await openForm();
+    expect(scroll).not.toHaveBeenCalled();
+
+    // 1. A failed continue scrolls to the summary, once, after it is rendered.
+    const continueButton = screen.getByRole("button", { name: "متابعة لرفع الإيصال" });
+    await user.click(continueButton);
+    const box = (await screen.findByText("يرجى تصحيح الأخطاء التالية قبل المتابعة:")).closest("[role=alert]") as HTMLElement;
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    expect(scroll.mock.contexts[0]).toBe(box);
+    expect(within(box).getAllByRole("listitem")).toHaveLength(2);
+
+    // 2. Correcting a field: autosave, refetched validation and a shorter list — no scroll, focus kept.
+    const address = screen.getByLabelText("العنوان :");
+    const before = validationRequests;
+    await user.type(address, "شارع");
+    await waitFor(() => expect(within(box).getAllByRole("listitem")).toHaveLength(1), { timeout: 3000 });
+    expect(validationRequests).toBeGreaterThan(before);
+    expect(address).toHaveFocus();
+    expect(scroll).toHaveBeenCalledTimes(1);
+
+    // 3. Another failed continue scrolls to the updated summary again.
+    await user.click(continueButton);
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(2));
+    expect(router.state.location.pathname).toBe(`/application/${APP_ID}/form`);
+
+    // 4. Once the errors are fixed, continuing proceeds to the receipt page.
+    current = cleanValidation;
+    await user.click(continueButton);
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/application/${APP_ID}/payment`));
+    expect(scroll).toHaveBeenCalledTimes(2);
+    scroll.mockRestore();
+  }, 15_000);
 
   it("continuing with steps 1–3 complete opens the receipt page", async () => {
     serve();

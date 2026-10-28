@@ -95,7 +95,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # The fiscal year is a deliberate setting, not derived from the clock (decision D4).
 CURRENT_FISCAL_YEAR: int = env.int("CURRENT_FISCAL_YEAR", default=2026)
 MAX_BENEFICIARIES: int = env.int("MAX_BENEFICIARIES", default=10)
-REQUIRE_MEMBER_PHOTO: bool = env.bool("REQUIRE_MEMBER_PHOTO", default=False)
+# The member photo is required for FIRST_TIME applications only (document_rules.py); there
+# is deliberately no global switch that could contradict it.
 CHILD_NATIONAL_ID_AGE: int = env.int("CHILD_NATIONAL_ID_AGE", default=16)
 # First-time beneficiaries need a personal photo, except children younger than this age.
 PHOTO_EXEMPT_CHILD_AGE: int = env.int("PHOTO_EXEMPT_CHILD_AGE", default=3)

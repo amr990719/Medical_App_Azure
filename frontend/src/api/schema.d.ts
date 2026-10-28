@@ -969,12 +969,11 @@ export interface components {
          *     * `SON_MINOR` - ابن/ابنة (18 سنة أو أقل)
          *     * `SON_UNIVERSITY` - ابن/ابنة (طالب جامعي)
          *     * `SON_GRADUATE` - ابن/ابنة (خريج)
-         *     * `DAUGHTER` - ابنة
          *     * `HUSBAND` - زوج
          *     * `WIFE` - زوجة
          * @enum {string}
          */
-        KinshipEnum: "MOTHER" | "FATHER" | "SON_MINOR" | "SON_UNIVERSITY" | "SON_GRADUATE" | "DAUGHTER" | "HUSBAND" | "WIFE";
+        KinshipEnum: "MOTHER" | "FATHER" | "SON_MINOR" | "SON_UNIVERSITY" | "SON_GRADUATE" | "HUSBAND" | "WIFE";
         Logout: {
             entra_logout_url: string | null;
         };

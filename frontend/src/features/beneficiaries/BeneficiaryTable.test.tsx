@@ -113,6 +113,22 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /مستندات المستفيد رقم 1/ })).toHaveAttribute("data-state", "missing"));
   });
 
+  it("offers every kinship from reference data, without the removed standalone ابنة", async () => {
+    await renderInForm(<BeneficiaryTable />);
+    const select = screen.getByRole("combobox", { name: "درجة القرابة — المستفيد رقم 1" });
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "—",
+      "أم",
+      "أب",
+      "ابن/ابنة (18 سنة أو أقل)",
+      "ابن/ابنة (طالب جامعي)",
+      "ابن/ابنة (خريج)",
+      "زوج",
+      "زوجة",
+    ]);
+    expect(within(select).queryByRole("option", { name: "ابنة" })).toBeNull();
+  });
+
   it("changes the kinship of a row without documents immediately", async () => {
     server.use(
       http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-wife/`, () =>
@@ -156,7 +172,7 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     );
   });
 
-  it("always renders the table when asked for the print layout", async () => {
+  it("always renders the table when asked for the table layout", async () => {
     mockViewport(false);
     await renderInForm(<BeneficiaryTable layout="table" />);
     expect(screen.getByRole("table")).toBeInTheDocument();

@@ -1,7 +1,6 @@
 """Submission validation — every rule of PROMPT.md §22 with its exact Arabic message."""
 
 import pytest
-from django.test import override_settings
 from django.utils import timezone
 
 from apps.applications.factories import ApplicationFactory, build_submittable_application
@@ -10,8 +9,8 @@ from apps.beneficiaries.factories import BeneficiaryFactory
 from apps.doctors.factories import DoctorFactory
 from apps.documents.factories import DocumentFactory
 from apps.documents.models import Document
+from apps.reference.constants import ApplicationType, Gender, Kinship
 from apps.reference.constants import DocumentType as D
-from apps.reference.constants import Gender, Kinship
 
 pytestmark = pytest.mark.django_db
 
@@ -165,13 +164,31 @@ def test_rules_08_to_10_member_documents(app, doc_type, message):
     assert_error(app, f"documents.{doc_type}", 3, message)
 
 
-def test_member_photo_optional_by_default(app):
-    assert validate_for_submission(app).is_valid
-
-
-@override_settings(REQUIRE_MEMBER_PHOTO=True)
-def test_member_photo_required_when_configured(app):
+def test_first_time_application_requires_the_member_photo(app):
+    assert app.application_type == ApplicationType.FIRST_TIME
+    remove_document(app, D.PERSONAL_PHOTO)
     assert_error(app, "documents.PERSONAL_PHOTO", 3, "يرجى إرفاق صورة العضو الأصلي")
+
+
+def test_addition_application_does_not_require_the_member_photo():
+    app = build_submittable_application(application_type=ApplicationType.ADDITION)
+    assert not app.documents.filter(document_type=D.PERSONAL_PHOTO).exists()
+    assert validate_for_submission(app).is_valid is True
+
+
+def test_member_photo_follows_the_application_type_and_an_upload_stays(app):
+    remove_document(app, D.PERSONAL_PHOTO)
+    app.application_type = ApplicationType.ADDITION
+    app.save()
+    assert validate_for_submission(app).is_valid is True
+    app.application_type = ApplicationType.FIRST_TIME
+    app.save()
+    assert find(app, "documents.PERSONAL_PHOTO")
+    DocumentFactory(application=app, document_type=D.PERSONAL_PHOTO)
+    app.application_type = ApplicationType.ADDITION
+    app.save()
+    assert validate_for_submission(app).is_valid is True
+    assert app.documents.filter(document_type=D.PERSONAL_PHOTO).count() == 1  # kept
 
 
 # --- step 2: beneficiaries --------------------------------------------------------------------
@@ -366,13 +383,13 @@ def test_draft_validation_reports_but_tolerates_the_missing_answer(app):
 
 
 def test_inactive_row_needs_no_first_time_answer(app):
-    _beneficiary(app, 4, kinship=Kinship.DAUGHTER, full_name="", is_first_time=None)
+    _beneficiary(app, 4, kinship=Kinship.SON_MINOR, full_name="", is_first_time=None)
     assert validate_for_submission(app).is_valid is True
 
 
-@pytest.mark.parametrize("kinship", [Kinship.WIFE, Kinship.SON_MINOR, Kinship.DAUGHTER])
-def test_first_time_beneficiary_needs_a_photo(app, kinship):
-    row = app.beneficiaries.get(kinship=kinship)
+@pytest.mark.parametrize("row_number", [1, 2, 3])  # WIFE, SON_MINOR 2015, SON_MINOR 2018
+def test_first_time_beneficiary_needs_a_photo(app, row_number):
+    row = app.beneficiaries.get(row_number=row_number)
     row.is_first_time = True
     row.save()
     error = find(app, f"beneficiaries[{row.row_number}].documents.BENEFICIARY_PERSONAL_PHOTO")
@@ -397,8 +414,7 @@ def test_photo_rule_applies_to_every_category(app, kinship, birth_year):
 
 @pytest.mark.parametrize(
     ("kinship", "birth_year", "needed"),
-    [(Kinship.SON_MINOR, 2024, False), (Kinship.SON_MINOR, 2023, True),  # ages 2 / 3
-     (Kinship.DAUGHTER, 2024, False), (Kinship.DAUGHTER, 2023, True)],
+    [(Kinship.SON_MINOR, 2024, False), (Kinship.SON_MINOR, 2023, True)],  # ages 2 / 3
 )  # fmt: skip
 def test_first_time_child_under_3_needs_no_photo(app, kinship, birth_year, needed):
     child = _beneficiary(app, 4, kinship=kinship, full_name="طفل جديد", birth_year=birth_year,
@@ -427,7 +443,7 @@ def test_member_photo_does_not_satisfy_a_beneficiary_photo(app):
     son = app.beneficiaries.get(row_number=2)
     son.is_first_time = True
     son.save()
-    DocumentFactory(application=app, document_type=D.PERSONAL_PHOTO)
+    assert app.documents.filter(document_type=D.PERSONAL_PHOTO, beneficiary=None).exists()
     assert find(app, "beneficiaries[2].documents.BENEFICIARY_PERSONAL_PHOTO")
 
 
@@ -497,7 +513,7 @@ def test_member_birth_certificate_not_required_without_an_active_mother(app):
 
 @pytest.mark.parametrize(
     ("kinship", "birth_year", "extra"),
-    [(Kinship.SON_MINOR, 2009, None), (Kinship.DAUGHTER, 2000, None),
+    [(Kinship.SON_MINOR, 2009, None),
      (Kinship.SON_UNIVERSITY, 2005, D.UNIVERSITY_ID),
      (Kinship.SON_GRADUATE, 1998, D.INSURANCE_PRINT)],
 )  # fmt: skip
@@ -516,3 +532,56 @@ def test_female_member_older_child_needs_birth_certificate_and_both_id_sides(
     for t in expected:
         DocumentFactory(application=app, beneficiary=child, document_type=t)
     assert not [e for e in errors_of(app) if e.field.startswith(prefix)]
+
+
+# --- children's birth certificate: required for a female member only -------------------------
+
+CHILD_ROWS = [
+    (Kinship.SON_MINOR, 2024), (Kinship.SON_MINOR, 2015), (Kinship.SON_MINOR, 2010),
+    (Kinship.SON_MINOR, None),
+    (Kinship.SON_UNIVERSITY, 2012), (Kinship.SON_UNIVERSITY, 2005),
+    (Kinship.SON_GRADUATE, 2011), (Kinship.SON_GRADUATE, 1998),
+]  # fmt: skip
+
+
+def _child_errors(app):
+    return {e.field for e in errors_of(app) if e.field.startswith("beneficiaries[1].documents.")}
+
+
+@pytest.mark.parametrize(("kinship", "birth_year"), CHILD_ROWS)
+def test_male_member_child_never_needs_a_birth_certificate(kinship, birth_year):
+    app = ApplicationFactory(doctor=DoctorFactory(gender=Gender.MALE))
+    _beneficiary(app, 1, kinship=kinship, full_name="ابن العضو", birth_year=birth_year,
+                 is_first_time=False)  # fmt: skip
+    assert "beneficiaries[1].documents.BIRTH_CERTIFICATE" not in _child_errors(app)
+
+
+@pytest.mark.parametrize(("kinship", "birth_year"), CHILD_ROWS)
+def test_female_member_child_needs_a_birth_certificate_at_any_age(kinship, birth_year):
+    app = ApplicationFactory(doctor=DoctorFactory(gender=Gender.FEMALE))
+    child = _beneficiary(app, 1, kinship=kinship, full_name="ابن العضوة", birth_year=birth_year,
+                         is_first_time=False)  # fmt: skip
+    error = find(app, "beneficiaries[1].documents.BIRTH_CERTIFICATE")
+    assert (error.step, error.message) == (
+        3,
+        "المستفيد ابن العضوة: مستند شهادة ميلاد المستفيد مطلوب",
+    )
+    DocumentFactory(application=app, beneficiary=child, document_type=D.BIRTH_CERTIFICATE)
+    assert "beneficiaries[1].documents.BIRTH_CERTIFICATE" not in _child_errors(app)
+
+
+def test_male_member_young_children_need_no_documents(app):
+    # Worked example 2: the son (2015) and the daughter (2018) are below the ID threshold.
+    for row in (2, 3):
+        remove_document(app, D.BIRTH_CERTIFICATE, app.beneficiaries.get(row_number=row))
+    assert validate_for_submission(app).is_valid is True
+
+
+def test_member_gender_change_switches_the_childrens_certificate_requirement(app):
+    son = app.beneficiaries.get(row_number=2)
+    remove_document(app, D.BIRTH_CERTIFICATE, son)
+    assert validate_for_submission(app).is_valid is True
+    update_doctor(app, gender=Gender.FEMALE)
+    assert find(app, "beneficiaries[2].documents.BIRTH_CERTIFICATE")
+    # The daughter's certificate (still uploaded) satisfies the requirement.
+    assert "beneficiaries[3].documents.BIRTH_CERTIFICATE" not in {e.field for e in errors_of(app)}

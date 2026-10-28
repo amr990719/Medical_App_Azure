@@ -104,7 +104,7 @@ def test_retrieve_includes_nested_beneficiaries_and_documents():
         "NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PERSONAL_PHOTO",
         "PAYMENT_RECEIPT",
     ]  # fmt: skip
-    assert len(body["documents"]) == 10
+    assert len(body["documents"]) == 11  # incl. the FIRST_TIME member photo
     doc = body["documents"][0]
     assert doc["content_url"] == f"/api/v1/documents/{doc['id']}/content/"
     assert "blob_name" not in doc
@@ -359,7 +359,7 @@ def test_detail_query_count_does_not_grow_with_beneficiaries(django_assert_max_n
         client.get(url(small))
     big = build_submittable_application(doctor=DoctorFactory())
     for row in range(4, 10):
-        BeneficiaryFactory(application=big, row_number=row, kinship="DAUGHTER", full_name="ابنة")
+        BeneficiaryFactory(application=big, row_number=row, kinship="SON_MINOR", full_name="ابنة")
     client = client_for(big.doctor.user)
     with django_assert_max_num_queries(10) as big_ctx:
         client.get(url(big))
@@ -393,6 +393,26 @@ def test_member_requirements_follow_the_beneficiaries():
     mother.save()
     slot = _member_slots(client.get(url(app)).json())["MEMBER_BIRTH_CERTIFICATE"]
     assert slot["required"] is False  # still shown: the upload is kept, not deleted
+
+
+def test_member_photo_follows_the_application_type_in_the_patch_response():
+    from apps.reference.constants import DocumentType
+
+    app = build_submittable_application()  # FIRST_TIME, member photo uploaded
+    client = client_for(app.doctor.user)
+    assert _member_slots(client.get(url(app)).json())["PERSONAL_PHOTO"]["required"] is True
+
+    body = client.patch(url(app), {"application_type": "ADDITION"}, format="json").json()
+    assert _member_slots(body)["PERSONAL_PHOTO"]["required"] is False
+    assert any(d["document_type"] == "PERSONAL_PHOTO" for d in body["documents"])  # kept
+    assert client.get(url(app, "validation")).json()["errors"] == []
+
+    app.documents.filter(document_type=DocumentType.PERSONAL_PHOTO).delete()
+    assert client.get(url(app, "validation")).json()["errors"] == []  # optional for ADDITION
+    body = client.patch(url(app), {"application_type": "FIRST_TIME"}, format="json").json()
+    assert _member_slots(body)["PERSONAL_PHOTO"]["required"] is True
+    fields = [e["field"] for e in client.get(url(app, "validation")).json()["errors"]]
+    assert fields == ["documents.PERSONAL_PHOTO"]
 
 
 def test_reference_member_list_stays_global():

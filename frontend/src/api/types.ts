@@ -61,14 +61,17 @@ export type ApiReferenceData = {
     document_types: { type: DocumentType; label: string; ocr_capable: boolean; images_only: boolean }[];
     /** Global member slots; the application's own list is `member_required_documents`. */
     member: ApiDocumentRequirement[];
-    member_conditional: Partial<Record<DocumentType, { required_with_kinship: Kinship }>>;
+    /** Member slots whose requirement depends on this application (evaluated by the server). */
+    member_conditional: Partial<
+      Record<DocumentType, { required_with_kinship?: Kinship; required_with_application_type?: ApplicationType }>
+    >;
     child_national_id_age: number;
     photo_exempt_child_age: number;
     kinships: Record<Kinship, { base_rule: string; extra_required: DocumentType[] }>;
     base_rules: Record<string, unknown>;
   };
   ocr_enabled: boolean;
-  features: { require_member_photo: boolean; allow_pdf: boolean; allow_heic: boolean };
+  features: { allow_pdf: boolean; allow_heic: boolean };
   upload: {
     max_bytes: number;
     receipt_min_width: number;
