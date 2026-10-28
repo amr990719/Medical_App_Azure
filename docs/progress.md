@@ -1122,15 +1122,34 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
   validates it (`atomic = False`); reversible. Tests that used DAUGHTER as legacy data were removed
   or moved to `SON_MINOR` (worked example 2: daughter as `SON_MINOR` 2018, same 605). Fixtures:
   reference data re-captured (only DAUGHTER and `selectable` differ).
-- **Local compose database:** holds 72 DAUGHTER rows from earlier seed / Playwright runs, so `0004`
-  is refused there (`check constraint … is violated by some row`, as designed) and the local
-  `doctor@dev.local` application list answers 500 (`'DAUGHTER' is not a valid Kinship`). Not
-  touched; resetting the local volumes fixes it.
+- **Local compose database (before the reset below):** held 72 DAUGHTER rows from earlier seed /
+  Playwright runs, so `0004` was refused there (`check constraint … is violated by some row`, as
+  designed) and the local `doctor@dev.local` application list answered 500
+  (`'DAUGHTER' is not a valid Kinship`).
 - **Verification:** backend `pytest` **1234 passed, 1 skipped** (DAUGHTER cases removed), ruff
   clean, `makemigrations --check` clean, `spectacular --validate --fail-on-warn` OK, 0003 reversed
   and re-applied locally; frontend `gen:api`, `typecheck`, `lint`, `vitest` **332 passed**,
   `rtl:check` 0 errors, `build` OK; Playwright **8 passed, 4 skipped, 2 failed** — both
   `foundation.spec.ts` (desktop + mobile), caused by the local DAUGHTER data above.
+- **Local compose reset (owner request, 2026-10-28):** project `medical-syndicates` only —
+  `docker compose down -v` removed its containers, network and the two named volumes
+  `medical-syndicates_pgdata` (database `medical`: 111 users, 109 applications, 320 beneficiaries
+  incl. the 72 DAUGHTER rows, 1097 document rows) and `medical-syndicates_azurite-data` (~9 MB of
+  blobs). Both volumes carried the project's compose labels; the `backend/` bind mount, `.env`
+  files, other compose projects and Azure were not touched, no global prune. `docker compose up -d
+  --build` rebuilt the image and applied every migration on the empty database, including
+  `beneficiaries.0003` and `0004` (`beneficiary_kinship_valid` validated, no DAUGHTER); the start-up
+  seed and an explicit `npm run seed` (`seed_dev_data`) created WIFE, SON_MINOR × 2 and MOTHER — no
+  DAUGHTER. The volume-level TLS of `local_postgres_tls.py` was reset with it (only needed for
+  production-settings runs; re-run that script if one is planned).
+- **Checks on the reset stack:** HTTP against `localhost:8000` with dev sign-in —
+  `doctor@dev.local` `GET /applications/` **200** (WIFE, SON_MINOR, SON_MINOR); reference data
+  and its document rules list only the 7 supported kinships (no `selectable`); for doctor2's
+  NEEDS_CORRECTION application `POST` and `PATCH` with DAUGHTER **400** `درجة القرابة غير صحيحة`,
+  row unchanged. Playwright **10 passed, 4 skipped** (project-specific skips), including both
+  `foundation.spec.ts` dashboard checks; backend `pytest` **1234 passed, 1 skipped**. No code
+  changed by the reset; the frontend results above stand (`vitest` 332, `typecheck`, `lint`,
+  `rtl:check`, `build`). Regenerated screenshots restored, not committed.
   Backend `pytest` **1273 passed, 1 skipped**, ruff clean, no migrations, `spectacular --validate
   --fail-on-warn` OK; frontend `gen:api` (only the request enum), `typecheck`, `lint`, `vitest`
   **333 passed**, `rtl:check` 0 errors; Playwright **10 passed, 4 skipped** (a first run had one
@@ -1841,8 +1860,8 @@ Sessions 16–17 (D166–D167) were merged into `main` as PR #9.
 pushed: children's birth certificate only for a female member, member photo for FIRST_TIME only,
 «ابنة» removed (D174–D175, constraint migration `beneficiaries.0003`/`0004`), new declaration,
 dotted email, application printing removed, error summary scrolls only after a failed attempt.
-Push and PR on confirmation; answer Q-B28. Dev was emptied of applications on 2026-10-28. Reset the
-local compose volumes (72 old DAUGHTER rows) before the next local run. The owner smoke list on dev no longer includes printing.
+Push and PR on confirmation; answer Q-B28. Dev was emptied of applications on 2026-10-28; the local
+compose volumes were reset the same day (no DAUGHTER rows, all migrations applied). The owner smoke list on dev no longer includes printing.
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve. Enable Arabic
