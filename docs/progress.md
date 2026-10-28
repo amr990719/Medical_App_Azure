@@ -1155,6 +1155,23 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
   **333 passed**, `rtl:check` 0 errors; Playwright **10 passed, 4 skipped** (a first run had one
   `admin-approve` failure that passed alone and on the full re-run).
 
+### Session 18 (cont.) — 2026-10-28 — Deployed to dev
+
+- **Pre-deploy check** (read-only, old image `010cbb8`, execution `caj-medsyn-dev-migrate-5h6rnta`,
+  `transaction_read_only = on`): 0 applications, 0 beneficiaries, no DAUGHTER rows or snapshots;
+  `beneficiaries` at 0002.
+- **Deploy:** PR #10 (CI green: backend, frontend, Playwright, image build) merged as `15e3ff5`;
+  `backend` run `40758020254` and `frontend` run `40758020300` succeeded (staging/prod skipped).
+  Revision `ca-medsyn-dev-api--g15e3ff5ddd45-1` Healthy with 100 % traffic; the migrate job runs
+  the same image (deploy execution `caj-medsyn-dev-migrate-ih03n40` Succeeded). `/api/ready/` and
+  the SPA answer 200 through the SWA host; reference data answers 401 without a session (as designed).
+- **Post-check** (read-only, new image, execution `caj-medsyn-dev-migrate-znh8lr1`):
+  `beneficiaries.0003` and `0004` applied; `beneficiary_kinship_valid` validated
+  (`convalidated = true`) with the 7 supported kinships only; 0 DAUGHTER rows; `Kinship` and the
+  document-rule table list the same 7 kinships.
+- **NOT VERIFIED on dev:** the signed-in flows (dropdown without «ابنة», female-member certificate,
+  FIRST_TIME photo, no print button) — part of the owner smoke list.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1847,21 +1864,19 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**dev runs `010cbb8`** (PR #7: Sessions 14–15 rule changes, FY 2026 v2 only), deployed and
-verified on 2026-10-24: https://victorious-meadow-0e5775b00.4.azurestaticapps.net. Dev data was
-cleaned the same day (only the admin account and the fee schedule remain). Next: the owner smoke
-list on the clean dev — sign up as a new doctor, a tier-0 member (600 / 1325 EGP), a university son
-at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides,
-submit, then admin review and approval. Answer Q-B23–Q-B25 and Q-T21.
+**dev runs `15e3ff5`** (PR #10, Session 18: D168–D175), deployed and checked on 2026-10-28:
+https://victorious-meadow-0e5775b00.4.azurestaticapps.net. Children's birth certificate only for a
+female member, member photo for FIRST_TIME only, «ابنة» removed (`beneficiaries.0003`/`0004`
+applied, constraint validated), new declaration, dotted email, application printing removed, error
+summary scrolls only after a failed attempt. Dev has no applications (emptied on 2026-10-28; 4
+users, the fee schedule and the audit log kept). Next: the owner smoke list on dev — sign up as a
+new doctor, a tier-0 member (600 / 1325 EGP), a university son at tier 0 (refused), a mother
+(member certificate), a first-time child aged 2 vs 3, both ID sides, a female member's children
+(birth certificate required), FIRST_TIME vs ADDITION member photo, «ابنة» absent from the dropdown,
+submit, then admin review and approval (no printing). Answer Q-B23–Q-B25, Q-B28 and Q-T21.
 
-Sessions 16–17 (D166–D167) were merged into `main` as PR #9.
-
-**Local branch `feat/owner-requirements-2026-10-28`** (Session 18, D168–D173) is committed, not
-pushed: children's birth certificate only for a female member, member photo for FIRST_TIME only,
-«ابنة» removed (D174–D175, constraint migration `beneficiaries.0003`/`0004`), new declaration,
-dotted email, application printing removed, error summary scrolls only after a failed attempt.
-Push and PR on confirmation; answer Q-B28. Dev was emptied of applications on 2026-10-28; the local
-compose volumes were reset the same day (no DAUGHTER rows, all migrations applied). The owner smoke list on dev no longer includes printing.
+Sessions 16–17 (D166–D167) were merged into `main` as PR #9. The local compose volumes were reset
+on 2026-10-28 (no DAUGHTER rows, all migrations applied).
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
    admin (email OTP via CA) and confirm payment, request correction, approve. Enable Arabic
