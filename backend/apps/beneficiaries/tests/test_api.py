@@ -64,7 +64,7 @@ def test_create_takes_the_lowest_free_row():
     app = ApplicationFactory()
     BeneficiaryFactory(application=app, row_number=1)
     BeneficiaryFactory(application=app, row_number=3)
-    body = client_for(app.doctor.user).post(collection(app), {"kinship": "DAUGHTER"}).json()
+    body = client_for(app.doctor.user).post(collection(app), {"kinship": "SON_MINOR"}).json()
     assert body["row_number"] == 2
 
 
@@ -72,7 +72,7 @@ def test_create_on_a_taken_row_is_refused():
     app = ApplicationFactory()
     BeneficiaryFactory(application=app, row_number=1)
     response = client_for(app.doctor.user).post(
-        collection(app), {"row_number": 1, "kinship": "DAUGHTER"}
+        collection(app), {"row_number": 1, "kinship": "SON_MINOR"}
     )
     assert response.status_code == 400
     assert "row_number" in response.json()["error"]["fields"]
@@ -83,8 +83,8 @@ def test_row_limit_enforced(settings):
     app = ApplicationFactory()
     client = client_for(app.doctor.user)
     for _ in range(2):
-        assert client.post(collection(app), {"kinship": "DAUGHTER"}).status_code == 201
-    response = client.post(collection(app), {"kinship": "DAUGHTER"})
+        assert client.post(collection(app), {"kinship": "SON_MINOR"}).status_code == 201
+    response = client.post(collection(app), {"kinship": "SON_MINOR"})
     assert response.status_code == 400
     assert response.json()["error"]["fields"]["row_number"] == ["لا يمكن إضافة أكثر من 2 مستفيدين"]
 
@@ -167,12 +167,45 @@ def test_invalid_kinship_rejected():
     assert "kinship" in response.json()["error"]["fields"]
 
 
+def test_retired_daughter_is_rejected_on_create():
+    app = ApplicationFactory()
+    response = client_for(app.doctor.user).post(
+        collection(app), {"kinship": "DAUGHTER", "full_name": "مريم"}, format="json"
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"]["kinship"] == ["درجة القرابة غير صحيحة"]
+    assert not app.beneficiaries.exists()
+
+
+def test_retired_daughter_is_rejected_on_update():
+    app = ApplicationFactory()
+    b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, full_name="مريم")
+    response = client_for(app.doctor.user).patch(
+        item(app, b), {"kinship": "DAUGHTER", "full_name": "مريم أحمد"}, format="json"
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["fields"]["kinship"] == ["درجة القرابة غير صحيحة"]
+    b.refresh_from_db()
+    assert (b.kinship, b.full_name) == (Kinship.SON_MINOR, "مريم")
+
+
+def test_retired_daughter_is_rejected_even_when_resent_for_a_stored_daughter_row():
+    app = ApplicationFactory()
+    b = BeneficiaryFactory(application=app, kinship=Kinship.DAUGHTER, full_name="مريم")
+    response = client_for(app.doctor.user).patch(
+        item(app, b), {"kinship": "DAUGHTER", "full_name": "مريم أحمد"}, format="json"
+    )
+    assert response.status_code == 400
+    b.refresh_from_db()
+    assert b.full_name == "مريم"
+
+
 @pytest.mark.parametrize("status", [S.SUBMITTED, S.UNDER_REVIEW, S.APPROVED, S.REJECTED])
 def test_not_editable_409(status):
     app = ApplicationFactory(status=status, reference_number="MED-2026-000001")
     b = BeneficiaryFactory(application=app)
     client = client_for(app.doctor.user)
-    assert client.post(collection(app), {"kinship": "DAUGHTER"}).status_code == 409
+    assert client.post(collection(app), {"kinship": "SON_MINOR"}).status_code == 409
     assert client.patch(item(app, b), {"full_name": "اسم"}).status_code == 409
     assert client.delete(item(app, b)).status_code == 409
     assert Beneficiary.objects.filter(pk=b.pk).exists()
@@ -181,7 +214,7 @@ def test_not_editable_409(status):
 def test_needs_correction_is_editable():
     app = ApplicationFactory(status=S.NEEDS_CORRECTION, reference_number="MED-2026-000001")
     assert (
-        client_for(app.doctor.user).post(collection(app), {"kinship": "DAUGHTER"}).status_code
+        client_for(app.doctor.user).post(collection(app), {"kinship": "SON_MINOR"}).status_code
         == 201
     )
 
@@ -196,7 +229,7 @@ def test_other_doctors_application_404(method):
     client = client_for(DoctorFactory().user)
     response = {
         "get_list": lambda: client.get(collection(victim_app)),
-        "post": lambda: client.post(collection(victim_app), {"kinship": "DAUGHTER"}),
+        "post": lambda: client.post(collection(victim_app), {"kinship": "SON_MINOR"}),
         "patch": lambda: client.patch(item(victim_app, b), {"full_name": "مخترق"}),
         "delete": lambda: client.delete(item(victim_app, b)),
     }[method]()
@@ -265,14 +298,14 @@ def test_first_time_answer_alone_can_be_patched_and_cleared():
 def test_first_time_answer_is_independent_of_the_application_type():
     app = ApplicationFactory(application_type="ADDITION")
     body = client_for(app.doctor.user).post(
-        collection(app), {"kinship": "DAUGHTER", "full_name": "مريم", "is_first_time": True},
+        collection(app), {"kinship": "SON_MINOR", "full_name": "مريم", "is_first_time": True},
         format="json",
     ).json()  # fmt: skip
     assert body["is_first_time"] is True
     first = ApplicationFactory(application_type="FIRST_TIME")
     body = (
         client_for(first.doctor.user)
-        .post(collection(first), {"kinship": "DAUGHTER", "full_name": "مريم"}, format="json")
+        .post(collection(first), {"kinship": "SON_MINOR", "full_name": "مريم"}, format="json")
         .json()
     )
     assert body["is_first_time"] is None  # never inferred from FIRST_TIME
@@ -293,7 +326,7 @@ def test_kinship_change_keeps_the_first_time_answer():
     b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, is_first_time=True)
     body = (
         client_for(app.doctor.user)
-        .patch(item(app, b), {"kinship": "DAUGHTER"}, format="json")
+        .patch(item(app, b), {"kinship": "SON_UNIVERSITY"}, format="json")
         .json()
     )
     assert body["is_first_time"] is True

@@ -60,7 +60,7 @@ DOCTOR_BENEFICIARIES = [
     {"kinship": "SON_MINOR", "full_name": "عمر أحمد محمد", "birth_year": 2015,
      "national_id": None, "is_first_time": True,
      "documents": ["BIRTH_CERTIFICATE", "BENEFICIARY_PERSONAL_PHOTO"]},
-    {"kinship": "DAUGHTER", "full_name": "مريم أحمد محمد", "birth_year": 2018,
+    {"kinship": "SON_MINOR", "full_name": "مريم أحمد محمد", "birth_year": 2018,
      "national_id": None, "is_first_time": False, "documents": ["BIRTH_CERTIFICATE"]},
 ]  # fmt: skip
 

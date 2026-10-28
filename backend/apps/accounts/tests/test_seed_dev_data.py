@@ -49,8 +49,8 @@ def test_seed_submits_the_worked_example_2_application_waiting_for_payment_revie
     # FY 2026 v2, tier 3: 825 + 1100 + 605 + 605 + (200 + 3 × 175)
     assert (app.fee_snapshot["tier"], app.fee_snapshot["total"]) == (3, 3860)
     assert app.fee_schedule == FeeSchedule.objects.get(fiscal_year=2026, is_active=True)
-    rows = dict(app.beneficiaries.values_list("kinship", "is_first_time"))
-    assert rows == {"WIFE": False, "SON_MINOR": True, "DAUGHTER": False}
+    rows = list(app.beneficiaries.order_by("row_number").values_list("kinship", "is_first_time"))
+    assert rows == [("WIFE", False), ("SON_MINOR", True), ("SON_MINOR", False)]
     types = set(Document.objects.filter(application=app).values_list("document_type", flat=True))
     assert {"NATIONAL_ID_FRONT", "PAYMENT_RECEIPT", "MARRIAGE_CERTIFICATE",
             "BENEFICIARY_NATIONAL_ID_BACK", "BENEFICIARY_PERSONAL_PHOTO"} <= types  # fmt: skip

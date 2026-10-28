@@ -134,9 +134,11 @@ PARENT_KINSHIPS = frozenset({Kinship.MOTHER, Kinship.FATHER})
 CHILD_KINSHIPS = frozenset(
     {Kinship.SON_MINOR, Kinship.SON_UNIVERSITY, Kinship.SON_GRADUATE, Kinship.DAUGHTER}
 )
-# No longer offered in the kinship dropdowns (owner requirement of 2026-10-28; the combined
-# `ابن/ابنة (...)` options replace it). Stored rows keep their value, label, fee and documents.
+# Retired by the owner on 2026-10-28 (the combined `ابن/ابنة (...)` options replace it): never
+# offered in the dropdowns and refused on every beneficiary create or update. The enum value stays
+# only so a stored row would still read, price and validate (none is expected; Q-B27).
 RETIRED_KINSHIPS = frozenset({Kinship.DAUGHTER})
+WRITABLE_KINSHIP_CHOICES = [(k.value, k.label) for k in Kinship if k not in RETIRED_KINSHIPS]
 
 BENEFICIARY_BIRTH_YEAR_MIN = 1920
 REGISTRATION_YEAR_MIN = 1950

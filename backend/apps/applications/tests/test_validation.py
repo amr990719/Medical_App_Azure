@@ -387,9 +387,9 @@ def test_inactive_row_needs_no_first_time_answer(app):
     assert validate_for_submission(app).is_valid is True
 
 
-@pytest.mark.parametrize("kinship", [Kinship.WIFE, Kinship.SON_MINOR, Kinship.DAUGHTER])
-def test_first_time_beneficiary_needs_a_photo(app, kinship):
-    row = app.beneficiaries.get(kinship=kinship)
+@pytest.mark.parametrize("row_number", [1, 2, 3])  # WIFE, SON_MINOR 2015, SON_MINOR 2018
+def test_first_time_beneficiary_needs_a_photo(app, row_number):
+    row = app.beneficiaries.get(row_number=row_number)
     row.is_first_time = True
     row.save()
     error = find(app, f"beneficiaries[{row.row_number}].documents.BENEFICIARY_PERSONAL_PHOTO")

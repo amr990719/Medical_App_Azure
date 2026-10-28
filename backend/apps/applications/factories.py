@@ -63,7 +63,7 @@ def build_submittable_application(**application_fields) -> InsuranceApplication:
         birth_year=2015, is_first_time=False,
     )  # fmt: skip
     daughter = BeneficiaryFactory(
-        application=app, row_number=3, kinship=Kinship.DAUGHTER, full_name="مريم أحمد محمد",
+        application=app, row_number=3, kinship=Kinship.SON_MINOR, full_name="مريم أحمد محمد",
         birth_year=2018, is_first_time=False,
     )  # fmt: skip
     for doc_type in (

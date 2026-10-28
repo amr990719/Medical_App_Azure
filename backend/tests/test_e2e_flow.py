@@ -94,7 +94,7 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
          "national_id": "28803150101242", "is_first_time": True},
         {"kinship": "SON_MINOR", "full_name": "عمر أحمد محمد", "birth_year": 2015,
          "is_first_time": False},
-        {"kinship": "DAUGHTER", "full_name": "مريم أحمد محمد", "birth_year": 2018,
+        {"kinship": "SON_MINOR", "full_name": "مريم أحمد محمد", "birth_year": 2018,
          "is_first_time": False},
     ]  # fmt: skip
     rows = []
@@ -102,7 +102,7 @@ def test_dev_login_to_reference_number_through_azurite(azurite_settings, setting
         response = browser.post(f"{base}beneficiaries/", data)
         assert response.status_code == 201, response.json()
         rows.append(response.json())
-    step("POST /beneficiaries/ x3", "WIFE 1988, SON_MINOR 2015, DAUGHTER 2018")
+    step("POST /beneficiaries/ x3", "WIFE 1988, SON_MINOR 2015, SON_MINOR 2018")
 
     def upload(doc_type, beneficiary_id=None):
         data = {"file": png_upload((800, 600), name=f"{doc_type.lower()}.png"),

@@ -444,8 +444,9 @@ def test_detail_shows_first_time_answers_and_conditional_member_requirements(adm
     BeneficiaryFactory(application=app, row_number=4, kinship=Kinship.MOTHER,
                        full_name="فاطمة", birth_year=1960, is_first_time=True)  # fmt: skip
     body = admin.get(app_url(app)).json()
-    answers = {b["kinship"]: b["is_first_time"] for b in body["beneficiaries"]}
-    assert answers == {"WIFE": False, "SON_MINOR": False, "DAUGHTER": False, "MOTHER": True}
+    answers = [(b["kinship"], b["is_first_time"]) for b in body["beneficiaries"]]
+    assert answers == [("WIFE", False), ("SON_MINOR", False), ("SON_MINOR", False),
+                       ("MOTHER", True)]  # fmt: skip
     member = {r["type"]: r["required"] for r in body["member_required_documents"]}
     assert member["MEMBER_BIRTH_CERTIFICATE"] is True
     mother = next(b for b in body["beneficiaries"] if b["kinship"] == "MOTHER")

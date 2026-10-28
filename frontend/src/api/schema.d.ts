@@ -777,10 +777,21 @@ export interface components {
             /** Format: date-time */
             readonly updated_at: string;
         };
+        /**
+         * @description * `MOTHER` - أم
+         *     * `FATHER` - أب
+         *     * `SON_MINOR` - ابن/ابنة (18 سنة أو أقل)
+         *     * `SON_UNIVERSITY` - ابن/ابنة (طالب جامعي)
+         *     * `SON_GRADUATE` - ابن/ابنة (خريج)
+         *     * `HUSBAND` - زوج
+         *     * `WIFE` - زوجة
+         * @enum {string}
+         */
+        BeneficiaryWriteKinshipEnum: "MOTHER" | "FATHER" | "SON_MINOR" | "SON_UNIVERSITY" | "SON_GRADUATE" | "HUSBAND" | "WIFE";
         /** @description Draft-level shape checks; the beneficiary service applies the business rules. */
         BeneficiaryWriteRequest: {
             row_number?: number;
-            kinship?: components["schemas"]["KinshipEnum"] | components["schemas"]["BlankEnum"];
+            kinship?: components["schemas"]["BeneficiaryWriteKinshipEnum"] | components["schemas"]["BlankEnum"];
             full_name?: string;
             birth_year?: number | null;
             national_id?: string | null;
@@ -1075,7 +1086,7 @@ export interface components {
         /** @description Draft-level shape checks; the beneficiary service applies the business rules. */
         PatchedBeneficiaryWriteRequest: {
             row_number?: number;
-            kinship?: components["schemas"]["KinshipEnum"] | components["schemas"]["BlankEnum"];
+            kinship?: components["schemas"]["BeneficiaryWriteKinshipEnum"] | components["schemas"]["BlankEnum"];
             full_name?: string;
             birth_year?: number | null;
             national_id?: string | null;
