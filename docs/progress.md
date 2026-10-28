@@ -1015,6 +1015,75 @@ Same local branch `fix/mother-certificate-refresh`; nothing pushed, merged or de
   certificate at all, so an uploaded one is kept (server, admin "extra" documents) but no longer
   shown in the doctor's checklist or dialog. Unchanged here (rules table not touched).
 
+### Session 18 — 2026-10-28 — Owner requirements: documents, declaration, printing, error scrolling
+
+Owner requirements of 2026-10-28 (they supersede PROMPT.md / business-rules where they conflict;
+PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local only, branch
+`feat/owner-requirements-2026-10-28` from `main` (`7df65fd`); nothing pushed or deployed.
+
+- **Children's birth certificate (D169):** for every child kinship (`SON_MINOR`, `SON_UNIVERSITY`,
+  `SON_GRADUATE`, historical `DAUGHTER`) `BIRTH_CERTIFICATE` is always offered and required **only
+  when the member is female** — at any age, also below `CHILD_NATIONAL_ID_AGE`; male (or unknown)
+  member → optional, no hint. The member's stored gender decides, never the child's. ID sides
+  (≥ 16), university card, insurance print and photos unchanged. `_child_requirements` and the
+  reference-data description (`base_rules.child.birth_certificate`, `below_age.required = []`)
+  changed; the validator, `required_documents`, DocumentModal, checklist and paperclips all read
+  that one table. The live refresh on a gender change is the existing D167 path. Because the slot is
+  now always listed, an uploaded certificate stays visible when it becomes optional (resolves
+  Q-B26).
+- **Member photo by application type (D168):** `PERSONAL_PHOTO` required iff
+  `application_type == FIRST_TIME`, optional for `ADDITION` / other types, always offered.
+  `REQUIRE_MEMBER_PHOTO` (setting, `.env.example`, README, `features.require_member_photo`) removed
+  so no global switch can contradict it; reference data adds
+  `member_conditional.PERSONAL_PHOTO = {required_with_application_type: FIRST_TIME}`. A type change
+  refreshes the checklist through the application PATCH response (already written to the cache)
+  plus the validation refetch; an uploaded photo stays attached. Beneficiary photos unchanged.
+  `build_submittable_application` and `seed_dev_data` upload the member photo for FIRST_TIME.
+- **Standalone «ابنة» retired (D170):** `constants.RETIRED_KINSHIPS = {DAUGHTER}`; reference-data
+  kinships carry `selectable`. BeneficiaryTable offers only selectable kinships plus the row's own
+  stored value, so an older DAUGHTER row loads, shows «ابنة», autosaves other fields without
+  re-sending or clearing the kinship. Fees, documents, validation and stored rows unchanged; no
+  migration, nothing converted.
+- **Declaration / form text:** new declaration wording (exact; first sentence keeps the name input,
+  now on a dotted underline; natural wrapping), superseded paragraphs and the signature label
+  «المقر بما فيه» removed; the OCR instruction hint under «مرفقات العضو الأصلي الإلزامية» removed
+  (upload and «مسح تلقائي» unchanged). Name persistence, rule 15 and acceptance unchanged.
+- **Email (D173):** one read-only LTR field on a dotted underline (`DashedField underline="dotted"`)
+  instead of 26 character boxes; `BoxStringInput` (+ test) deleted as unused. Shared by the form and
+  the read-only review.
+- **Application printing retired (D171):** print button (form action bar), print icon (wizard top
+  bar), status-page and admin-detail links, both routes, `PrintPage` / `AdminPrintPage` (+ tests),
+  `toDraftPreset` and the `preset` path of `useApplicationDraft`, `PaperForm`'s print mode/banner,
+  the `WizardFrame.applicationId` prop and the print strings removed. `/application/:id/print` and
+  `/admin/applications/:id/print` now render the not-found page (router tests). `print.css` stays for
+  the browser's own print command (not intercepted); payment slips untouched. `e2e/print-a4.spec.ts`
+  deleted; the doctor journey asserts the print URL is not found.
+- **Error summary scrolling (D172):** `ValidationErrorPanel` scrolled on every render (its effect
+  depended on the per-render `errors` array), so autosave / refetches / typing jumped back to the
+  summary. It now scrolls only when `scrollKey` changes: FormPage bumps a counter on each failed
+  «متابعة لرفع الإيصال»; ReviewPage uses the failed submission's `submittedAt`. No focus change.
+- **Tests:** backend rules (male/female × every child kinship × ages incl. 0, 2, 15, unknown; member
+  gender unknown; photo by type), validation (FIRST_TIME needs the photo, ADDITION does not, type
+  switch keeps the upload, male member's young children need nothing, gender switch), API (PATCH
+  response and validation follow the type; child slot by gender over the API; historical DAUGHTER
+  row edits). Frontend: panel unit test, FormPage flow (failed continue scrolls once → typing,
+  autosave, refetched shorter list: no scroll, focus kept → second failure scrolls → success
+  navigates; fails against the old effect), ReviewPage (no scroll on arrival, once per refused
+  submit), member-photo refresh (FIRST_TIME ↔ ADDITION, upload kept), gender refresh fake backend
+  on the new rule (+ a below-16 male → female case), DAUGHTER dropdown, declaration, email, print
+  absence, router not-found. Fixtures: reference data re-captured from the backend (only the
+  intended keys differ); application fixtures' photo / child certificate flags set to the server's
+  new answers.
+- **Verification (local, compose stack):** backend `pytest` **1268 passed, 1 skipped**
+  (container; the skip is `test_envfile`, repository root not mounted), `ruff check` +
+  `ruff format --check` clean, `manage.py check`, `makemigrations --check --dry-run` (no changes),
+  `spectacular --validate --fail-on-warn` (openapi.yaml unchanged); frontend `gen:api` (schema
+  unchanged), `lint`, `typecheck`, `vitest` **333 passed**, `rtl:check` 0 errors, `build` OK (Vite's
+  existing >500 kB chunk warning); Playwright against the compose stack **10 passed, 4 skipped**
+  (project-specific skips; one spec fewer). Screenshots of the 1280 / 390 px form were inspected
+  (dotted email, declaration wrapping at 390 px, optional slots) and the regenerated files
+  restored, not committed. **NOT VERIFIED — requires Azure credentials:** nothing deployed.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1481,6 +1550,30 @@ Same local branch `fix/mother-certificate-refresh`; nothing pushed, merged or de
   ordinary profile edits cause no application refetch. Without a cached profile the refresh
   happens (safe default).
 
+- **D168 — The member photo follows the application type, with no global switch:** the owner's
+  rule is per application, and a setting such as `REQUIRE_MEMBER_PHOTO=true` would have required it
+  for ADDITION too, so the setting was removed rather than kept as an override. The rule lives in
+  `member_document_requirements(application_type=…)`; reference data, which has no application,
+  lists it as optional and describes the condition in `member_conditional`.
+- **D169 — The children's certificate slot is always offered:** optional instead of absent for a
+  male member, like the member's own certificate after the mother is removed (D154): uploads never
+  disappear from the doctor's view, and Q-B26 is resolved without a separate "uploaded" branch.
+- **D170 — Retiring a kinship is a reference-data flag, not an enum change:** stored values must
+  keep labels, fees and rules, so `Kinship.DAUGHTER` stays; `selectable: false` hides it in the SPA
+  except as a row's current value. The API still accepts `DAUGHTER` (old rows, old clients); a
+  server-side refusal of new DAUGHTER rows was not added (Q-B27).
+- **D171 — Retired routes fall through to the not-found page:** no redirect, so a bookmarked print
+  URL shows nothing of the application. Code that only served printing (admin preset, print mode,
+  banner, unused prop and strings) was deleted with it; `print.css` stays because the browser's
+  own print command is not intercepted.
+- **D172 — Scrolling is tied to the attempt, not to the data:** a `scrollKey` that changes once per
+  failed attempt (a counter on the form page, the mutation's `submittedAt` on the review page, set
+  only together with the error) scrolls after the errors render; nothing derived from validation
+  data can trigger it. Arriving on the review page with server errors no longer scrolls.
+- **D173 — Email as a read-only dotted field:** a labelled read-only `input` (not plain text) keeps
+  the label association, the read-only semantics and LTR; `DashedField` gained an `underline`
+  option instead of a second component.
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -1555,6 +1648,7 @@ Same local branch `fix/mother-certificate-refresh`; nothing pushed, merged or de
 | 68 | CLAUDE.md "every UI string lives in `ar.ts`" | rule-bound document guidance (`hints`) comes from the server rules table, like document labels | D160: the text must follow the rule (e.g. only SON_MINOR shows the under-3 note) |
 | 69 | PROMPT.md §17.1 FY 2026 amounts / §17.2 admin fee 150/175 | FY 2026 version 2, tier 0, `200 + 175 × active` | owner requirements 2026-10-23 (PROMPT.md updated); v1 removed 2026-10-24 (D161) |
 | 70 | CLAUDE.md "migrations … expand/contract only" | `fees.0003` (expand) and `fees.0006` (contract) in the same, not yet deployed release | owner instruction 2026-10-24 to remove the legacy fields; D163 (old revision fails closed during the deploy window) |
+| 71 | PROMPT.md §42 / §55 "print view renders to an A4 PDF within two pages" | check removed with the feature; the print URLs are asserted not found | owner requirement 2026-10-28 (application printing retired; PROMPT.md updated) |
 
 ## Open questions
 
@@ -1656,11 +1750,15 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-T21** Deploy window (D158, widened by D163): between the migrate job and the new revision the
   old revision fails closed on every fee-schedule read (quotes, submission, admin fee schedules).
   Acceptable, or should the rollout be gated (maintenance banner)?
-- **Q-B26** After a female → male correction, an older child's uploaded birth certificate is no
-  longer listed by the server (the rule omits the slot instead of offering it as optional), so the
-  doctor no longer sees it, although it is kept and the admin sees it as an extra document. Should
-  the rules table offer it as optional while an upload exists (as for the member's birth
-  certificate, D154)? (Default: unchanged.)
+- **Q-B26** ~~After a female → male correction, an older child's uploaded birth certificate is no
+  longer listed by the server.~~ **Resolved in Session 18 (D169):** the slot is always offered
+  (optional for a male member), so an upload stays visible.
+- **Q-B27** The standalone `DAUGHTER` is hidden from the dropdowns only; the API still accepts it
+  for new rows (D170). Should the server refuse assigning it to a row that is not already
+  DAUGHTER? (Default: accepted, the SPA never offers it.)
+- **Q-B28** Applications submitted before 2026-10-28 as FIRST_TIME may lack the member photo, and
+  their children's certificates were required under the old rule. They are not re-validated; if
+  one is sent back for correction, the doctor must add the photo before resubmitting. Confirm.
 
 ## Next session starts with
 
@@ -1671,13 +1769,16 @@ list on the clean dev — sign up as a new doctor, a tier-0 member (600 / 1325 E
 at tier 0 (refused), a mother (member certificate), a first-time child aged 2 vs 3, both ID sides,
 submit, then admin review and approval. Answer Q-B23–Q-B25 and Q-T21.
 
-**Local branch `fix/mother-certificate-refresh`** (Sessions 16–17, D166–D167) is committed, not
-pushed: the member birth certificate follows the mother, and the children's slots follow the
-member's stored gender, without a reload. Answer Q-B26. Push and PR on
-confirmation (it sits on top of PR #8's docs commit).
+Sessions 16–17 (D166–D167) were merged into `main` as PR #9.
+
+**Local branch `feat/owner-requirements-2026-10-28`** (Session 18, D168–D173) is committed, not
+pushed: children's birth certificate only for a female member, member photo for FIRST_TIME only,
+«ابنة» retired from the dropdowns, new declaration, dotted email, application printing removed,
+error summary scrolls only after a failed attempt. Push and PR on confirmation; answer Q-B27 and
+Q-B28. The owner smoke list on dev no longer includes printing.
 1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
    `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
-   admin (email OTP via CA) and confirm payment, request correction, approve, print. Enable Arabic
+   admin (email OTP via CA) and confirm payment, request correction, approve. Enable Arabic
    on the `signup-signin` user flow. Add the admin to the CA group. Afterwards, check
    `AppExceptions` and the masking query (`docs/azure-deployment.md` §"Telemetry verification").
 2. **Owner decisions still open** (`docs/final-report.md` §16): region / data residency,

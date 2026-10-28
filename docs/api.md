@@ -40,7 +40,7 @@ absolute timeout 12 h (`SESSION_*_TIMEOUT_SECONDS`).
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/reference-data/` | fiscal year, `max_beneficiaries`, 27 governorates, every enum with Arabic labels, kinships with `fee_key`, the document-rules table, `ocr_enabled`, feature flags, upload limits |
+| GET | `/reference-data/` | fiscal year, `max_beneficiaries`, 27 governorates, every enum with Arabic labels, kinships with `fee_key` and `selectable` (`false` = retired, e.g. `DAUGHTER`: stored rows only), the document-rules table (with `member_conditional`), `ocr_enabled`, feature flags, upload limits |
 | GET | `/profile/` | the doctor's own member data (created empty on first visit) |
 | PATCH | `/profile/` | Arabic digits accepted everywhere; national ID derives date of birth, birth year and gender (a conflicting typed value is 400); `DUPLICATE_NATIONAL_ID` 409; 409 `APPLICATION_NOT_EDITABLE` while the current application is submitted / under review / approved |
 

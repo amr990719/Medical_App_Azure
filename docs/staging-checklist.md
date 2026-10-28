@@ -158,8 +158,9 @@ Then start the migrate job and wait for `Succeeded` (`docs/azure-deployment.md` 
       sees the server fee quote, and submits (gets `MED-…`).
 - [ ] `grant_admin` the test admin (one-off migrate-job execution,
       `docs/azure-deployment.md` §"One-off management commands"). The admin signs in with MFA,
-      confirms the payment, requests a correction, the doctor resubmits, the admin approves, and
-      both print views render on A4.
+      confirms the payment, requests a correction, the doctor resubmits, the admin approves.
+      No print action is offered and `/application/{id}/print` / `/admin/applications/{id}/print`
+      show the not-found page (application printing retired 2026-10-28).
 - [ ] App Insights shows requests and traces with national IDs masked (`docs/azure-deployment.md`
       §"Telemetry verification").
 - [ ] Restore drill A–C (`docs/azure-deployment.md` §"Restore drill"): staging is where it runs.

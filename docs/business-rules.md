@@ -71,7 +71,8 @@ Allowed transitions (anything else is rejected with `INVALID_STATUS_TRANSITION`)
 - **Reference number** `MED-{year}-{000123}` is assigned atomically at the *first* submission and
   kept on resubmission. Numbers are never reused.
 - At submission the server recomputes and freezes the fee (`fee_snapshot`) and stores a copy of the
-  member and beneficiary data (`submitted_snapshot`) for audit and printing.
+  member and beneficiary data (`submitted_snapshot`) for audit. (Application printing was retired
+  on 2026-10-28: there is no doctor or admin print view.)
 - Payment status: `NOT_UPLOADED` → `PENDING_REVIEW` (automatically when a receipt is uploaded) →
   `CONFIRMED` or `REJECTED` (admin only). A rejected receipt normally comes with `NEEDS_CORRECTION`.
 - Doctors can never set status, payment status, reference number, fee snapshot or reviewer fields.
@@ -85,13 +86,17 @@ maps to:
 |---|---|---|
 | MOTHER / FATHER | أم / أب | parent |
 | SON_MINOR | ابن/ابنة (18 سنة أو أقل) | child |
-| DAUGHTER | ابنة | child |
 | SON_UNIVERSITY | ابن/ابنة (طالب جامعي) | grad_son |
 | SON_GRADUATE | ابن/ابنة (خريج) | grad_son |
-
-The `SON_*` labels were changed on 2026-10-23 (owner); values and fee columns are unchanged, stored
-rows are not migrated, and `DAUGHTER` remains a separate option.
 | HUSBAND / WIFE | زوج / زوجة | spouse |
+| DAUGHTER (retired) | ابنة | child |
+
+The `SON_*` labels were changed on 2026-10-23 (owner); values and fee columns are unchanged and
+stored rows are not migrated. **The standalone `DAUGHTER` («ابنة») is retired from the dropdowns
+(owner, 2026-10-28)**: reference data marks it `selectable: false`, the SPA offers it only as the
+stored value of an existing row (so an older application shows it and never clears it), and stored
+`DAUGHTER` rows keep their label, fee (child), document rules and validation. Nothing is deleted or
+converted; the API still accepts the value for those rows.
 
 Brothers, sisters and "other" are not supported because the schedule has no fee for them.
 
@@ -110,14 +115,20 @@ the submitted snapshot and shown to reviewers (`غير محدد` when unanswered
 
 ## 6. Required documents [`apps/reference/document_rules.py`]
 
-Member: ID front, ID back, syndicate card (always); personal photo (optional unless
-`REQUIRE_MEMBER_PHOTO`); payment receipt (before submission); **the member's own birth certificate
+Member: ID front, ID back, syndicate card (always); **personal photo (`PERSONAL_PHOTO`, image
+only) required for a `FIRST_TIME` («أول مرة») application and optional for `ADDITION` («إضافة») or any
+other type** (owner, 2026-10-28; the former global `REQUIRE_MEMBER_PHOTO` switch was removed so it
+cannot contradict this — the slot is always offered and an uploaded photo stays attached when it
+becomes optional); payment receipt (before submission); **the member's own birth certificate
 (`MEMBER_BIRTH_CERTIFICATE`, «شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم») while an active
 MOTHER is listed** — it proves the relation, so the mother's (or a child's) certificate never
 satisfies it. One member-owned upload per application, no OCR, never deleted when the mother is
-removed (it just becomes optional). Because this slot depends on the beneficiaries, the server
-returns the application's own member list (`member_required_documents` on the doctor and admin
-application APIs); reference data keeps the global list plus `member_conditional`.
+removed (it just becomes optional). Because these slots depend on the application (its type, its
+beneficiaries), the server returns the application's own member list (`member_required_documents`
+on the doctor and admin application APIs); reference data keeps the global list (photo optional)
+plus `member_conditional` (`PERSONAL_PHOTO` → `required_with_application_type: FIRST_TIME`,
+`MEMBER_BIRTH_CERTIFICATE` → `required_with_kinship: MOTHER`). The member photo is separate from the
+beneficiary photos, which keep their own `is_first_time` rule below.
 
 Beneficiaries, where age = fiscal year − birth year and the thresholds are configurable.
 "National ID" always means **both sides**: `BENEFICIARY_NATIONAL_ID` (front — the old value, so
@@ -128,7 +139,7 @@ validated on its own:
 |---|---|
 | Spouse | national ID (both sides), marriage certificate, insurance print (برينت تأميني) |
 | Parent | national ID (both sides) |
-| Son (minor) / daughter | birth certificate if age < 16 **or** the member is female; national ID (both sides) if age ≥ 16 (both optional below) |
+| Son (minor) / daughter | birth certificate required **only when the member is female** (any age), otherwise offered as optional; national ID (both sides) if age ≥ 16 (both optional below) |
 | Son (university) | child rule + university card |
 | Son (graduate) | child rule + insurance print |
 | Any kinship, first time | white-background personal photo (`BENEFICIARY_PERSONAL_PHOTO`), except children younger than `PHOTO_EXEMPT_CHILD_AGE` (3); an unknown age never exempts |
@@ -136,6 +147,11 @@ validated on its own:
 - A **female member's** children (minor, daughter, university, graduate) need their own birth
   certificate at any age — on top of both ID sides from 16 and the kinship's documents — with the
   guidance «شهادة ميلاد الابن/الابنة مطلوبة لإثبات صلة القرابة بالأم (العضوة) مهما كان العمر.»
+- A **male member's** children never need it (owner, 2026-10-28), also below the ID age: the slot is
+  always listed as optional, so an uploaded certificate stays visible and attached. The rule uses the
+  member's stored gender, never the child's; a member gender change refreshes the children's slots
+  without a reload (D167). An unknown member gender does not require it (the gender itself is a
+  submission error).
 - Photo guidance next to the upload: «صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.»;
   for `SON_MINOR` only also «لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.». The white background is
   checked by the reviewer — there is no automatic background detection or image editing.
@@ -205,12 +221,12 @@ with the codes listed in SKILL.md §7. The UI never shows stack traces.
 | 1 | Are the FY 2026 amounts, tiers, admin fees and 70+ cap final? | Version 2 values above (owner, 2026-10-23), in an editable `FeeSchedule` | admin fee-schedules page |
 | 2 | How are fees calculated for a deceased (متوفى) member's family? | Same as WORKING | `fees/services.py` |
 | 3 | Fees for an `ADDITION` application — only the new beneficiaries? | Same as FIRST_TIME | `fees/services.py` |
-| 4 | Children's documents: is the age-16 rule right (birth certificate <16, national ID ≥16, birth certificate always if member is female)? | Age-aware rule, threshold configurable; both ID sides; female member's children always (confirmed 2026-10-23) | `CHILD_NATIONAL_ID_AGE` |
+| 4 | Children's documents: national ID (both sides) from 16; birth certificate only for a female member's children? | Age-aware ID rule, threshold configurable; birth certificate required iff the member is female, optional otherwise (owner, 2026-10-28) | `CHILD_NATIONAL_ID_AGE`, `document_rules.py` |
 | 5 | Maximum beneficiaries: 10 (prototype) or 11 (paper rows)? | 10 | `MAX_BENEFICIARIES` |
 | 6 | Must `SON_MINOR` be ≤18, and must spouse kinship match the member's gender? | Both enforced | `ENFORCE_SON_MINOR_AGE`, `ENFORCE_SPOUSE_GENDER` |
 | 7 | Can a rejected applicant re-apply in the same fiscal year? | Yes, a new application | partial unique constraint |
 | 8 | How do members pay (bank, Fawry, office)? What instructions to show? | Placeholder text on the receipt page (Q-B19); the organization must supply the real text | `frontend/src/i18n/ar.ts` → `payment.instructions` (one place; an admin-editable setting would need a new model) |
-| 9 | Is the member photo mandatory? | Optional | `REQUIRE_MEMBER_PHOTO=false` |
+| 9 | Is the member photo mandatory? | Required for `FIRST_TIME`, optional otherwise (owner, 2026-10-28; no global switch) | `document_rules.py::member_document_requirements` |
 | 10 | Is `(syndicate_type, registration_number)` unique? | Indexed, not unique | `doctors/models.py` |
 | 11 | Is sending ID images to Azure OpenAI for OCR legally approved, and in which region? | OCR behind `OCR_ENABLED`, off in production until approved | settings / Bicep `enableOcr` |
 | 12 | Data retention period for applications and documents? | Not auto-deleted; documented as a decision | `docs/security.md` |
@@ -220,7 +236,7 @@ with the codes listed in SKILL.md §7. The UI never shows stack traces.
 | 16 | Should admins see drafts before submission? (Q-B16) | No — review starts at SUBMITTED | admin querysets |
 | 17 | Receipt minimum size: width ≥ 400 **and** height ≥ 300 (a portrait 300×400 photo is refused), or either orientation? (Q-B17) | Prototype rule (landscape minimum) | `RECEIPT_MIN_WIDTH` / `RECEIPT_MIN_HEIGHT` settings, `apps/documents/validators.py` |
 | 18 | Should `إنشاء حساب` open Entra's sign-up page directly (`prompt=create`)? (Q-B18) | Both buttons use the combined sign-up/sign-in flow | `LandingPage.tsx`, `/auth/login/` |
-| 19 | Must official printouts always carry the full national ID? (Q-B20) | Admin printouts show it masked unless the reviewer reveals it (audited) | `AdminPrintPage.tsx` |
+| 19 | Must official printouts always carry the full national ID? (Q-B20) | Moot since 2026-10-28: application printing (doctor and admin) was retired; the admin detail still masks IDs unless revealed (audited) | — |
 | 20 | When a correction is requested and the doctor resubmits, does a CONFIRMED payment stay confirmed? (Q-B21) | Yes, unless the doctor replaces the receipt (→ `PENDING_REVIEW`) | `applications/services.py` |
 | 21 | Legal / organizational decisions L1–L8 (religion field, OCR by an AI service, region, retention, admin access, breach procedure, production access, malware scanning) (Q-B22) | See `docs/security.md` §6 | — |
 | 22 | The under-3 photo note says "3"; if `PHOTO_EXEMPT_CHILD_AGE` changes, should the note follow? | Note text fixed as given by the owner; threshold configurable | `document_rules.py` `HINT_PHOTO_CHILD_EXEMPT`, `PHOTO_EXEMPT_CHILD_AGE` |
