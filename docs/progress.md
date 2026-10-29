@@ -1172,6 +1172,25 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
 - **NOT VERIFIED on dev:** the signed-in flows (dropdown without «ابنة», female-member certificate,
   FIRST_TIME photo, no print button) — part of the owner smoke list.
 
+### Session 19 (cont.) — 2026-10-29 — Deployed to dev
+
+- **Pre-deploy check** (read-only, old image `15e3ff5`, execution `caj-medsyn-dev-migrate-bwpr70g`,
+  `transaction_read_only = on`): `fees` at 0006, `doctors` at 0001; FY 2026 v2 active, not locked;
+  1 application (DRAFT), 0 fee snapshots, so 0008 had nothing to re-price and could not refuse
+  (D182); 1 stored treatment card number (deleted by `doctors.0002`, as the owner required); 0
+  stored first-time answers.
+- **Deploy:** PR #11 (CI green: backend, frontend, Playwright, image build) merged as `caaeb28`;
+  `backend` run `40891631358` and `frontend` run `40891631488` succeeded (staging/prod skipped).
+  Migrate job execution `caj-medsyn-dev-migrate-80x1mw0` Succeeded; revision
+  `ca-medsyn-dev-api--gcaaeb28aa75b-1` Healthy with 100 % traffic. Through the SWA host
+  `/api/ready/` and the SPA answer 200; reference data answers 401 without a session (as designed).
+- **Post-check** (read-only, new image, execution `caj-medsyn-dev-migrate-2q98xor`): `fees.0008`
+  and `doctors.0002` applied; FY 2026 v3 is the only schedule (active, service fee 800, admin fee
+  200 / 175, not locked — no submission yet); `doctors_doctor.treatment_card_number` absent; 1
+  application, 0 snapshots; `SON_UNIVERSITY` priced on the `child` key.
+- **NOT VERIFIED on dev:** the signed-in flows and the quotes 1,575 / 2,300 / 4,055 on screen — part
+  of the owner smoke list (Next session, step 3).
+
 ### Session 19 — 2026-10-29 — Owner requirements: certificates, photos, fees, treatment card
 
 Owner requirements of 2026-10-29 (they supersede PROMPT.md / business-rules where they conflict;
@@ -2013,8 +2032,9 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**Branch `feat/owner-requirements-2026-10-29` (Session 19, D176–D183) is local only** — not pushed,
-no PR, not deployed. Dev still runs `15e3ff5`. Next:
+**Session 19 (D176–D183) is merged (PR #11, `caaeb28`) and deployed to dev**; steps 1–2 below are
+done (see "Session 19 (cont.)"). This deploy note is on the local branch
+`docs/dev-deploy-2026-10-29`, not pushed. Next:
 1. **Owner review** of the new rules and answers to Q-B30–Q-B32, Q-T22; then, on confirmation,
    push the branch and open the PR (CI: backend, frontend, Playwright, image).
 2. **Pre-deploy check on dev** (read-only, old image): `SELECT fiscal_year, version, is_active,
