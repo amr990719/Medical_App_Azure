@@ -302,6 +302,59 @@ describe("useApplicationDraft", () => {
     expect(result.current.saveStatus).toBe("error");
   });
 
+  it("keeps the beneficiary birth-year mismatch hint after a refused save clears the server error", async () => {
+    let refuse = true;
+    server.use(
+      http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-wife/`, async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        if (refuse) {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "VALIDATION_ERROR",
+                message: "سنة الميلاد غير صحيحة",
+                fields: { birth_year: ["سنة الميلاد غير صحيحة"] },
+              },
+            },
+            { status: 400 },
+          );
+        }
+        return HttpResponse.json(apiBeneficiary({ national_id: "28806150101244", ...body }));
+      }),
+    );
+    const wife = apiBeneficiary({ national_id: "28806150101244", birth_year: 1988 });
+    const { result } = setup(apiApplication({ beneficiaries: [wife] }));
+    await ready(result);
+    expect(result.current.rowErrors[0]?.birthYear).toBeUndefined();
+
+    // A meaningful server error wins over the instant hint.
+    act(() => result.current.updateBeneficiary(0, "birthYear", "1900"));
+    await waitFor(() => expect(result.current.rowErrors[0]?.birthYear).toBe("سنة الميلاد غير صحيحة"));
+
+    // Editing clears the server error; another mismatched year still shows the hint, also once the
+    // draft (which may hold a mismatch) is saved.
+    refuse = false;
+    act(() => result.current.updateBeneficiary(0, "birthYear", "1990"));
+    expect(result.current.rowErrors[0]?.birthYear).toBe("سنة الميلاد لا تطابق الرقم القومي");
+    await waitFor(() => expect(result.current.saveStatus).toBe("saved"));
+    expect(result.current.rowErrors[0]?.birthYear).toBe("سنة الميلاد لا تطابق الرقم القومي");
+
+    // The year encoded in the ID clears it.
+    act(() => result.current.updateBeneficiary(0, "birthYear", "1988"));
+    expect(result.current.rowErrors[0]?.birthYear).toBeUndefined();
+  });
+
+  it("keeps the member birth-year mismatch hint after the birth year is edited", async () => {
+    server.use(http.patch(`${API}/profile/`, () => HttpResponse.json(apiProfile())));
+    const { result } = setup();
+    await ready(result);
+    act(() => result.current.updateField("nationalId", "28506150101234"));
+    act(() => result.current.updateField("birthYear", "1990"));
+    expect(result.current.fieldErrors.birthYear).toBe("سنة الميلاد لا تطابق الرقم القومي");
+    act(() => result.current.updateField("birthYear", "1985"));
+    expect(result.current.fieldErrors.birthYear).toBeUndefined();
+  });
+
   it("is read-only when the application is SUBMITTED: no edits, no requests", async () => {
     const { result } = setup(apiApplication({ status: "SUBMITTED", is_editable: false }));
     await ready(result);

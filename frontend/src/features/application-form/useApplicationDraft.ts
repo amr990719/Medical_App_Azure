@@ -47,14 +47,25 @@ function beneficiaryIdErrors(
   return errors;
 }
 
-/** Refused-save errors win over the instant hints, field by field. */
+/**
+ * Refused-save errors win over the instant hints, field by field. An edit clears a refused-save
+ * error by storing `undefined`, which must not hide the hint underneath.
+ */
+function mergeErrors<F extends string>(hints: Partial<Record<F, string>>, refused: Partial<Record<F, string>> = {}) {
+  const merged = { ...hints };
+  for (const [field, message] of Object.entries(refused) as [F, string | undefined][]) {
+    if (message) merged[field] = message;
+  }
+  return merged;
+}
+
 function mergeRowErrors(
   hints: Record<number, Partial<Record<BeneficiaryField, string>>>,
   refused: Record<number, Partial<Record<BeneficiaryField, string>>>,
 ) {
   const merged = { ...hints };
   for (const [index, errors] of Object.entries(refused)) {
-    merged[Number(index)] = { ...hints[Number(index)], ...errors };
+    merged[Number(index)] = mergeErrors(hints[Number(index)] ?? {}, errors);
   }
   return merged;
 }
@@ -120,7 +131,7 @@ export function useApplicationDraft(applicationId: string, options: DraftOptions
     readOnly: snapshot.readOnly,
     saveStatus: snapshot.saveStatus,
     isDirty: snapshot.isDirty,
-    fieldErrors: { ...nationalIdErrors(snapshot.state, snapshot.readOnly), ...snapshot.fieldErrors },
+    fieldErrors: mergeErrors(nationalIdErrors(snapshot.state, snapshot.readOnly), snapshot.fieldErrors),
     rowErrors: mergeRowErrors(beneficiaryIdErrors(snapshot.state, snapshot.readOnly), snapshot.rowErrors),
     pendingDeletion: snapshot.pendingDeletion,
     memberDocuments,
