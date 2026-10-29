@@ -206,8 +206,11 @@ tier amounts are version 2's):
 - Pensioners (معاش) are always tier 4. Deceased members' families are priced like working members.
 - Version 3 is the only FY 2026 version. By owner decision (2026-10-29) earlier quotes were **not
   preserved**: `fees.0008` re-priced every FY 2026 application that held a `fee_snapshot` on version
-  3 from its current data (snapshot and `fee_schedule` replaced, nothing else touched — no audit entry
-  is written by the migration) and deleted version 2. (Version 1 had been removed on 2026-10-24 by
+  3 from the data it was **submitted** with (`submitted_snapshot`, never the current rows, which an
+  application under correction may hold half-edited; snapshot and `fee_schedule` replaced, nothing
+  else touched — no audit entry is written by the migration) and deleted version 2. Each new quote is
+  checked before saving; missing or incomplete submitted data, or a quote that is invalid or does not
+  add up, stops the migration with the affected applications listed and rolls it back. (Version 1 had been removed on 2026-10-24 by
   `fees.0005` with its snapshots kept; those snapshots were re-priced by `fees.0008` too.) Every
   schedule (and every new admin version) defines tiers 0–4, `admin_fee_base`,
   `admin_fee_per_beneficiary` and `service_fee`.

@@ -895,8 +895,12 @@ submission uses it.
 
 **Earlier versions were replaced, not preserved (owner, 2026-10-29).** `fees.0007` added
 `service_fee`; `fees.0008` created version 3, re-priced every FY 2026 application that held a
-`fee_snapshot` on it from the application's current data (snapshot and `fee_schedule` replaced;
-nothing else changes) and deleted version 2. Version 1 (the four-tier seed of `fees.0002` with a flat
+`fee_snapshot` on it from the data it was **submitted** with (`submitted_snapshot`: member,
+application and beneficiaries — never the current, possibly half-corrected rows; snapshot and
+`fee_schedule` replaced; nothing else changes) and deleted version 2. Every replacement quote is
+checked first; if any application lacks complete submitted data or does not give a valid quote,
+the migration stops with the list of applications and reasons and rolls back (nothing re-priced,
+version 2 kept). Version 1 (the four-tier seed of `fees.0002` with a flat
 administrative fee) had been removed on 2026-10-24 by `fees.0005` / `fees.0006`.
 
 Amounts are whole Egyptian pounds; use `Decimal`/integers, never floats.

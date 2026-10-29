@@ -149,7 +149,9 @@ by a submission; created by `fees.0008_fy2026_v3_schedule`, same tier amounts as
 four-tier `tier_fees` is rejected). Version 1 was removed by `fees.0005`/`0006` (2026-10-24). On
 2026-10-29 the owner chose NOT to preserve earlier quotes: `fees.0007` added `service_fee` (DB default
 800), `fees.0008` created v3, re-priced every FY 2026 `fee_snapshot` on it (frozen copy of the engine in
-the migration; only `fee_snapshot` / `fee_schedule` change) and deleted v2.
+the migration, fed from `submitted_snapshot` — never current rows; every quote checked before saving,
+incomplete submitted data or an invalid quote → the migration raises and rolls back; only
+`fee_snapshot` / `fee_schedule` change) and deleted v2. Any future re-pricing migration must do the same.
 
 Rules, in order:
 1. Registration year missing / not 4 digits / < 1950 / > fiscal year → `is_valid=false`, `tier=0`,

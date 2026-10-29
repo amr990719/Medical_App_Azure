@@ -235,7 +235,7 @@ one (audited `NATIONAL_ID_REVEALED`). Logs never contain them (masking filter).
 |---|---|
 | accounts | `0001_initial`, `0002_user_display_name` |
 | doctors | `0001_initial`, `0002_remove_doctor_treatment_card_number` (drops رقم بطاقة العلاج) |
-| fees | `0001_initial`, `0002_seed_fy2026` (FY 2026 v1 — history only, row removed by 0005), `0003_admin_fee_formula`, `0004_fy2026_v2_schedule` (FY 2026 v2 — removed by 0008), `0005_remove_fy2026_v1` (clears v1 references, keeps snapshots, deletes v1), `0006_remove_legacy_admin_fee` (drops the flat-fee columns), `0007_feeschedule_service_fee` (`service_fee`, DB default 800), `0008_fy2026_v3_schedule` (FY 2026 v3, active; re-prices every FY 2026 fee snapshot on it, deletes the other FY 2026 versions) |
+| fees | `0001_initial`, `0002_seed_fy2026` (FY 2026 v1 — history only, row removed by 0005), `0003_admin_fee_formula`, `0004_fy2026_v2_schedule` (FY 2026 v2 — removed by 0008), `0005_remove_fy2026_v1` (clears v1 references, keeps snapshots, deletes v1), `0006_remove_legacy_admin_fee` (drops the flat-fee columns), `0007_feeschedule_service_fee` (`service_fee`, DB default 800), `0008_fy2026_v3_schedule` (FY 2026 v3, active; re-prices every FY 2026 fee snapshot on it from the submitted data, refusing and rolling back on incomplete submitted data or an invalid quote; deletes the other FY 2026 versions) |
 | applications | `0001_initial` |
 | beneficiaries | `0001_initial`, `0002_beneficiary_is_first_time`, `0003_remove_daughter_kinship`, `0004_validate_kinship_constraint` |
 | documents | `0001_initial`, `0002_document_blob_purged_at`, `0003_document_types_id_back_photo_member_certificate` |

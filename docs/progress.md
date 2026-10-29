@@ -1255,6 +1255,22 @@ nothing pushed or deployed.
   under-16 certificate hints, «رسوم الخدمة» 800 after «رسوم إدارية» 900, total 4,835); regenerated
   screenshots restored, not committed. **NOT VERIFIED — requires Azure credentials:** nothing
   deployed; the dev migrate job has not run 0007 / 0008 / `doctors.0002`.
+- **Review fixes (same session, D182, D183):** (1) `fees.0008` priced from the current rows, so an
+  application under correction with a cleared registration year got an invalid zero quote in place
+  of its valid one. 0008 had never left this machine (no remote branch, not on dev), so it was
+  fixed in place: it now prices from `submitted_snapshot`, checks every input and every replacement
+  quote, and raises with an actionable list (application id, reference, status, reason — no
+  personal data) and rolls back. (2) `mergeRowErrors` let a cleared server error (`undefined`) hide
+  the instant birth-year mismatch hint; the member `fieldErrors` merge had the same defect. Both now
+  merge only real messages. Regression tests first (red: zero quote / no refusal, hint `undefined`):
+  backend 9 (correction case, 7 incomplete-data refusals, replacement-quote check); the 0005/0006
+  helper now builds real submitted data. Frontend 2 (row hint after a refused save, across an
+  accepted save, cleared by the right year; member hint after an edit). Re-verified on a scratch copy
+  of the pre-upgrade backup (`medical_upgrade_check`, dropped afterwards): with the NEEDS_CORRECTION
+  doctor's registration year cleared, MED-2026-000002 → valid tier 2, 3,440 (old code: 0); a
+  missing `submitted_snapshot` → 0008 refused, v2 kept, all six totals unchanged. Backend `pytest`
+  **1270 passed, 1 skipped**; ruff, `makemigrations --check` clean. Frontend `vitest` **335 passed**,
+  lint, typecheck, `rtl:check` clean.
 
 ## Decisions
 
@@ -1778,6 +1794,17 @@ nothing pushed or deployed.
   migration carries its own frozen copy of the engine (migrations never import app code); a test
   proves it equals `quote_for_application` on the migrated row. No audit entry is written by the
   migration (the audit table is append-only application history; the change is recorded here).
+- **D182 — Re-pricing reads the submitted data and fails closed:** `fees.0008` prices each
+  application from its `submitted_snapshot` (what the doctor submitted and paid for), never from the
+  current rows (a NEEDS_CORRECTION draft may be half-edited). All quotes are computed and checked
+  (valid, schedule, tier, line count, admin and service lines, non-negative integers, total = sum
+  > 0) before any write; one problem → `RuntimeError` listing every affected application and the
+  migration rolls back. 0008 was edited in place rather than corrected by a new migration because it
+  had never left this machine (deviation 70 precedent).
+- **D183 — Server errors override hints only with a message:** the SPA's instant hints (member and
+  beneficiary birth year vs ID) are merged with refused-save errors so that only a non-empty server
+  message wins; a cleared one (`undefined`) no longer hides the hint. Submission validation on the
+  server stays authoritative.
 
 ## Deviations from PROMPT.md
 
@@ -1979,16 +2006,24 @@ confirmed by the organization). Technical/environment questions for the user:
   local 3,860 → 4,835). Should reviewers treat old receipts specially (correction request for the
   difference)? No rule implemented.
 - **Q-T22** The deploy window of Q-T21 now also covers doctor-profile reads (`doctors.0002`, D177).
+- **Q-T23** If `fees.0008` refuses (D182), `migrate` stops there but `doctors.0002` and `fees.0007`
+  are already committed (each migration is its own transaction): the old revision keeps serving
+  with the card column gone (Q-T22 window) until the listed applications are fixed and the migrate
+  job is re-run. The pre-deploy query (Next session, step 2) is there to catch this first.
 
 ## Next session starts with
 
-**Branch `feat/owner-requirements-2026-10-29` (Session 19, D176–D181) is local only** — not pushed,
+**Branch `feat/owner-requirements-2026-10-29` (Session 19, D176–D183) is local only** — not pushed,
 no PR, not deployed. Dev still runs `15e3ff5`. Next:
 1. **Owner review** of the new rules and answers to Q-B30–Q-B32, Q-T22; then, on confirmation,
    push the branch and open the PR (CI: backend, frontend, Playwright, image).
 2. **Pre-deploy check on dev** (read-only, old image): `SELECT fiscal_year, version, is_active,
    locked_at FROM fees_feeschedule;` and the count of applications with a `fee_snapshot` — 0008
-   re-prices them and deletes every FY 2026 version except v3. Then deploy; post-check: v3 only
+   re-prices them from `submitted_snapshot` and deletes every FY 2026 version except v3. Also
+   `SELECT id, reference_number, status FROM applications_insuranceapplication WHERE fiscal_year =
+   2026 AND fee_snapshot IS NOT NULL AND (submitted_snapshot IS NULL OR NOT submitted_snapshot ?&
+   ARRAY['member','application','beneficiaries']);` must return no rows, or 0008 will refuse (Q-T23).
+   Then deploy; post-check: v3 only
    (service fee 800), `doctors_doctor.treatment_card_number` absent, quotes 1,575 / 2,300 / 4,055.
 3. **Owner smoke list on dev** (carried over from Session 18, updated): new doctor; tier-0 member
    (1,575; with a child 2,300; with a university student 2,300); a male member's child aged 15 vs 16
