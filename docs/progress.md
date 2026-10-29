@@ -1172,6 +1172,90 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
 - **NOT VERIFIED on dev:** the signed-in flows (dropdown without «ابنة», female-member certificate,
   FIRST_TIME photo, no print button) — part of the owner smoke list.
 
+### Session 19 — 2026-10-29 — Owner requirements: certificates, photos, fees, treatment card
+
+Owner requirements of 2026-10-29 (they supersede PROMPT.md / business-rules where they conflict;
+PROMPT.md, `docs/business-rules.md`, `docs/database.md` and the rules skill were updated). Local
+only, branch `feat/owner-requirements-2026-10-29` from `docs/dev-deploy-2026-10-28` (`7144ee2`);
+nothing pushed or deployed.
+
+- **Children's birth certificate (D176):** `SON_MINOR` below `CHILD_NATIONAL_ID_AGE` (16) now needs
+  `BIRTH_CERTIFICATE` whatever the member's gender, with the hint
+  «شهادة ميلاد الابن/الابنة مطلوبة لمن هم أقل من 16 سنة.»; a female member's children keep the
+  any-age rule and hint; a male member's child from 16 (and university / graduate children) keep it
+  optional. Unknown birth year counts as below 16. ID sides from 16 unchanged; age = fiscal year −
+  birth year. `BIRTH_CERTIFICATE_BELOW_AGE_KINSHIPS = {SON_MINOR}` in `document_rules.py`; reference
+  data `base_rules.child.birth_certificate.required_below_age_for_kinships`.
+- **Treatment card removed (D177):** `Doctor.treatment_card_number` dropped (`doctors.0002`, 2s
+  `lock_timeout`), with the profile / admin serializers, `PROFILE_FIELDS`, the submitted snapshot,
+  the form state, mappers, autosave keys, MemberSection, ProfilePage, admin detail and three
+  `ar.ts` strings. Row 2 of the form is now `سنة قيد النقابة :` (8 columns, the existing field and
+  input — no duplicate) · `حالة العميل :` (4).
+- **University students priced as minor children (D178):** `KINSHIP_FEE_KEY[SON_UNIVERSITY] =
+  "child"`, so every tier, tier 0 included, charges the `SON_MINOR` amount (550 / 550 / 605 / 605 /
+  660); tier 0 university children are now eligible. `SON_GRADUATE` stays on `grad_son` (tier 0 still
+  not eligible). University card requirement unchanged. Admin fee table headers:
+  «الأبناء (حتى 18 سنة / طالب جامعي)» / «ابن/ابنة خريج».
+- **Beneficiary birth year vs national ID (D179):** submission validation compares an active row's
+  birth year with `parse_national_id(...).birth_year` (same parser as the member) → step 2
+  `BIRTH_YEAR_MISMATCH` on `beneficiaries[n].birth_year`,
+  «المستفيد {name}: سنة الميلاد لا تطابق الرقم القومي»; blocks submission; drafts may hold it. Arabic
+  digits were already normalized by `YearField` / `NationalIdField`. The SPA shows
+  «سنة الميلاد لا تطابق الرقم القومي» instantly once the ID is a valid 14 digits and the year has 4
+  digits (`beneficiaryIdErrors` in `useApplicationDraft`, refused-save errors win); the birth-year
+  input is `aria-invalid` and `aria-describedby` the message; on the mobile card the message sits
+  under the birth-year field.
+- **First-time question removed; photos for everyone (D180):** the «أول مرة؟» column / card field,
+  rule 19, `is_first_time` in both serializers, `BENEFICIARY_FIELDS`, `upsert_beneficiary`, the
+  admin serializer and new submitted snapshots are gone; `photo_required` no longer takes it. Every
+  beneficiary needs `BENEFICIARY_PERSONAL_PHOTO` except a child kinship with a known age below 3
+  (age 3 → required; unknown age never exempts). Hint «صورة شخصية بخلفية بيضاء مطلوبة لكل مستفيد.».
+  Validation rule 19 now carries the birth-year mismatch. The DB column stays, unread (Q-B30).
+- **Fees (D181):** administrative fee `200 + 175 × (active + 1)` (375 / 550 / 725 for 0 / 1 / 2),
+  still counting only rows with a kinship and a name; new `FeeSchedule.service_fee` (800, admin
+  editable, version-locked) → a «رسوم الخدمة» line directly after «رسوم إدارية», counted once, and
+  `service_fee` in the quote. The SPA panels render the server breakdown, so every fee summary
+  (form, payment, review, status, admin detail) shows it; the admin fee-schedule page shows and
+  edits it and the formula reads «200 ج.م + 175 ج.م × (عدد المستفيدين + 1)».
+- **Migrations:** `fees.0007_feeschedule_service_fee` (column with `db_default` 800, 2s
+  `lock_timeout`), `fees.0008_fy2026_v3_schedule` (data: FY 2026 v3 active; every FY 2026
+  application with a `fee_snapshot` re-priced on v3 by a frozen copy of the engine and pointed at
+  it; v3 locked when used; every other FY 2026 version deleted; idempotent; reverse no-op),
+  `doctors.0002_remove_doctor_treatment_card_number`. `seed_dev_data` imports `FY2026_V3` from 0008
+  and seeds every beneficiary's photo (seeded totals 4,835 / 3,440 EGP).
+- **Upgrade path verified on the existing compose database** (6 applications, 11 beneficiaries,
+  61 documents, 125 audit entries, 7 doctors; locked v2): `pg_dump` backup first, then a
+  fingerprint of every application row without `fee_snapshot` / `fee_schedule_id`, beneficiaries,
+  documents, audit entries and doctors without the card column was **identical** before and after
+  `migrate`; v2 deleted, v3 active (service fee 800) and locked; the 6 snapshots re-priced and
+  pointed at v3 (3,860 → 4,835, 2,465 → 3,440, 2,300 → 3,275, 3,080 → 4,055); the
+  `treatment_card_number` column is gone. Fresh path = the test database (v3 only).
+- **Tests:** backend — document rules (15/16 and 2/3 boundaries, unknown age, gender × kinship,
+  configurable thresholds, hints, reference data), engine (every worked example re-computed,
+  university = minor in every tier and the pensioner override, graduate unchanged, admin formula
+  0 → 10 rows, service fee once / order / from the schedule, invalid quotes 0), schedule model and
+  admin API (`service_fee` required, locked, version 4 created), migration tests (0008 re-prices and
+  removes v2 keeping every other row byte-identical, idempotent, other fiscal years untouched; the
+  0005/0006 tests now stop at 0006), validation (mismatch both centuries, inactive rows, no ID,
+  photos for every kinship, stored first-time values ignored, male/female certificate matrix),
+  submit / API (mismatch blocks submission, Arabic digits through the API, profile without the
+  card). Frontend — MemberSection (row 2 layout, no card), BeneficiaryTable (5 columns, no
+  first-time control, mismatch hint with Arabic digits + `aria-describedby`, card placement, no hint
+  while incomplete), admin detail (no first-time column / card, snapshot with the service line
+  directly after the admin fee), fee panel (line order), fee schedules page (service fee shown,
+  prefilled, Arabic digits sent; formula text). Fixtures: reference data and fee schedules
+  re-captured from the migrated local backend (only the intended keys differ); the admin detail
+  fixture carries a v3-shaped snapshot.
+- **Verification (local, compose stack):** backend `pytest` **1261 passed, 1 skipped** (container;
+  the skip is `test_envfile`), `ruff check` + `ruff format --check` clean, `manage.py check`,
+  `makemigrations --check --dry-run` (no changes), `spectacular --validate --fail-on-warn`; frontend
+  `gen:api`, `lint`, `typecheck`, `vitest` **333 passed**, `rtl:check` 0 errors, `build` OK (Vite's
+  existing >500 kB chunk warning); Playwright against the compose stack **10 passed, 4 skipped**
+  (project-specific skips). The 1280 px screenshot was inspected (row 2, five-column table,
+  under-16 certificate hints, «رسوم الخدمة» 800 after «رسوم إدارية» 900, total 4,835); regenerated
+  screenshots restored, not committed. **NOT VERIFIED — requires Azure credentials:** nothing
+  deployed; the dev migrate job has not run 0007 / 0008 / `doctors.0002`.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1670,6 +1754,31 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
   for it. The constraint is replaced NOT VALID + VALIDATE so a deployment with an unexpected row
   stops at the migrate job (old revision keeps serving) instead of converting it.
 
+- **D176 — The under-16 certificate rule is scoped to `SON_MINOR`:** the owner named
+  «ابن/ابنة (18 سنة أو أقل)»; university / graduate children of a male member keep the optional slot
+  (an under-16 student is not a real case; Q-B31). The threshold reuses `CHILD_NATIONAL_ID_AGE` so the
+  certificate and the ID sides switch at the same age, and the hint names the configured value.
+- **D177 — Contract in the same release, as D163:** `doctors.0002` drops the column directly. The old
+  revision selects it, so between the migrate job and the new revision its doctor-profile reads fail
+  closed (no wrong data written). Accepted because only dev runs this code and the owner asked for
+  the column to go; a two-release split would have kept the column alive.
+- **D178 — University pricing through the fee key, not a new schedule column:** pointing
+  `SON_UNIVERSITY` at `child` guarantees "the same fee as a minor child" for every present and future
+  version; a separate column could drift. `grad_son` (and its tier-0 `null`) now concerns graduates.
+- **D179 — The ID / birth-year rule blocks submission, not autosave:** drafts accept any combination
+  (like the other step-2 rules) so autosave never loses a typed ID; the server validation reports
+  the mismatch beside the field (via `fieldForPath`) and the SPA mirrors it instantly from the local
+  ID parser. Rule number 19 is reused for it (the first-time rule it replaces is gone).
+- **D180 — `is_first_time` column kept, unread:** the owner removed the question and made the photo
+  rule independent of "any stored value", and did not ask for the answers to be destroyed (unlike the
+  treatment card). The model field stays nullable with a comment; nothing writes or reads it. A sent
+  `is_first_time` is silently ignored like any unknown field.
+- **D181 — Earlier quotes replaced, per the owner:** a new version (v3) carries the service fee;
+  `fees.0008` re-prices every FY 2026 snapshot on it and deletes v2 instead of keeping history. The
+  migration carries its own frozen copy of the engine (migrations never import app code); a test
+  proves it equals `quote_for_application` on the migrated row. No audit entry is written by the
+  migration (the audit table is append-only application history; the change is recorded here).
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -1745,6 +1854,7 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
 | 69 | PROMPT.md §17.1 FY 2026 amounts / §17.2 admin fee 150/175 | FY 2026 version 2, tier 0, `200 + 175 × active` | owner requirements 2026-10-23 (PROMPT.md updated); v1 removed 2026-10-24 (D161) |
 | 70 | CLAUDE.md "migrations … expand/contract only" | `fees.0003` (expand) and `fees.0006` (contract) in the same, not yet deployed release | owner instruction 2026-10-24 to remove the legacy fields; D163 (old revision fails closed during the deploy window) |
 | 71 | PROMPT.md §42 / §55 "print view renders to an A4 PDF within two pages" | check removed with the feature; the print URLs are asserted not found | owner requirement 2026-10-28 (application printing retired; PROMPT.md updated) |
+| 72 | PROMPT.md §17.1 / §16 snapshots "never re-priced" (D161); CLAUDE.md "expand/contract only" | `fees.0008` re-prices every FY 2026 snapshot on v3 and deletes v2; `doctors.0002` contracts in the same release | owner requirement 2026-10-29 ("don't preserve previously submitted fee snapshots and historical totals"; PROMPT.md updated); D177, D181 |
 
 ## Open questions
 
@@ -1861,30 +1971,29 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B28** Applications submitted before 2026-10-28 as FIRST_TIME may lack the member photo, and
   their children's certificates were required under the old rule. They are not re-validated; if
   one is sent back for correction, the doctor must add the photo before resubmitting. Confirm.
+- **Q-B30** Drop the unread `Beneficiary.is_first_time` column (answers collected 2026-10-23 →
+  2026-10-28)? Default: kept (D180); one migration once the owner confirms.
+- **Q-B31** Should a male member's university / graduate child below 16 also need the birth
+  certificate? Default: no — only `SON_MINOR`, as specified (D176).
+- **Q-B32** Re-priced snapshots (D181) can differ from what a doctor already paid (e.g. dev had none,
+  local 3,860 → 4,835). Should reviewers treat old receipts specially (correction request for the
+  difference)? No rule implemented.
+- **Q-T22** The deploy window of Q-T21 now also covers doctor-profile reads (`doctors.0002`, D177).
 
 ## Next session starts with
 
-**dev runs `15e3ff5`** (PR #10, Session 18: D168–D175), deployed and checked on 2026-10-28:
-https://victorious-meadow-0e5775b00.4.azurestaticapps.net. Children's birth certificate only for a
-female member, member photo for FIRST_TIME only, «ابنة» removed (`beneficiaries.0003`/`0004`
-applied, constraint validated), new declaration, dotted email, application printing removed, error
-summary scrolls only after a failed attempt. Dev has no applications (emptied on 2026-10-28; 4
-users, the fee schedule and the audit log kept). Next: the owner smoke list on dev — sign up as a
-new doctor, a tier-0 member (600 / 1325 EGP), a university son at tier 0 (refused), a mother
-(member certificate), a first-time child aged 2 vs 3, both ID sides, a female member's children
-(birth certificate required), FIRST_TIME vs ADDITION member photo, «ابنة» absent from the dropdown,
-submit, then admin review and approval (no printing). Answer Q-B23–Q-B25, Q-B28 and Q-T21.
-
-Sessions 16–17 (D166–D167) were merged into `main` as PR #9. The local compose volumes were reset
-on 2026-10-28 (no DAUGHTER rows, all migrations applied).
-1. **Owner, interactive:** sign in to dev as a doctor and run the smoke list in
-   `docs/staging-checklist.md` §9 against dev (draft, uploads, fee quote, submit). Then sign in as
-   admin (email OTP via CA) and confirm payment, request correction, approve. Enable Arabic
-   on the `signup-signin` user flow. Add the admin to the CA group. Afterwards, check
-   `AppExceptions` and the masking query (`docs/azure-deployment.md` §"Telemetry verification").
-2. **Owner decisions still open** (`docs/final-report.md` §16): region / data residency,
-   retention, restore drill, custom domain, payment text.
-3. **Staging:** follow `docs/staging-checklist.md`; set `DEPLOY_STAGING=true` last (it also queues
-   prod deployments for the reviewer to reject, D149).
-4. Local: host-run pytest still fails against the compose PostgreSQL (container path works).
-   Carry-over: business questions / legal L1–L8, required status checks given path filters (D143).
+**Branch `feat/owner-requirements-2026-10-29` (Session 19, D176–D181) is local only** — not pushed,
+no PR, not deployed. Dev still runs `15e3ff5`. Next:
+1. **Owner review** of the new rules and answers to Q-B30–Q-B32, Q-T22; then, on confirmation,
+   push the branch and open the PR (CI: backend, frontend, Playwright, image).
+2. **Pre-deploy check on dev** (read-only, old image): `SELECT fiscal_year, version, is_active,
+   locked_at FROM fees_feeschedule;` and the count of applications with a `fee_snapshot` — 0008
+   re-prices them and deletes every FY 2026 version except v3. Then deploy; post-check: v3 only
+   (service fee 800), `doctors_doctor.treatment_card_number` absent, quotes 1,575 / 2,300 / 4,055.
+3. **Owner smoke list on dev** (carried over from Session 18, updated): new doctor; tier-0 member
+   (1,575; with a child 2,300; with a university student 2,300); a male member's child aged 15 vs 16
+   (certificate required / optional) and 2 vs 3 (photo); a beneficiary ID with a different birth
+   year (error beside the birth year, submission refused); no «أول مرة» column; row 2 shows سنة قيد
+   النقابة; «رسوم الخدمة» 800 below «رسوم إدارية»; submit, admin review and approval.
+4. Carry-over: owner decisions in `docs/final-report.md` §16, staging checklist, Q-B23–Q-B25, Q-B28,
+   Q-T21, host-run pytest against the compose PostgreSQL, legal L1–L8, required status checks (D143).
