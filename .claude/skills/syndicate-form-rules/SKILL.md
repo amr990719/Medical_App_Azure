@@ -46,7 +46,7 @@ Never a primary key.
 | `MOTHER` | أم | parent |
 | `FATHER` | أب | parent |
 | `SON_MINOR` | ابن/ابنة (18 سنة أو أقل) | child |
-| `SON_UNIVERSITY` | ابن/ابنة (طالب جامعي) | grad_son |
+| `SON_UNIVERSITY` | ابن/ابنة (طالب جامعي) | child (since 2026-10-29) |
 | `SON_GRADUATE` | ابن/ابنة (خريج) | grad_son |
 | `HUSBAND` | زوج | spouse |
 | `WIFE` | زوجة | spouse |
@@ -63,14 +63,18 @@ Beneficiary rules:
 - `national_id` nullable (young children). Unique `(application_id, national_id)` when present; must differ
   from the member's.
 - `birth_year` in 1920..fiscal_year → `المستفيد {name}: سنة الميلاد غير صحيحة`.
+- With a national ID, `birth_year` must equal its encoded year (`parse_national_id`, century digit) →
+  step 2 `BIRTH_YEAR_MISMATCH` on `beneficiaries[n].birth_year`:
+  `المستفيد {name}: سنة الميلاد لا تطابق الرقم القومي` (blocks submission; drafts may hold it). The SPA
+  shows `سنة الميلاد لا تطابق الرقم القومي` beside the birth year once both are complete.
 - `HUSBAND` requires a female member, `WIFE` a male member (`ENFORCE_SPOUSE_GENDER`, default on).
 - `SON_MINOR` must be ≤ 18 in the fiscal year (`ENFORCE_SON_MINOR_AGE`, default on).
 - A row is **active** (counted for fees and validation) only when it has a kinship AND a non-empty name.
 - Same child listed by two member parents across applications = admin **warning**, never a block.
 - Changing a row's kinship removes that row's documents (after confirmation) because the required set changes.
-- `is_first_time` («هل يشترك المستفيد لأول مرة؟») — nullable boolean per beneficiary, independent of the
-  application type and never inferred. NULL = unanswered (drafts, pre-existing rows); every ACTIVE row needs
-  an explicit answer to submit. Part of read/write serializers, `BENEFICIARY_FIELDS`, the submitted snapshot.
+- `is_first_time` («هل يشترك المستفيد لأول مرة؟») was **removed** on 2026-10-29 (owner): not asked, not in
+  any serializer, `BENEFICIARY_FIELDS`, validation or new snapshots, never read by a rule. The nullable
+  column stays (historical answers, unread). Never re-introduce a first-time condition.
 
 ## 3. Required documents (`backend/apps/reference/document_rules.py` — the ONLY rules table)
 
@@ -101,16 +105,18 @@ kept so old uploads count) + `BENEFICIARY_NATIONAL_ID_BACK`; independent slots.
 |---|---|
 | HUSBAND / WIFE | ID (both), `MARRIAGE_CERTIFICATE`, `INSURANCE_PRINT` |
 | MOTHER / FATHER | ID (both) |
-| SON_MINOR | `BIRTH_CERTIFICATE` always offered, required **iff the member is female** (any age; the member's gender, never the child's); ID (both) if age ≥ 16 (both optional below 16) |
-| SON_UNIVERSITY | child rule + `UNIVERSITY_ID` |
-| SON_GRADUATE | child rule + `INSURANCE_PRINT` |
-| every kinship | `BENEFICIARY_PERSONAL_PHOTO` (always offered) required iff `is_first_time is True` and NOT (child kinship and known age < 3) |
+| SON_MINOR | `BIRTH_CERTIFICATE` always offered, required **below 16 for any member** and **at any age for a female member** (the member's gender, never the child's); ID (both) if age ≥ 16 (both optional below 16) |
+| SON_UNIVERSITY | ID rule + `UNIVERSITY_ID`; certificate required for a female member only |
+| SON_GRADUATE | ID rule + `INSURANCE_PRINT`; certificate required for a female member only |
+| every kinship | `BENEFICIARY_PERSONAL_PHOTO` (always offered) required for **every** beneficiary except a child kinship with known age < 3 (age 3 → required) |
 
-Unknown birth year for a child → treat as age < 16 (ID optional) and it never grants the photo
-exemption. Female member → children's `BIRTH_CERTIFICATE` required at any age with hint
-`شهادة ميلاد الابن/الابنة مطلوبة لإثبات صلة القرابة بالأم (العضوة) مهما كان العمر.`; male (or unknown)
-member → optional at every age, also below 16, no hint (owner, 2026-10-28).
-Photo hints: `صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.` (+ `لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.`
+Unknown birth year for a child → treat as age < 16 (ID optional, minor's certificate required) and it
+never grants the photo exemption. Female member → children's `BIRTH_CERTIFICATE` required at any age
+with hint `شهادة ميلاد الابن/الابنة مطلوبة لإثبات صلة القرابة بالأم (العضوة) مهما كان العمر.`; male (or
+unknown) member → required for `SON_MINOR` below `CHILD_NATIONAL_ID_AGE` with hint
+`شهادة ميلاد الابن/الابنة مطلوبة لمن هم أقل من 16 سنة.` (`BIRTH_CERTIFICATE_BELOW_AGE_KINSHIPS`), optional
+otherwise, no hint (owner, 2026-10-29).
+Photo hints: `صورة شخصية بخلفية بيضاء مطلوبة لكل مستفيد.` (+ `لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.`
 for `SON_MINOR` only). No automatic white-background detection. Requirement dicts:
 `{type, required, label, ocr_capable, stage, images_only, hints}`.
 Labels: `BENEFICIARY_NATIONAL_ID` بطاقة الرقم القومي للمستفيد (وجه) · `BENEFICIARY_NATIONAL_ID_BACK`
@@ -126,8 +132,8 @@ OCR-capable types (only those with a working extraction): `NATIONAL_ID_FRONT`, `
 
 ## 4. Fee engine (`backend/apps/fees/services.py`) — server authoritative, integers/Decimal only
 
-FY 2026 **version 2** — the only FY 2026 version (`FeeSchedule`, DB-stored, versioned, read-only once used
-by a submission; created by `fees.0004_fy2026_v2_schedule`):
+FY 2026 **version 3** — the only FY 2026 version (`FeeSchedule`, DB-stored, versioned, read-only once used
+by a submission; created by `fees.0008_fy2026_v3_schedule`, same tier amounts as v2):
 
 | Tier | member | spouse | child | grad_son | parent |
 |---|---|---|---|---|---|
@@ -137,12 +143,15 @@ by a submission; created by `fees.0004_fy2026_v2_schedule`):
 | 3 | 825 | 1100 | 605 | 1650 | 1430 |
 | 4 | 935 | 1155 | 660 | 1925 | 1540 |
 
-`admin_fee_base=200` · `admin_fee_per_beneficiary=175` ·
+`admin_fee_base=200` · `admin_fee_per_beneficiary=175` · `service_fee=800` ·
 `age_cap_threshold=70` · `age_cap_amount=500` · `tier_boundaries=[5, 10, 15]` · `registration_year_min=1950`.
-`null` is valid ONLY for tier "0" `grad_son`. Every schedule defines tiers 0–4 (a four-tier `tier_fees`
-is rejected). Version 1 (four tiers, flat 150/175 admin fee) was **removed** by `fees.0005` and the flat
-formula columns by `fees.0006` (2026-10-24): applications priced with it keep `fee_snapshot` and
-`submitted_snapshot` exactly, `fee_schedule = null`; never re-price them or point them at v2.
+`null` is valid ONLY for tier "0" `grad_son` (graduates only now). Every schedule defines tiers 0–4 (a
+four-tier `tier_fees` is rejected). Version 1 was removed by `fees.0005`/`0006` (2026-10-24). On
+2026-10-29 the owner chose NOT to preserve earlier quotes: `fees.0007` added `service_fee` (DB default
+800), `fees.0008` created v3, re-priced every FY 2026 `fee_snapshot` on it (frozen copy of the engine in
+the migration, fed from `submitted_snapshot` — never current rows; every quote checked before saving,
+incomplete submitted data or an invalid quote → the migration raises and rolls back; only
+`fee_snapshot` / `fee_schedule` change) and deleted v2. Any future re-pricing migration must do the same.
 
 Rules, in order:
 1. Registration year missing / not 4 digits / < 1950 / > fiscal year → `is_valid=false`, `tier=0`,
@@ -150,38 +159,39 @@ Rules, in order:
 2. `work_status == PENSIONER` (معاش) → tier 4 regardless of years. `DECEASED` is treated like `WORKING`.
 3. `years = schedule.fiscal_year − registration_year` (never the clock): `0` → tier 0, then
    `≤5→1, ≤10→2, ≤15→3, else 4`.
-4. Any ACTIVE beneficiary whose tier amount is `null` → invalid quote (`tier` kept, `breakdown=[]`, `total=0`,
+4. Any ACTIVE beneficiary whose tier amount is `null` → invalid quote (`tier` kept, `breakdown=[]`, `admin_fee=service_fee=total=0`,
    `المستفيد {name}: لا يمكن الاشتراك بدرجة القرابة «{kinship label}» للأعضاء المقيدين في نفس سنة الاشتراك.`).
    Never skip the row, never price it 0. Validation adds the same message (step 2, `NOT_ELIGIBLE_FOR_TIER`).
 5. Member line `العضو الأصلي`: tier member fee, or `500` when `fiscal_year − birth_year ≥ 70` (and the fee is
    higher), note `تم تطبيق سقف 500 ج (عمر {age} سنة)`. Missing birth year → no cap.
 6. One line per **active** beneficiary (kinship + non-empty name), label = name, fee by fee key.
 7. Age cap (≥70 → 500 + same note) applies to **spouse only**; never to parents or children.
-8. `رسوم إدارية` = `admin_fee_base + admin_fee_per_beneficiary × active` = `200 + 175 × active`
-   (0 → 200, 1 → 375, 2 → 550).
+8. `رسوم إدارية` = `admin_fee_base + admin_fee_per_beneficiary × (active + 1)` = `200 + 175 × (active + 1)`
+   — the + 1 is the member (0 → 375, 1 → 550, 2 → 725).
+8b. `رسوم الخدمة` = `service_fee` (800), its own line directly after the admin fee, once per application.
 9. `total` = sum of lines. `ADDITION` applications are priced exactly like `FIRST_TIME`.
 10. Tell valid tier 0 from invalid quotes by `is_valid`, never by the truthiness of `tier`.
 
-Output: `{fiscal_year, tier, breakdown:[{label, fee, note}], admin_fee, total, is_valid, error_message, schedule_id}`.
+Output: `{fiscal_year, tier, breakdown:[{label, fee, note}], admin_fee, service_fee, total, is_valid, error_message, schedule_id}`.
 
-Worked examples (FY 2026 v2) — table-driven tests (`apps/fees/tests/test_engine.py`):
+Worked examples (FY 2026 v3) — table-driven tests (`apps/fees/tests/test_engine.py`):
 
 | # | Reg. year / status | Member birth | Beneficiaries | Expected |
 |---|---|---|---|---|
-| A | 2026 / WORKING | 1990 | — | tier 0: 400+200 = **600** |
-| B | 2026 / WORKING | 1990 | SON_MINOR | tier 0: 400+550+375 = **1325** |
-| C | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015 | tier 3: 825+1100+605+550 = **3080** |
-| 1 | 2023 / WORKING | 1995 | — | tier 1: 660+200 = **860** |
-| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, SON_MINOR 2018 | tier 3: 825+1100+605+605+725 = **3860** |
-| 3 | 1990 / PENSIONER | 1950 | WIFE 1955, SON_GRADUATE 1995 | tier 4: 500+500+1925+550 = **3475** |
-| 4 | 2018 / WORKING | 1990 | MOTHER 1960, SON_UNIVERSITY 2005 | tier 2: 770+1320+1540+550 = **4180** |
+| A | 2026 / WORKING | 1990 | — | tier 0: 400+375+800 = **1575** |
+| B | 2026 / WORKING | 1990 | SON_MINOR (or SON_UNIVERSITY) | tier 0: 400+550+550+800 = **2300** |
+| C | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015 | tier 3: 825+1100+605+725+800 = **4055** |
+| 1 | 2023 / WORKING | 1995 | — | tier 1: 660+375+800 = **1835** |
+| 2 | 2014 / WORKING | 1985 | WIFE 1988, SON_MINOR 2015, SON_MINOR 2018 | tier 3: 825+1100+605+605+900+800 = **4835** |
+| 3 | 1990 / PENSIONER | 1950 | WIFE 1955, SON_GRADUATE 1995 | tier 4: 500+500+1925+725+800 = **4450** |
+| 4 | 2018 / WORKING | 1990 | MOTHER 1960, SON_UNIVERSITY 2005 | tier 2: 770+1320+605+725+800 = **4220** |
 | 5 | boundaries | — | — | 2026→0, 2025→1, 2021→1, 2020→2, 2016→2, 2015→3, 2011→3, 2010→4 |
 | 6 | age boundary | 1956 (70) / 1957 (69) | — | cap at 70, not at 69 |
 | 7 | 1949 or 2027 | — | — | `is_valid=false` |
-| 8 | 2023 / WORKING | 1995 | kinship set, empty name | ignored; admin fee 200 |
-| 9 | 2023 / WORKING | 1995 | FATHER 1950 | tier 1: 660+1155+375 = **2190** (no cap for parents) |
-| 10 | 2026 / WORKING | 1990 | SON_UNIVERSITY / SON_GRADUATE | tier 0: **invalid** (not eligible) |
-| 11 | 2026 / PENSIONER | 1960 | SON_UNIVERSITY | tier 4 override: valid, son 1925 |
+| 8 | 2023 / WORKING | 1995 | kinship set, empty name | ignored; admin fee 375 |
+| 9 | 2023 / WORKING | 1995 | FATHER 1950 | tier 1: 660+1155+550+800 = **3165** (no cap for parents) |
+| 10 | 2026 / WORKING | 1990 | SON_GRADUATE | tier 0: **invalid** (not eligible); SON_UNIVERSITY is valid (550) |
+| 11 | 2026 / PENSIONER | 1960 | SON_GRADUATE | tier 4 override: valid, son 1925 |
 
 At submission: recompute, store `fee_snapshot` + `fee_schedule_id`; admins always see the snapshot
 (also when `fee_schedule_id` is null because the version was removed).
@@ -239,7 +249,7 @@ APPROVED مقبول · REJECTED مرفوض (colours in PROMPT.md §7.3).
 | 17 | declaration accepted (submit only) | يرجى الموافقة على الإقرار |
 | 18 | national ID not used by another doctor | الرقم القومي مسجل لعضو آخر |
 
-| 19 | active beneficiary answered first time (step 2) | المستفيد {name}: يرجى تحديد هل يشترك المستفيد لأول مرة |
+| 19 | beneficiary birth year matches its national ID (step 2, `BIRTH_YEAR_MISMATCH`) | المستفيد {name}: سنة الميلاد لا تطابق الرقم القومي |
 | 20 | member birth certificate while an active MOTHER exists (step 3) | يرجى إرفاق شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم |
 | 21 | beneficiary eligible at the tier (step 2, `NOT_ELIGIBLE_FOR_TIER`) | المستفيد {name}: لا يمكن الاشتراك بدرجة القرابة «{kinship}» للأعضاء المقيدين في نفس سنة الاشتراك. |
 

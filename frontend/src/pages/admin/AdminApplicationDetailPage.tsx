@@ -19,7 +19,6 @@ import { NOTES_REQUIRED, type AdminTarget } from "@/features/admin/transitions";
 import { FeeSummaryPanel } from "@/features/fees/FeeSummaryPanel";
 import { useReferenceData } from "@/features/reference/useReferenceData";
 import { ar, t } from "@/i18n/ar";
-import { cx } from "@/utils/cx";
 import { formatDate } from "@/utils/format";
 
 const D = ar.admin.detail;
@@ -94,7 +93,6 @@ function MemberPanel({
           [F.subSyndicate, doctor.subSyndicate],
           [F.registrationNumber, ltr(doctor.syndicateRegistrationNumber)],
           [F.registrationYear, ltr(doctor.syndicateRegistrationYear)],
-          [F.treatmentCard, ltr(doctor.treatmentCardNumber)],
           [F.governorate, doctor.governorate],
           [F.neighborhood, doctor.neighborhood],
           [F.address, doctor.address],
@@ -175,8 +173,6 @@ function BeneficiariesPanel({
 }) {
   const C = D.beneficiaryColumns;
   const rows = app.beneficiaries.filter((b) => b.isActive || b.fullName || b.kinship);
-  const firstTime = (value: boolean | null) =>
-    value === true ? D.firstTimeYes : value === false ? D.firstTimeNo : D.firstTimeUnknown;
   return (
     <Panel title={D.beneficiaries}>
       {rows.length === 0 ? (
@@ -186,7 +182,7 @@ function BeneficiariesPanel({
           <table aria-label={D.beneficiaries} className="w-full min-w-[40rem] text-sm">
             <thead className="bg-smoke text-slate">
               <tr>
-                {[C.row, C.name, C.kinship, C.birthYear, C.nationalId, C.firstTime, C.documents].map((label) => (
+                {[C.row, C.name, C.kinship, C.birthYear, C.nationalId, C.documents].map((label) => (
                   <th key={label} scope="col" className="px-2.5 py-2 text-start font-bold whitespace-nowrap">
                     {label}
                   </th>
@@ -202,9 +198,6 @@ function BeneficiariesPanel({
                   <td className="px-2.5 py-2">{ltr(b.birthYear)}</td>
                   <td className="px-2.5 py-2 font-mono whitespace-nowrap">
                     {ltr((revealed && b.nationalId) || b.maskedNationalId)}
-                  </td>
-                  <td className={cx("px-2.5 py-2 whitespace-nowrap", b.isFirstTime === null && "text-muted")}>
-                    {firstTime(b.isFirstTime)}
                   </td>
                   <td className="px-2.5 py-2">
                     <RequiredDocuments

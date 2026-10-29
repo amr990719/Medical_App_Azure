@@ -43,9 +43,9 @@ def validate_tier_boundaries(value) -> None:
 
 
 def validate_admin_fee(schedule) -> None:
-    amounts = (schedule.admin_fee_base, schedule.admin_fee_per_beneficiary)
+    amounts = (schedule.admin_fee_base, schedule.admin_fee_per_beneficiary, schedule.service_fee)
     if any(type(a) is not int or a < 0 for a in amounts):
-        raise ValidationError("administrative fee amounts must be non-negative integers.")
+        raise ValidationError("administrative and service fees must be non-negative integers.")
 
 
 class FeeSchedule(models.Model):
@@ -62,6 +62,7 @@ class FeeSchedule(models.Model):
         "tier_boundaries",
         "admin_fee_base",
         "admin_fee_per_beneficiary",
+        "service_fee",
         "age_cap_threshold",
         "age_cap_amount",
         "registration_year_min",
@@ -75,9 +76,12 @@ class FeeSchedule(models.Model):
     # Years since registration: 0 → tier 0, <= b[0] → tier 1, <= b[1] → 2,
     # <= b[2] → 3, otherwise 4.
     tier_boundaries = models.JSONField(default=list, validators=[validate_tier_boundaries])
-    # Administrative fee = admin_fee_base + admin_fee_per_beneficiary × active beneficiaries.
+    # Administrative fee = admin_fee_base + admin_fee_per_beneficiary × (active beneficiaries + 1);
+    # the + 1 is the member.
     admin_fee_base = models.PositiveIntegerField(default=200)
     admin_fee_per_beneficiary = models.PositiveIntegerField(default=175)
+    # Service fee: a fixed amount, once per application.
+    service_fee = models.PositiveIntegerField(default=800, db_default=800)
     age_cap_threshold = models.PositiveSmallIntegerField(default=70)
     age_cap_amount = models.PositiveIntegerField(default=500)
     registration_year_min = models.PositiveSmallIntegerField(default=1950)

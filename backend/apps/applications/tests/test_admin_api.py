@@ -212,7 +212,9 @@ def test_detail_masks_ids_lists_transitions_and_is_audited(admin):
     assert wife["national_id"] is None
     assert wife["masked_national_id"] == "28•••••••••242"
     assert body["fee_snapshot"] == {"total": 3025, "tier": 3}
-    assert len(body["documents"]) == 11  # incl. the FIRST_TIME member photo
+    assert (
+        len(body["documents"]) == 14
+    )  # incl. the FIRST_TIME member photo and 3 beneficiary photos
     assert set(body["allowed_transitions"]) == {"UNDER_REVIEW", "NEEDS_CORRECTION", "REJECTED"}
     viewed = AuditLog.objects.get(action=AuditAction.ADMIN_APPLICATION_VIEWED)
     assert viewed.object_id == app.pk
@@ -436,17 +438,19 @@ def test_payment_status_value_labels_are_stable():
     assert PaymentStatus.CONFIRMED.label == "مؤكد"
 
 
-def test_detail_shows_first_time_answers_and_conditional_member_requirements(admin):
+def test_detail_shows_conditional_member_requirements_without_first_time_answers(admin):
     from apps.beneficiaries.factories import BeneficiaryFactory
     from apps.reference.constants import Kinship
 
     app = submitted()
     BeneficiaryFactory(application=app, row_number=4, kinship=Kinship.MOTHER,
-                       full_name="فاطمة", birth_year=1960, is_first_time=True)  # fmt: skip
+                       full_name="فاطمة", birth_year=1960)  # fmt: skip
     body = admin.get(app_url(app)).json()
-    answers = [(b["kinship"], b["is_first_time"]) for b in body["beneficiaries"]]
-    assert answers == [("WIFE", False), ("SON_MINOR", False), ("SON_MINOR", False),
-                       ("MOTHER", True)]  # fmt: skip
+    assert [b["kinship"] for b in body["beneficiaries"]] == [
+        "WIFE", "SON_MINOR", "SON_MINOR", "MOTHER",
+    ]  # fmt: skip
+    assert not any("is_first_time" in b for b in body["beneficiaries"])
+    assert "treatment_card_number" not in body["doctor"]
     member = {r["type"]: r["required"] for r in body["member_required_documents"]}
     assert member["MEMBER_BIRTH_CERTIFICATE"] is True
     mother = next(b for b in body["beneficiaries"] if b["kinship"] == "MOTHER")

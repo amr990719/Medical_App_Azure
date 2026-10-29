@@ -244,8 +244,7 @@ def _submitted_snapshot(app: InsuranceApplication) -> dict:
     member_fields = (
         "full_name", "national_id", "birth_year", "gender", "religion", "phone_number",
         "syndicate_type", "sub_syndicate", "syndicate_registration_number",
-        "syndicate_registration_year", "treatment_card_number", "governorate", "neighborhood",
-        "address",
+        "syndicate_registration_year", "governorate", "neighborhood", "address",
     )  # fmt: skip
     return {
         "member": {f: getattr(doctor, f) for f in member_fields}
@@ -264,7 +263,6 @@ def _submitted_snapshot(app: InsuranceApplication) -> dict:
                 "full_name": b.full_name,
                 "birth_year": b.birth_year,
                 "national_id": b.national_id,
-                "is_first_time": b.is_first_time,
             }
             for b in app.beneficiaries.all()
         ],

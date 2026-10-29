@@ -34,6 +34,9 @@ class Beneficiary(models.Model):
     # "هل يشترك المستفيد لأول مرة؟" — independent of the application's FIRST_TIME/ADDITION type.
     # NULL = not answered yet (drafts, and every row that existed before the question); an
     # active row needs an explicit answer before submission. Never inferred.
+    # Historical answer to «هل يشترك المستفيد لأول مرة؟» (owner, 2026-10-29: no longer collected,
+    # exposed or read; the photo rule ignores it). Kept so no stored answer is lost; nullable,
+    # so new rows simply leave it NULL.
     is_first_time = models.BooleanField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

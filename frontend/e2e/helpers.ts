@@ -69,8 +69,6 @@ export type BeneficiaryInput = {
   full_name: string;
   birth_year: number;
   national_id?: string;
-  /** `هل يشترك المستفيد لأول مرة؟` — required before submission; defaults to false here. */
-  is_first_time?: boolean;
 };
 
 export type DraftOptions = {
@@ -161,7 +159,7 @@ export async function createDraftApplication(
 
   for (const beneficiary of beneficiaries) {
     const row = await ok<{ id: string; required_documents: { type: string; required: boolean }[] }>(
-      await request.post(`${base}beneficiaries/`, { headers, data: { is_first_time: false, ...beneficiary } }),
+      await request.post(`${base}beneficiaries/`, { headers, data: beneficiary }),
     );
     if (!beneficiaryDocuments) continue;
     for (const slot of row.required_documents.filter((document) => document.required)) {

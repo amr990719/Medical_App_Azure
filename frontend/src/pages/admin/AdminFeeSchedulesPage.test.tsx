@@ -18,7 +18,7 @@ function serve(schedules: ApiFeeSchedule[] = [locked]) {
     http.post(`${API}/admin/fee-schedules/`, async ({ request }) => {
       const body = (await request.json()) as Record<string, unknown>;
       posts.push(body);
-      const created = { ...fy2026, ...body, id: "new-version", version: 3, is_active: true, locked_at: null } as ApiFeeSchedule;
+      const created = { ...fy2026, ...body, id: "new-version", version: 4, is_active: true, locked_at: null } as ApiFeeSchedule;
       current = [created, ...current.map((s) => ({ ...s, is_active: false }))];
       return HttpResponse.json(created, { status: 201 });
     }),
@@ -43,9 +43,16 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
   it("shows the active FY 2026 schedule with tier 0 and the exact amounts", async () => {
     serve();
     await open();
-    const table = await screen.findByRole("table", { name: /السنة المالية 2026 — الإصدار 2/ });
+    const table = await screen.findByRole("table", { name: /السنة المالية 2026 — الإصدار 3/ });
     const headers = within(table).getAllByRole("columnheader").map((th) => th.textContent?.trim());
-    expect(headers).toEqual(["الشريحة", "العضو الأصلي", "الزوج / الزوجة", "الأبناء", "ابن جامعي / خريج", "الوالدان"]);
+    expect(headers).toEqual([
+      "الشريحة",
+      "العضو الأصلي",
+      "الزوج / الزوجة",
+      "الأبناء (حتى 18 سنة / طالب جامعي)",
+      "ابن/ابنة خريج",
+      "الوالدان",
+    ]);
     expect(amounts(table, 0)).toEqual(["400", "880", "550", "غير متاح", "1٬155"]);
     expect(amounts(table, 1)).toEqual(["660", "880", "550", "1٬320", "1٬155"]);
     expect(amounts(table, 2)).toEqual(["770", "1٬045", "605", "1٬540", "1٬320"]);
@@ -55,8 +62,9 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
 
     const settings = screen.getByRole("region", { name: "إعدادات الحساب" });
     expect(within(settings).getByText("طريقة الرسوم الإدارية").nextElementSibling).toHaveTextContent(
-      "200 ج.م + 175 ج.م × عدد المستفيدين",
+      "200 ج.م + 175 ج.م × (عدد المستفيدين + 1)",
     );
+    expect(within(settings).getByText("رسوم الخدمة (لكل طلب)").nextElementSibling).toHaveTextContent("800 ج.م");
     expect(within(settings).getByText("سن تطبيق السقف").nextElementSibling).toHaveTextContent("70");
     expect(within(settings).getByText("قيمة السقف").nextElementSibling).toHaveTextContent("500 ج.م");
   });
@@ -64,7 +72,7 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
   it("labels the tiers from the schedule boundaries", async () => {
     serve();
     await open();
-    const table = await screen.findByRole("table", { name: /الإصدار 2/ });
+    const table = await screen.findByRole("table", { name: /الإصدار 3/ });
     expect(within(table).getByRole("row", { name: /الشريحة 0/ })).toHaveTextContent("سنة القيد هي سنة الاشتراك");
     expect(within(table).getByRole("row", { name: /الشريحة 1/ })).toHaveTextContent("من 1 إلى 5 سنة قيد");
     expect(within(table).getByRole("row", { name: /الشريحة 4/ })).toHaveTextContent("أكثر من 15 سنة قيد");
@@ -73,10 +81,10 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
   it("marks a used version as locked and offers no editing of it", async () => {
     serve();
     await open();
-    await screen.findByRole("table", { name: /الإصدار 2/ });
+    await screen.findByRole("table", { name: /الإصدار 3/ });
     expect(screen.getByText("مقفل: مستخدم في طلبات مقدمة")).toBeInTheDocument();
     expect(screen.getAllByText("نشط").length).toBeGreaterThan(0);
-    const table = screen.getByRole("table", { name: /الإصدار 2/ });
+    const table = screen.getByRole("table", { name: /الإصدار 3/ });
     expect(within(table).queryByRole("spinbutton")).not.toBeInTheDocument();
     expect(within(table).queryByRole("textbox")).not.toBeInTheDocument();
   });
@@ -84,17 +92,21 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
   it("creates a new version after confirmation, prefilled from the shown schedule", async () => {
     const posts = serve();
     const { user } = await open();
-    await screen.findByRole("table", { name: /الإصدار 2/ });
+    await screen.findByRole("table", { name: /الإصدار 3/ });
 
     await user.click(screen.getByRole("button", { name: "إنشاء إصدار جديد" }));
     const form = screen.getByRole("form", { name: "إنشاء إصدار جديد" });
     expect(within(form).getByRole("textbox", { name: "السنة المالية" })).toHaveValue("2026");
     expect(within(form).getByRole("textbox", { name: "الشريحة 0 — العضو الأصلي" })).toHaveValue("400");
-    const unavailable = within(form).getByRole("checkbox", { name: "غير متاح — الشريحة 0 — ابن جامعي / خريج" });
+    const unavailable = within(form).getByRole("checkbox", { name: "غير متاح — الشريحة 0 — ابن/ابنة خريج" });
     expect(unavailable).toBeChecked();
-    expect(within(form).getByRole("textbox", { name: "الشريحة 0 — ابن جامعي / خريج" })).toBeDisabled();
+    expect(within(form).getByRole("textbox", { name: "الشريحة 0 — ابن/ابنة خريج" })).toBeDisabled();
     expect(within(form).getByRole("textbox", { name: "رسوم إدارية ثابتة" })).toHaveValue("200");
-    expect(within(form).getByRole("textbox", { name: "رسوم إدارية لكل مستفيد" })).toHaveValue("175");
+    expect(within(form).getByRole("textbox", { name: "رسوم إدارية لكل فرد" })).toHaveValue("175");
+    const serviceFee = within(form).getByRole("textbox", { name: "رسوم الخدمة (لكل طلب)" });
+    expect(serviceFee).toHaveValue("800");
+    await user.clear(serviceFee);
+    await user.type(serviceFee, "٨٥٠");
     const memberTier3 = within(form).getByRole("textbox", { name: "الشريحة 3 — العضو الأصلي" });
     expect(memberTier3).toHaveValue("825");
     await user.clear(memberTier3);
@@ -112,24 +124,25 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
       tier_fees: Record<string, Record<string, number | null>>;
       admin_fee_base: number;
       admin_fee_per_beneficiary: number;
+      service_fee: number;
     };
     expect(body.fiscal_year).toBe(2026);
     expect(body.tier_fees["0"]).toEqual({ member: 400, spouse: 880, child: 550, grad_son: null, parent: 1155 });
     expect(body.tier_fees["3"]).toEqual({ member: 900, spouse: 1100, child: 605, grad_son: 1650, parent: 1430 });
-    expect([body.admin_fee_base, body.admin_fee_per_beneficiary]).toEqual([200, 175]);
+    expect([body.admin_fee_base, body.admin_fee_per_beneficiary, body.service_fee]).toEqual([200, 175, 850]);
     expect(body).not.toHaveProperty("admin_fee_member_only");
     expect(body).not.toHaveProperty("admin_fee_formula");
-    expect(await screen.findByText("تم إنشاء الإصدار 3 للسنة المالية 2026.")).toBeInTheDocument();
+    expect(await screen.findByText("تم إنشاء الإصدار 4 للسنة المالية 2026.")).toBeInTheDocument();
   });
 
   it("sends an amount for tier 0 graduates when it is made available", async () => {
     const posts = serve();
     const { user } = await open();
-    await screen.findByRole("table", { name: /الإصدار 2/ });
+    await screen.findByRole("table", { name: /الإصدار 3/ });
     await user.click(screen.getByRole("button", { name: "إنشاء إصدار جديد" }));
     const form = screen.getByRole("form", { name: "إنشاء إصدار جديد" });
-    await user.click(within(form).getByRole("checkbox", { name: "غير متاح — الشريحة 0 — ابن جامعي / خريج" }));
-    const cell = within(form).getByRole("textbox", { name: "الشريحة 0 — ابن جامعي / خريج" });
+    await user.click(within(form).getByRole("checkbox", { name: "غير متاح — الشريحة 0 — ابن/ابنة خريج" }));
+    const cell = within(form).getByRole("textbox", { name: "الشريحة 0 — ابن/ابنة خريج" });
     await user.type(cell, "1100");
     await user.click(within(form).getByRole("button", { name: "إنشاء الإصدار" }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "إنشاء الإصدار" }));
@@ -140,10 +153,10 @@ describe("AdminFeeSchedulesPage (PROMPT.md §17.1, §44)", () => {
   it("refuses a non-numeric amount before asking for confirmation", async () => {
     const posts = serve();
     const { user } = await open();
-    await screen.findByRole("table", { name: /الإصدار 2/ });
+    await screen.findByRole("table", { name: /الإصدار 3/ });
     await user.click(screen.getByRole("button", { name: "إنشاء إصدار جديد" }));
     const form = screen.getByRole("form", { name: "إنشاء إصدار جديد" });
-    await user.clear(within(form).getByRole("textbox", { name: "الشريحة 1 — الأبناء" }));
+    await user.clear(within(form).getByRole("textbox", { name: "الشريحة 1 — الأبناء (حتى 18 سنة / طالب جامعي)" }));
     await user.click(within(form).getByRole("button", { name: "إنشاء الإصدار" }));
     expect(within(form).getAllByText("أدخل رقماً صحيحاً غير سالب").length).toBeGreaterThan(0);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

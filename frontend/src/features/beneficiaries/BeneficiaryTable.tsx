@@ -35,7 +35,9 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
   const server = rowServer(index);
   const complete = server ? documentsComplete(server) : false;
   const docsError = Object.values(inline.rowDocuments[index] ?? {})[0];
-  const hasContent = Boolean(row.kinship || row.name || row.birthYear || row.nationalId || row.isFirstTime);
+  const hasContent = Boolean(row.kinship || row.name || row.birthYear || row.nationalId);
+  const birthYearErrorId = useId();
+  const birthYearError = errorOf("birthYear");
 
   // Like the name: a select clips a long label (ابن/ابنة (18 سنة أو أقل)) on paper, so print a
   // wrapping copy of the label instead.
@@ -98,32 +100,11 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
       dir="ltr"
       inputMode="numeric"
       maxLength={4}
-      aria-invalid={errorOf("birthYear") ? true : undefined}
+      aria-invalid={birthYearError ? true : undefined}
+      aria-describedby={birthYearError ? birthYearErrorId : undefined}
       onChange={(event) => updateBeneficiary(index, "birthYear", digitsOnly(event.target.value).slice(0, 4))}
       className={cx(cellInput, "text-center tabular-nums")}
     />
-  );
-  const firstTime = (
-    <select
-      aria-label={labelOf(B.firstTime)}
-      value={row.isFirstTime}
-      disabled={readOnly}
-      aria-invalid={errorOf("isFirstTime") ? true : undefined}
-      onChange={(event) => updateBeneficiary(index, "isFirstTime", event.target.value)}
-      className={cx(
-        cellInput,
-        "cursor-pointer text-center disabled:cursor-default print:appearance-none print:px-1",
-        row.isFirstTime === "" && "text-muted",
-      )}
-    >
-      <option value="">{B.firstTimePlaceholder}</option>
-      <option value="yes" className="text-charcoal">
-        {B.firstTimeYes}
-      </option>
-      <option value="no" className="text-charcoal">
-        {B.firstTimeNo}
-      </option>
-    </select>
   );
   const nationalId = (
     <NidInput
@@ -160,20 +141,26 @@ function useRowControls({ index, row, onKinship, onOpenDocuments }: RowProps) {
         <Icon name="close" className="size-4" />
       </button>
     ) : null;
-  const errors = (["kinship", "name", "birthYear", "nationalId", "isFirstTime"] as const)
-    .map(errorOf)
-    .filter((message): message is string => Boolean(message));
-  if (docsError && !complete) errors.push(docsError);
+  const errors: RowError[] = (["kinship", "name", "birthYear", "nationalId"] as const).flatMap((field) => {
+    const message = errorOf(field);
+    return message ? [{ field, message }] : [];
+  });
+  if (docsError && !complete) errors.push({ field: "documents", message: docsError });
 
-  return { n, kinship, name, birthYear, nationalId, firstTime, paperclip, clear, errors };
+  return { n, kinship, name, birthYear, birthYearErrorId, nationalId, paperclip, clear, errors };
 }
 
-function RowErrors({ errors }: { errors: string[] }) {
+type RowError = { field: BeneficiaryField | "documents"; message: string };
+
+/** The row's errors; the birth-year message carries the id its input points to. */
+function RowErrors({ errors, birthYearErrorId }: { errors: RowError[]; birthYearErrorId: string }) {
   if (errors.length === 0) return null;
   return (
     <ul className="space-y-0.5 px-1.5 pb-1 text-xs font-semibold text-danger">
-      {errors.map((message) => (
-        <li key={message}>{message}</li>
+      {errors.map(({ field, message }) => (
+        <li key={`${field}-${message}`} id={field === "birthYear" ? birthYearErrorId : undefined}>
+          {message}
+        </li>
       ))}
     </ul>
   );
@@ -196,22 +183,22 @@ function TableRow(props: RowProps) {
           {c.name}
           {c.clear}
         </div>
-        <RowErrors errors={c.errors} />
+        <RowErrors errors={c.errors} birthYearErrorId={c.birthYearErrorId} />
       </td>
       <td className={cell}>{c.birthYear}</td>
       <td className={cx(cell, "px-1 py-1")}>{c.nationalId}</td>
-      <td className={cell}>{c.firstTime}</td>
     </tr>
   );
 }
 
-function CardField({ label, children }: { label: string; children: ReactNode }) {
+function CardField({ label, children, after }: { label: string; children: ReactNode; after?: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div data-card-field className="flex min-w-0 flex-col gap-0.5">
       <span aria-hidden className="text-sm font-bold text-charcoal">
         {label}
       </span>
       <div className="border-b-[1.5px] border-dashed border-paper-line">{children}</div>
+      {after}
     </div>
   );
 }
@@ -232,15 +219,21 @@ function Card(props: RowProps) {
       </div>
       <CardField label={B.kinship}>{c.kinship}</CardField>
       <CardField label={B.name}>{c.name}</CardField>
-      <CardField label={B.birthYear}>{c.birthYear}</CardField>
-      <CardField label={B.firstTime}>{c.firstTime}</CardField>
+      <CardField
+        label={B.birthYear}
+        after={
+          <RowErrors errors={c.errors.filter((e) => e.field === "birthYear")} birthYearErrorId={c.birthYearErrorId} />
+        }
+      >
+        {c.birthYear}
+      </CardField>
       <div className="flex min-w-0 flex-col gap-1">
         <span aria-hidden className="text-sm font-bold text-charcoal">
           {B.nationalId}
         </span>
         {c.nationalId}
       </div>
-      <RowErrors errors={c.errors} />
+      <RowErrors errors={c.errors.filter((e) => e.field !== "birthYear")} birthYearErrorId={c.birthYearErrorId} />
     </div>
   );
 }
@@ -302,14 +295,13 @@ export function BeneficiaryTable({ layout = "auto" }: { layout?: "auto" | "table
       </h2>
       {asTable ? (
         <div className="overflow-x-auto">
-          <table aria-labelledby={titleId} className="w-full min-w-[51rem] table-fixed border-collapse bg-paper text-sm">
+          <table aria-labelledby={titleId} className="w-full min-w-[46rem] table-fixed border-collapse bg-paper text-sm">
             <colgroup>
               <col className="w-16 print:w-9" />
               <col className="w-44 print:w-28" />
               <col />
               <col className="w-[4.5rem] print:w-14" />
               <col className="w-[21rem] print:w-[17rem]" />
-              <col className="w-20 print:w-9" />
             </colgroup>
             <thead>
               <tr className="bg-[#eceef1]">
@@ -322,14 +314,6 @@ export function BeneficiaryTable({ layout = "auto" }: { layout?: "auto" | "table
                     {label}
                   </th>
                 ))}
-                <th
-                  scope="col"
-                  title={B.firstTime}
-                  className="border-[1.5px] border-paper-line px-1 py-1.5 text-center text-xs leading-tight font-extrabold text-charcoal"
-                >
-                  <span aria-hidden>{B.firstTimeShort}</span>
-                  <span className="sr-only">{B.firstTime}</span>
-                </th>
               </tr>
             </thead>
             <tbody>

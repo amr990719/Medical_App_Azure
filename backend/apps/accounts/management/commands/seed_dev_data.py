@@ -2,15 +2,15 @@
 Refuses to run unless DEV_AUTH_ENABLED (development/test settings only — production refuses
 that flag).
 
-* FY 2026 fee schedule  ensured (normally already created by the fees migrations: version 2)
+* FY 2026 fee schedule  ensured (normally already created by the fees migrations: version 3)
 * admin@dev.local       ADMIN role
-* doctor@dev.local      complete profile, registered 2014 (tier 3), WIFE, SON_MINOR (first time,
-                        with photo), SON_MINOR (daughter) — application SUBMITTED, receipt
-                        waiting for confirmation
-                        (825 + 1,100 + 605 + 605 + 200 + 3 × 175 = 3,860 EGP)
-* doctor2@dev.local     female member registered 2018 (tier 2) with her MOTHER (first time) and
-                        her own birth certificate — application NEEDS_CORRECTION with review
-                        notes from the admin (770 + 1,320 + 375 = 2,465 EGP)
+* doctor@dev.local      complete profile, registered 2014 (tier 3), WIFE, SON_MINOR, SON_MINOR
+                        (daughter), every beneficiary with a photo — application SUBMITTED,
+                        receipt waiting for confirmation
+                        (825 + 1,100 + 605 + 605 + (200 + 4 × 175) + 800 = 4,835 EGP)
+* doctor2@dev.local     female member registered 2018 (tier 2) with her MOTHER and her own birth
+                        certificate — application NEEDS_CORRECTION with review notes from the
+                        admin (770 + 1,320 + (200 + 2 × 175) + 800 = 3,440 EGP)
 * new.doctor@dev.local  empty profile, no application (first sign-in experience)
 
 Every step goes through the domain services with the real actor (doctor or admin), so the
@@ -55,14 +55,14 @@ DOCTOR_PROFILE = {
 }
 DOCTOR_BENEFICIARIES = [
     {"kinship": "WIFE", "full_name": "سارة محمود علي", "birth_year": 1988,
-     "national_id": "28803150199982", "is_first_time": False,
+     "national_id": "28803150199982",
      "documents": ["BENEFICIARY_NATIONAL_ID", "BENEFICIARY_NATIONAL_ID_BACK",
-                   "MARRIAGE_CERTIFICATE", "INSURANCE_PRINT"]},
+                   "MARRIAGE_CERTIFICATE", "INSURANCE_PRINT", "BENEFICIARY_PERSONAL_PHOTO"]},
     {"kinship": "SON_MINOR", "full_name": "عمر أحمد محمد", "birth_year": 2015,
-     "national_id": None, "is_first_time": True,
+     "national_id": None,
      "documents": ["BIRTH_CERTIFICATE", "BENEFICIARY_PERSONAL_PHOTO"]},
     {"kinship": "SON_MINOR", "full_name": "مريم أحمد محمد", "birth_year": 2018,
-     "national_id": None, "is_first_time": False, "documents": ["BIRTH_CERTIFICATE"]},
+     "national_id": None, "documents": ["BIRTH_CERTIFICATE", "BENEFICIARY_PERSONAL_PHOTO"]},
 ]  # fmt: skip
 
 DOCTOR2_PROFILE = {
@@ -83,7 +83,7 @@ DOCTOR2_PROFILE = {
 }
 DOCTOR2_BENEFICIARIES = [
     {"kinship": "MOTHER", "full_name": "فاطمة علي أحمد", "birth_year": 1962,
-     "national_id": "26205120199984", "is_first_time": True,
+     "national_id": "26205120199984",
      "documents": ["BENEFICIARY_NATIONAL_ID", "BENEFICIARY_NATIONAL_ID_BACK",
                    "BENEFICIARY_PERSONAL_PHOTO"]},
 ]  # fmt: skip
@@ -97,18 +97,17 @@ MEMBER_DOCUMENTS = (
 MOTHER_MEMBER_DOCUMENTS = ("MEMBER_BIRTH_CERTIFICATE",)
 
 
-# The current FY 2026 schedule is version 2; version 1 was removed (fees.0005) and is never
-# recreated, even on an empty table.
-FY2026_VERSION = 2
+# The current FY 2026 schedule is version 3; versions 1 and 2 were removed (fees.0005 / 0008)
+# and are never recreated, even on an empty table.
+FY2026_VERSION = 3
 
 
 def _fy2026_schedule() -> dict:
     """The one definition of the CURRENT FY 2026 amounts lives in the fees migration that
-    introduced version 2. It also set the legacy administrative-fee columns that fees.0006
-    removed, so only the model's current fields are kept."""
-    migration = importlib.import_module("apps.fees.migrations.0004_fy2026_v2_schedule")
+    introduced version 3; only the model's current fields are kept."""
+    migration = importlib.import_module("apps.fees.migrations.0008_fy2026_v3_schedule")
     fields = {f.name for f in FeeSchedule._meta.concrete_fields}
-    return {k: v for k, v in migration.FY2026_V2.items() if k in fields}
+    return {k: v for k, v in migration.FY2026_V3.items() if k in fields}
 
 
 def _image(label: str) -> SimpleUploadedFile:
@@ -198,10 +197,7 @@ class Command(BaseCommand):
                 app,
                 row_number=row_number,
                 actor=actor,
-                **{
-                    k: row[k]
-                    for k in ("kinship", "full_name", "birth_year", "national_id", "is_first_time")
-                },
+                **{k: row[k] for k in ("kinship", "full_name", "birth_year", "national_id")},
             )
             for document_type in row["documents"]:
                 store_document(

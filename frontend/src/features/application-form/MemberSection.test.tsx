@@ -10,7 +10,6 @@ const LABELS_IN_PAPER_ORDER = [
   "الـنـقـابـة :",
   "النقابة الفرعية :",
   "رقم قيد النقابة :",
-  "رقم بطاقة العلاج :",
   "سنة قيد النقابة :",
   "حالة العميل :",
   "أسم العضو :",
@@ -33,6 +32,19 @@ describe("MemberSection (PROMPT.md §9.4)", () => {
     const positions = LABELS_IN_PAPER_ORDER.map((label) => text.indexOf(label));
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it("shows the syndicate registration year where the treatment card number was, and no treatment card", async () => {
+    await renderInForm(<MemberSection />);
+    const section = screen.getByRole("region", { name: "بيانات العضو الأصلي" });
+    expect(section.textContent).not.toContain("بطاقة العلاج");
+    const grid = screen.getByTestId("member-grid");
+    const year = within(grid).getByRole("textbox", { name: "سنة قيد النقابة :" });
+    const cell = year.closest("[class*='md:col-span']");
+    // Row 2 is now the registration year and the work status, nothing else.
+    expect(cell).toHaveClass("md:col-span-8");
+    expect(cell?.nextElementSibling).toContainElement(screen.getByRole("radiogroup", { name: "حالة العميل :" }));
+    expect(within(grid).getAllByRole("textbox", { name: "سنة قيد النقابة :" })).toHaveLength(1);
   });
 
   it("uses box radios from reference data for syndicate, work status, religion and gender", async () => {

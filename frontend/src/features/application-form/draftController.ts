@@ -63,11 +63,11 @@ export type DraftSnapshot = {
 };
 
 const MEMBER_KEYS: MemberField[] = [
-  "applicationType", "syndicateType", "subSyndicate", "registrationNumber", "treatmentCardNumber",
+  "applicationType", "syndicateType", "subSyndicate", "registrationNumber",
   "syndicateRegistrationYear", "workStatus", "memberName", "religion", "nationalId", "gender",
   "birthYear", "governorate", "neighborhood", "address", "mobile", "declarationName",
 ];
-const ROW_KEYS: BeneficiaryField[] = ["kinship", "name", "birthYear", "nationalId", "isFirstTime"];
+const ROW_KEYS: BeneficiaryField[] = ["kinship", "name", "birthYear", "nationalId"];
 
 const isEmptyRow = (row: BeneficiaryRow) => ROW_KEYS.every((key) => row[key] === "");
 /** A stored row whose name and kinship were cleared: waiting for the deletion confirmation. */

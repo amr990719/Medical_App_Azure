@@ -35,7 +35,7 @@ def test_reference_data_shape_and_27_governorates():
         {"value": "MOTHER", "label": "أم", "fee_key": "parent"},
         {"value": "FATHER", "label": "أب", "fee_key": "parent"},
         {"value": "SON_MINOR", "label": "ابن/ابنة (18 سنة أو أقل)", "fee_key": "child"},
-        {"value": "SON_UNIVERSITY", "label": "ابن/ابنة (طالب جامعي)", "fee_key": "grad_son"},
+        {"value": "SON_UNIVERSITY", "label": "ابن/ابنة (طالب جامعي)", "fee_key": "child"},
         {"value": "SON_GRADUATE", "label": "ابن/ابنة (خريج)", "fee_key": "grad_son"},
         {"value": "HUSBAND", "label": "زوج", "fee_key": "spouse"},
         {"value": "WIFE", "label": "زوجة", "fee_key": "spouse"},

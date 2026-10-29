@@ -26,8 +26,7 @@ MSG_BIRTH_YEAR_MISMATCH = "سنة الميلاد لا تطابق الرقم ال
 PROFILE_FIELDS = (
     "full_name", "national_id", "birth_year", "gender", "religion", "phone_number",
     "syndicate_type", "sub_syndicate", "syndicate_registration_number",
-    "syndicate_registration_year", "treatment_card_number", "governorate", "neighborhood",
-    "address",
+    "syndicate_registration_year", "governorate", "neighborhood", "address",
 )  # fmt: skip
 
 

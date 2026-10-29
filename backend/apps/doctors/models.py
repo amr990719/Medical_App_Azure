@@ -34,7 +34,6 @@ class Doctor(models.Model):
     sub_syndicate = models.CharField(max_length=100, blank=True)
     syndicate_registration_number = models.CharField(max_length=32, blank=True)
     syndicate_registration_year = models.PositiveSmallIntegerField(null=True, blank=True)
-    treatment_card_number = models.CharField(max_length=32, blank=True)
     governorate = models.CharField(max_length=32, blank=True)
     neighborhood = models.CharField(max_length=100, blank=True)
     address = models.CharField(max_length=300, blank=True)

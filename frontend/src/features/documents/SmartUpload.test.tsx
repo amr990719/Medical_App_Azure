@@ -64,7 +64,7 @@ describe("SmartUpload", () => {
         }),
       ),
     );
-    const hint = "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.";
+    const hint = "صورة شخصية بخلفية بيضاء مطلوبة لكل مستفيد.";
     renderWithProviders(
       <>
         <SmartUpload

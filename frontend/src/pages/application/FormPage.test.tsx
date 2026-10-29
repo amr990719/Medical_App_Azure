@@ -55,7 +55,7 @@ describe("FormPage (PROMPT.md §9)", () => {
     expect(screen.queryByText(/اضغط مسح تلقائي لاستخراج البيانات/)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "مرفقات العضو الأصلي الإلزامية" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "ملخص الاشتراك — السنة المالية 2026" })).toHaveTextContent(
-      "3٬025 ج.م",
+      "3٬775 ج.م",
     );
     const bar = screen.getByRole("toolbar", { name: "إجراءات الاستمارة" });
     expect(within(bar).getByRole("button", { name: "تسجيل الخروج" })).toBeInTheDocument();

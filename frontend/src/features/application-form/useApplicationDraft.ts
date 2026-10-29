@@ -8,7 +8,7 @@ import { useReferenceData } from "@/features/reference/useReferenceData";
 import { ar } from "@/i18n/ar";
 import { DraftController, type DraftOptions } from "./draftController";
 import { parseNationalId } from "./nationalId";
-import type { ApplicationFormState, MemberField } from "./types";
+import type { ApplicationFormState, BeneficiaryField, MemberField } from "./types";
 
 /**
  * Instant national-ID consistency hints (§9.4) while the doctor types; the server validation
@@ -25,6 +25,49 @@ function nationalIdErrors(state: ApplicationFormState | null, readOnly: boolean)
   }
   if (state.gender && state.gender !== parsed.gender) errors.gender = ar.form.errors.genderMismatch;
   return errors;
+}
+
+/**
+ * The same instant hint for each beneficiary row: a complete birth year that disagrees with the
+ * year in a complete, valid national ID. The server validation (step 2) stays authoritative.
+ */
+function beneficiaryIdErrors(
+  state: ApplicationFormState | null,
+  readOnly: boolean,
+): Record<number, Partial<Record<BeneficiaryField, string>>> {
+  const errors: Record<number, Partial<Record<BeneficiaryField, string>>> = {};
+  if (!state || readOnly) return errors;
+  state.beneficiaries.forEach((row, index) => {
+    if (row.nationalId.length !== 14 || !/^\d{4}$/.test(row.birthYear)) return;
+    const parsed = parseNationalId(row.nationalId);
+    if (parsed && Number(row.birthYear) !== parsed.birthYear) {
+      errors[index] = { birthYear: ar.form.errors.birthYearMismatch };
+    }
+  });
+  return errors;
+}
+
+/**
+ * Refused-save errors win over the instant hints, field by field. An edit clears a refused-save
+ * error by storing `undefined`, which must not hide the hint underneath.
+ */
+function mergeErrors<F extends string>(hints: Partial<Record<F, string>>, refused: Partial<Record<F, string>> = {}) {
+  const merged = { ...hints };
+  for (const [field, message] of Object.entries(refused) as [F, string | undefined][]) {
+    if (message) merged[field] = message;
+  }
+  return merged;
+}
+
+function mergeRowErrors(
+  hints: Record<number, Partial<Record<BeneficiaryField, string>>>,
+  refused: Record<number, Partial<Record<BeneficiaryField, string>>>,
+) {
+  const merged = { ...hints };
+  for (const [index, errors] of Object.entries(refused)) {
+    merged[Number(index)] = mergeErrors(hints[Number(index)] ?? {}, errors);
+  }
+  return merged;
 }
 
 /**
@@ -88,8 +131,8 @@ export function useApplicationDraft(applicationId: string, options: DraftOptions
     readOnly: snapshot.readOnly,
     saveStatus: snapshot.saveStatus,
     isDirty: snapshot.isDirty,
-    fieldErrors: { ...nationalIdErrors(snapshot.state, snapshot.readOnly), ...snapshot.fieldErrors },
-    rowErrors: snapshot.rowErrors,
+    fieldErrors: mergeErrors(nationalIdErrors(snapshot.state, snapshot.readOnly), snapshot.fieldErrors),
+    rowErrors: mergeRowErrors(beneficiaryIdErrors(snapshot.state, snapshot.readOnly), snapshot.rowErrors),
     pendingDeletion: snapshot.pendingDeletion,
     memberDocuments,
     rowServer,

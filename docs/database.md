@@ -55,7 +55,6 @@ erDiagram
         varchar sub_syndicate
         varchar syndicate_registration_number "indexed with syndicate_type, not unique"
         smallint syndicate_registration_year
-        varchar treatment_card_number
         varchar governorate
         varchar neighborhood
         varchar address
@@ -103,7 +102,7 @@ erDiagram
         varchar full_name
         smallint birth_year
         varchar national_id "optional; unique per application"
-        bool is_first_time "nullable; NULL = not answered"
+        bool is_first_time "nullable; historical, no longer written or read (2026-10-29)"
         timestamptz created_at
         timestamptz updated_at
     }
@@ -130,7 +129,8 @@ erDiagram
         jsonb tier_fees "tiers 0-4 -> member/spouse/child/grad_son/parent; only tier 0 grad_son may be null"
         jsonb tier_boundaries "[5, 10, 15]"
         int admin_fee_base "200"
-        int admin_fee_per_beneficiary "175 x active beneficiaries"
+        int admin_fee_per_beneficiary "175 x (active beneficiaries + 1)"
+        int service_fee "800, once per application"
         smallint age_cap_threshold "70"
         int age_cap_amount "500"
         smallint registration_year_min "1950"
@@ -228,16 +228,16 @@ one (audited `NATIONAL_ID_REVEALED`). Logs never contain them (masking filter).
 
 ## 6. Migrations
 
-26 migrations on a clean database: 11 project migrations plus Django's `contenttypes`, `auth` and
+38 migrations on a clean database: 23 project migrations plus Django's `contenttypes`, `auth` and
 `sessions`.
 
 | App | Migrations |
 |---|---|
 | accounts | `0001_initial`, `0002_user_display_name` |
-| doctors | `0001_initial` |
-| fees | `0001_initial`, `0002_seed_fy2026` (FY 2026 v1 — history only, row removed by 0005), `0003_admin_fee_formula`, `0004_fy2026_v2_schedule` (FY 2026 v2, active), `0005_remove_fy2026_v1` (clears v1 references, keeps snapshots, deletes v1), `0006_remove_legacy_admin_fee` (drops the flat-fee columns) |
+| doctors | `0001_initial`, `0002_remove_doctor_treatment_card_number` (drops رقم بطاقة العلاج) |
+| fees | `0001_initial`, `0002_seed_fy2026` (FY 2026 v1 — history only, row removed by 0005), `0003_admin_fee_formula`, `0004_fy2026_v2_schedule` (FY 2026 v2 — removed by 0008), `0005_remove_fy2026_v1` (clears v1 references, keeps snapshots, deletes v1), `0006_remove_legacy_admin_fee` (drops the flat-fee columns), `0007_feeschedule_service_fee` (`service_fee`, DB default 800), `0008_fy2026_v3_schedule` (FY 2026 v3, active; re-prices every FY 2026 fee snapshot on it from the submitted data, refusing and rolling back on incomplete submitted data or an invalid quote; deletes the other FY 2026 versions) |
 | applications | `0001_initial` |
-| beneficiaries | `0001_initial`, `0002_beneficiary_is_first_time` |
+| beneficiaries | `0001_initial`, `0002_beneficiary_is_first_time`, `0003_remove_daughter_kinship`, `0004_validate_kinship_constraint` |
 | documents | `0001_initial`, `0002_document_blob_purged_at`, `0003_document_types_id_back_photo_member_certificate` |
 | audit | `0001_initial`, `0002_append_only_trigger`, `0003_admin_role_revoked_action` |
 

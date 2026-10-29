@@ -16,6 +16,7 @@ const unavailableField = (tier: string, key: FeeKey) => `${tierField(tier, key)}
 const SCALARS = [
   ["adminFeeBase", L.adminFeeBase],
   ["adminFeePerBeneficiary", L.adminFeePerBeneficiary],
+  ["serviceFee", L.serviceFee],
   ["ageCapThreshold", L.ageCapThreshold],
   ["ageCapAmount", L.ageCapAmount],
   ["registrationYearMin", L.registrationYearMin],
@@ -58,6 +59,7 @@ function parse(values: Values): { schedule?: NewFeeSchedule; errors: Record<stri
     tierBoundaries: [number("boundary.0"), number("boundary.1"), number("boundary.2")],
     adminFeeBase: number("adminFeeBase"),
     adminFeePerBeneficiary: number("adminFeePerBeneficiary"),
+    serviceFee: number("serviceFee"),
     ageCapThreshold: number("ageCapThreshold"),
     ageCapAmount: number("ageCapAmount"),
     registrationYearMin: number("registrationYearMin"),

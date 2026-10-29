@@ -67,7 +67,6 @@ function IdentitySummary({ profile, reference }: { profile: DoctorProfile; refer
         <Item label={L.fields.subSyndicate} value={profile.subSyndicate} />
         <Item label={L.fields.registrationNumber} value={profile.syndicateRegistrationNumber} ltr />
         <Item label={L.fields.registrationYear} value={profile.syndicateRegistrationYear} ltr />
-        <Item label={L.fields.treatmentCard} value={profile.treatmentCardNumber} ltr />
       </dl>
       <p className="mt-4 text-sm text-slate">
         {L.identityHint}{" "}

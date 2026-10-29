@@ -15,16 +15,18 @@ pytestmark = pytest.mark.django_db
 # FY 2026 version 1 exactly as fees.0002 seeded it (four tiers, FLAT 150 / 175).
 SEED_0002 = importlib.import_module("apps.fees.migrations.0002_seed_fy2026")
 FY2026_V1 = SEED_0002.FY2026
+V3_0008 = importlib.import_module("apps.fees.migrations.0008_fy2026_v3_schedule")
 
 
-def test_fresh_install_has_fy2026_v2_only_and_active():
-    assert not FeeSchedule.objects.filter(fiscal_year=2026, version=1).exists()
+def test_fresh_install_has_fy2026_v3_only_and_active():
+    assert not FeeSchedule.objects.filter(fiscal_year=2026, version__in=[1, 2]).exists()
     schedule = FeeSchedule.objects.get(fiscal_year=2026)
-    assert (schedule.version, schedule.is_active) == (2, True)
+    assert (schedule.version, schedule.is_active) == (3, True)
     assert schedule.tier_fees == FY2026_TIER_FEES
     assert schedule.tier_fees["0"]["grad_son"] is None
     assert schedule.tier_fees["3"]["spouse"] == 1100
     assert (schedule.admin_fee_base, schedule.admin_fee_per_beneficiary) == (200, 175)
+    assert schedule.service_fee == 800
     assert schedule.age_cap_threshold == 70
     assert schedule.age_cap_amount == 500
     assert schedule.registration_year_min == 1950
@@ -37,8 +39,8 @@ def test_legacy_administrative_fee_fields_are_gone():
     assert removed.isdisjoint(f.name for f in FeeSchedule._meta.get_fields())
 
 
-def test_active_schedule_returns_version_2():
-    assert active_schedule(2026).version == 2
+def test_active_schedule_returns_version_3():
+    assert active_schedule(2026).version == 3
 
 
 def test_active_schedule_missing_raises():
@@ -48,17 +50,17 @@ def test_active_schedule_missing_raises():
 
 def test_only_one_active_schedule_per_fiscal_year():
     with pytest.raises(IntegrityError):
-        FeeScheduleFactory(fiscal_year=2026, version=3, is_active=True)
+        FeeScheduleFactory(fiscal_year=2026, version=4, is_active=True)
 
 
 def test_inactive_new_version_is_allowed():
-    FeeScheduleFactory(fiscal_year=2026, version=3, is_active=False)
+    FeeScheduleFactory(fiscal_year=2026, version=4, is_active=False)
     assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 2
 
 
 def test_version_is_unique_per_fiscal_year():
     with pytest.raises(IntegrityError):
-        FeeScheduleFactory(fiscal_year=2026, version=2, is_active=False)
+        FeeScheduleFactory(fiscal_year=2026, version=3, is_active=False)
 
 
 def test_negative_amounts_are_rejected_by_the_database():
@@ -91,7 +93,12 @@ def test_locked_schedule_cannot_change_amounts():
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("admin_fee_per_beneficiary", 1), ("age_cap_amount", 400), ("tier_boundaries", [4, 9, 14])],
+    [
+        ("admin_fee_per_beneficiary", 1),
+        ("service_fee", 900),
+        ("age_cap_amount", 400),
+        ("tier_boundaries", [4, 9, 14]),
+    ],
 )
 def test_locked_schedule_protects_fee_and_admin_fee_settings(field, value):
     schedule = _locked_active()
@@ -157,8 +164,8 @@ def test_every_schedule_must_define_tiers_0_to_4():
         FeeScheduleFactory(fiscal_year=2027, tier_fees=FY2026_V1["tier_fees"])
 
 
-@pytest.mark.parametrize("field", ["admin_fee_base", "admin_fee_per_beneficiary"])
-def test_administrative_fee_amounts_are_required(field):
+@pytest.mark.parametrize("field", ["admin_fee_base", "admin_fee_per_beneficiary", "service_fee"])
+def test_administrative_and_service_fee_amounts_are_required(field):
     with pytest.raises(ValidationError):
         FeeScheduleFactory(fiscal_year=2027, **{field: None})
     with pytest.raises(IntegrityError), transaction.atomic():
@@ -171,6 +178,8 @@ def test_administrative_fee_amounts_are_required(field):
 
 LEAF_0002 = ("fees", "0002_seed_fy2026")
 LEAF_0004 = ("fees", "0004_fy2026_v2_schedule")
+LEAF_0006 = ("fees", "0006_remove_legacy_admin_fee")
+LEAF_0007 = ("fees", "0007_feeschedule_service_fee")
 
 
 def _migrate(target):
@@ -181,13 +190,27 @@ def _migrate(target):
 
 @pytest.fixture
 def migrate_back():
-    """Roll `fees` back to a migration; always migrate forward again afterwards."""
-    yield _migrate
+    """Roll `fees` back to a migration; always migrate forward again afterwards.
+
+    The test database was migrated to the latest state, where 0008 replaced version 2 by
+    version 3 with the same tier amounts. Rolling back keeps that row, so it is numbered 2
+    again: the database then looks as it did before 0008 (FY 2026 v2 only)."""
+
+    def migrate(target):
+        old = _migrate(target)
+        old.get_model("fees", "FeeSchedule").objects.filter(fiscal_year=2026).update(version=2)
+        return old
+
+    yield migrate
     _migrate(None)
 
 
 def _application(**fields):
+    """An application as `submit` leaves it (an old-version fee snapshot and the submitted
+    data); a DRAFT was never submitted, so it has neither."""
     from apps.applications.factories import ApplicationFactory
+    from apps.applications.models import InsuranceApplication
+    from apps.applications.services import _submitted_snapshot
     from apps.beneficiaries.factories import BeneficiaryFactory
     from apps.documents.factories import DocumentFactory
     from apps.reference.constants import ApplicationStatus
@@ -197,19 +220,21 @@ def _application(**fields):
         "reference_number": "MED-2026-000777",
         "submitted_at": timezone.now(),
     }
-    app = ApplicationFactory(
-        **{**defaults, **fields},
-        fee_snapshot={
-            "fiscal_year": 2026, "tier": 3, "admin_fee": 175, "total": 1925,
-            "breakdown": [{"label": "العضو الأصلي", "fee": 750, "note": ""},
-                          {"label": "سارة", "fee": 1000, "note": ""},
-                          {"label": "رسوم إدارية", "fee": 175, "note": ""}],
-            "is_valid": True, "error_message": "", "schedule_id": "",
-        },
-        submitted_snapshot={"beneficiaries": [{"row_number": 1, "full_name": "سارة"}]},
-    )  # fmt: skip
+    app = ApplicationFactory(**{**defaults, **fields})
     BeneficiaryFactory(application=app, row_number=1, full_name="سارة")
     DocumentFactory(application=app)
+    if app.status != ApplicationStatus.DRAFT:
+        InsuranceApplication.objects.filter(pk=app.pk).update(
+            fee_snapshot={
+                "fiscal_year": 2026, "tier": 3, "admin_fee": 175, "total": 1925,
+                "breakdown": [{"label": "العضو الأصلي", "fee": 750, "note": ""},
+                              {"label": "سارة", "fee": 1000, "note": ""},
+                              {"label": "رسوم إدارية", "fee": 175, "note": ""}],
+                "is_valid": True, "error_message": "", "schedule_id": "",
+            },
+            submitted_snapshot=_submitted_snapshot(app),
+        )  # fmt: skip
+        app.refresh_from_db()
     return app
 
 
@@ -255,11 +280,12 @@ def test_upgrade_from_v1_removes_it_and_keeps_every_record(migrate_back):
     )  # fmt: skip
     before = _fingerprint()
 
-    _migrate(None)
+    new = _migrate(LEAF_0006)
 
-    assert not FeeSchedule.objects.filter(pk=v1.pk).exists()
-    assert not FeeSchedule.objects.filter(fiscal_year=2026, version=1).exists()
-    v2 = FeeSchedule.objects.get(fiscal_year=2026)
+    NewFeeSchedule = new.get_model("fees", "FeeSchedule")
+    assert not NewFeeSchedule.objects.filter(pk=v1.pk).exists()
+    assert not NewFeeSchedule.objects.filter(fiscal_year=2026, version=1).exists()
+    v2 = NewFeeSchedule.objects.get(fiscal_year=2026)
     assert (v2.version, v2.is_active, v2.tier_fees) == (2, True, FY2026_TIER_FEES)
     assert (v2.admin_fee_base, v2.admin_fee_per_beneficiary) == (200, 175)
     # Every row identical except the cleared reference — snapshots byte-for-byte, updated_at too.
@@ -273,11 +299,26 @@ def test_upgrade_from_v1_removes_it_and_keeps_every_record(migrate_back):
 
 @pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_upgrade_keeps_v2_untouched_and_is_a_no_op_without_v1(migrate_back):
-    before = FeeSchedule.objects.filter(fiscal_year=2026).values().get()
     old = migrate_back(LEAF_0004)
-    assert not old.get_model("fees", "FeeSchedule").objects.filter(version=1).exists()
-    _migrate(None)
-    assert FeeSchedule.objects.filter(fiscal_year=2026).values().get() == before
+    OldFeeSchedule = old.get_model("fees", "FeeSchedule")
+    assert not OldFeeSchedule.objects.filter(version=1).exists()
+    before = (
+        OldFeeSchedule.objects.filter(fiscal_year=2026)
+        .values(
+            "id", "version", "tier_fees", "admin_fee_base", "admin_fee_per_beneficiary", "is_active"
+        )
+        .get()
+    )
+    new = _migrate(LEAF_0006)
+    assert (
+        new.get_model("fees", "FeeSchedule")
+        .objects.filter(fiscal_year=2026)
+        .values(
+            "id", "version", "tier_fees", "admin_fee_base", "admin_fee_per_beneficiary", "is_active"
+        )
+        .get()
+        == before
+    )
 
 
 @pytest.mark.django_db(transaction=True, serialized_rollback=True)
@@ -289,7 +330,7 @@ def test_upgrade_refuses_while_another_legacy_schedule_exists(migrate_back):
     OldFeeSchedule.objects.create(**{**FY2026_V1, "is_active": False, "admin_fee_formula": "FLAT"})
 
     with pytest.raises(RuntimeError, match="FY2025 v1"):
-        _migrate(None)
+        _migrate(LEAF_0006)
 
     # Nothing changed: FY 2026 v1 is still there, FY 2025 untouched, v2 still active.
     assert OldFeeSchedule.objects.filter(fiscal_year=2026, version=1).exists()
@@ -306,8 +347,228 @@ def test_upgrade_refuses_to_remove_an_active_v1(migrate_back):
     OldFeeSchedule.objects.create(**{**FY2026_V1, "admin_fee_formula": "FLAT"})  # active
 
     with pytest.raises(RuntimeError, match="still the active schedule"):
-        _migrate(None)
+        _migrate(LEAF_0006)
 
     assert OldFeeSchedule.objects.get(fiscal_year=2026, is_active=True).version == 1
     OldFeeSchedule.objects.filter(fiscal_year=2026, version=1).update(is_active=False)
     OldFeeSchedule.objects.filter(fiscal_year=2026, version=2).update(is_active=True)
+
+
+# --- migration 0008: FY 2026 version 3, every stored fee snapshot re-priced -------------------
+
+
+def _priced_application(old_apps, schedule, **fields):
+    """A submitted application priced on `schedule` with an outdated snapshot (v2 amounts) and
+    the submitted data exactly as `submit` freezes it."""
+    from apps.applications.services import _submitted_snapshot
+    from apps.beneficiaries.factories import BeneficiaryFactory
+    from apps.reference.constants import Kinship
+
+    app = _application(**fields)
+    BeneficiaryFactory(
+        application=app, row_number=2, kinship=Kinship.SON_UNIVERSITY, full_name="يوسف",
+        birth_year=2005,
+    )  # fmt: skip
+    old_apps.get_model("applications", "InsuranceApplication").objects.filter(pk=app.pk).update(
+        fee_schedule_id=schedule.pk,
+        fee_snapshot={**app.fee_snapshot, "schedule_id": str(schedule.pk)},
+        submitted_snapshot=_submitted_snapshot(app),
+    )
+    app.refresh_from_db()
+    return app
+
+
+# tier 3: member 825 + minor child 605 + university child priced as a child 605,
+# admin 200 + 175 × 3 = 725, service 800
+SUBMITTED_TOTAL = 825 + 605 + 605 + 725 + 800
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_upgrade_to_v3_reprices_every_snapshot_and_removes_v2(migrate_back):
+    """The dev database path: fees at 0007, v2 active, locked and used by submissions."""
+    from apps.applications.models import InsuranceApplication
+    from apps.fees.services import quote_for_application
+
+    old = migrate_back(LEAF_0007)
+    OldFeeSchedule = old.get_model("fees", "FeeSchedule")
+    v2 = OldFeeSchedule.objects.get(fiscal_year=2026, version=2)
+    OldFeeSchedule.objects.filter(pk=v2.pk).update(locked_at=timezone.now())
+    submitted = _priced_application(old, v2)
+    approved = _priced_application(old, v2, reference_number="MED-2026-000778", status="APPROVED")
+    draft = _application(reference_number=None, status="DRAFT", submitted_at=None)
+    InsuranceApplication.objects.filter(pk=draft.pk).update(fee_snapshot=None)
+    before = _fingerprint()
+
+    _migrate(None)
+
+    assert not FeeSchedule.objects.filter(pk=v2.pk).exists()
+    v3 = FeeSchedule.objects.get(fiscal_year=2026)
+    assert (v3.version, v3.is_active, v3.service_fee) == (3, True, 800)
+    assert v3.tier_fees == FY2026_TIER_FEES
+    assert v3.locked_at is not None  # used by the re-priced submissions
+    for app in (submitted, approved):
+        app.refresh_from_db()
+        assert app.fee_schedule_id == v3.pk
+        assert app.fee_snapshot == quote_for_application(app, schedule=v3).as_dict()
+        assert app.fee_snapshot["total"] == SUBMITTED_TOTAL  # the old snapshot said 1925
+        assert app.fee_snapshot["breakdown"][-1] == {
+            "label": "رسوم الخدمة", "fee": 800, "note": "",
+        }  # fmt: skip
+        assert app.fee_snapshot["schedule_id"] == str(v3.pk)
+    draft.refresh_from_db()
+    assert (draft.fee_snapshot, draft.fee_schedule_id) == (None, None)
+    # Nothing else changed: other columns, beneficiaries, documents, audit entries.
+    after = _fingerprint()
+    for rows in (before["applications"], after["applications"]):
+        for row in rows:
+            row.pop("fee_snapshot")
+            row.pop("fee_schedule_id")
+    assert after == before
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_v3_migration_is_idempotent_and_leaves_other_fiscal_years_alone(migrate_back):
+    from django.apps import apps as global_apps
+
+    old = migrate_back(LEAF_0007)
+    OldFeeSchedule = old.get_model("fees", "FeeSchedule")
+    fy2027 = OldFeeSchedule.objects.create(
+        fiscal_year=2027, version=1, is_active=True, tier_fees=FY2026_TIER_FEES,
+        tier_boundaries=[5, 10, 15],
+    )  # fmt: skip
+    _migrate(None)
+    v3 = FeeSchedule.objects.get(fiscal_year=2026)
+
+    with transaction.atomic():
+        V3_0008.forwards(global_apps, None)  # a second run changes nothing
+
+    assert list(FeeSchedule.objects.filter(fiscal_year=2026)) == [v3]
+    assert FeeSchedule.objects.get(pk=fy2027.pk).service_fee == 800  # column default only
+    FeeSchedule.objects.filter(pk=fy2027.pk).delete()
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_v3_reprices_from_the_submitted_data_not_the_draft_under_correction(migrate_back):
+    """An application sent back for correction holds the doctor's unfinished edits — here the
+    registration year cleared, the work status changed and a row added. The price follows what
+    was submitted, never the draft (which would give an invalid zero quote)."""
+    from apps.applications.models import InsuranceApplication
+    from apps.beneficiaries.factories import BeneficiaryFactory
+    from apps.doctors.models import Doctor
+    from apps.reference.constants import Kinship
+
+    old = migrate_back(LEAF_0007)
+    v2 = old.get_model("fees", "FeeSchedule").objects.get(fiscal_year=2026, version=2)
+    app = _priced_application(old, v2, status="NEEDS_CORRECTION")
+    Doctor.objects.filter(pk=app.doctor_id).update(syndicate_registration_year=None)
+    InsuranceApplication.objects.filter(pk=app.pk).update(work_status="PENSIONER")
+    BeneficiaryFactory(
+        application=app, row_number=3, kinship=Kinship.WIFE, full_name="منى", birth_year=1988
+    )
+    submitted = app.submitted_snapshot
+
+    _migrate(None)
+
+    app.refresh_from_db()
+    v3 = FeeSchedule.objects.get(fiscal_year=2026)
+    assert app.fee_schedule_id == v3.pk
+    assert (app.fee_snapshot["is_valid"], app.fee_snapshot["tier"]) == (True, 3)
+    assert app.fee_snapshot["total"] == SUBMITTED_TOTAL
+    assert [line["label"] for line in app.fee_snapshot["breakdown"]] == [
+        "العضو الأصلي", "سارة", "يوسف", "رسوم إدارية", "رسوم الخدمة",
+    ]  # fmt: skip
+    assert app.submitted_snapshot == submitted  # read, never rewritten
+
+
+def _break_submitted(snapshot: dict | None, case: str) -> dict | None:
+    if case == "missing":
+        return None
+    snapshot = {**snapshot, "member": {**snapshot["member"]}}
+    snapshot["beneficiaries"] = [dict(row) for row in snapshot["beneficiaries"]]
+    row_1 = next(row for row in snapshot["beneficiaries"] if row["row_number"] == 1)
+    if case == "no_member":
+        del snapshot["member"]
+    elif case == "no_registration_year_key":
+        del snapshot["member"]["syndicate_registration_year"]
+    elif case == "cleared_registration_year":
+        snapshot["member"]["syndicate_registration_year"] = None
+    elif case == "text_birth_year":
+        row_1["birth_year"] = "2015"
+    elif case == "retired_kinship":
+        row_1["kinship"] = "DAUGHTER"
+    elif case == "other_fiscal_year":
+        snapshot["application"] = {**snapshot["application"], "fiscal_year": 2025}
+    return snapshot
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+@pytest.mark.parametrize(
+    "case, reason",
+    [
+        ("missing", "no submitted_snapshot"),
+        ("no_member", "lacks member"),
+        ("no_registration_year_key", "lacks member.syndicate_registration_year"),
+        ("cleared_registration_year", "registration year None is missing or outside 1950..2026"),
+        ("text_birth_year", "row 1: birth_year must be a whole number or empty"),
+        ("retired_kinship", "row 1: unknown kinship 'DAUGHTER'"),
+        ("other_fiscal_year", "is for fiscal year 2025, not 2026"),
+    ],
+)
+def test_v3_refuses_incomplete_submitted_data_and_changes_nothing(migrate_back, case, reason):
+    from apps.applications.models import InsuranceApplication
+
+    old = migrate_back(LEAF_0007)
+    OldFeeSchedule = old.get_model("fees", "FeeSchedule")
+    v2 = OldFeeSchedule.objects.get(fiscal_year=2026, version=2)
+    good = _priced_application(old, v2)
+    bad = _priced_application(old, v2, reference_number="MED-2026-000778", status="REJECTED")
+    rows = InsuranceApplication.objects.filter(pk=bad.pk)
+    rows.update(submitted_snapshot=_break_submitted(bad.submitted_snapshot, case))
+    before = _fingerprint()
+
+    with pytest.raises(RuntimeError) as refused:
+        _migrate(None)
+
+    message = str(refused.value)
+    assert "nothing was changed" in message
+    assert f"{bad.pk} (MED-2026-000778, REJECTED): " in message and reason in message
+    assert str(good.pk) not in message
+    assert bad.doctor.national_id not in message  # never a national ID in deployment logs
+    # Rolled back: v2 still the active version, every snapshot exactly as before.
+    assert OldFeeSchedule.objects.get(fiscal_year=2026, is_active=True).pk == v2.pk
+    assert _fingerprint() == before
+    rows.update(fee_snapshot=None, fee_schedule=None)  # let the fixture migrate forward
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_v3_checks_every_replacement_quote_before_saving(migrate_back, monkeypatch):
+    """A quote that is not a complete, consistent price is never written."""
+    from apps.applications.models import InsuranceApplication
+
+    old = migrate_back(LEAF_0007)
+    v2 = old.get_model("fees", "FeeSchedule").objects.get(fiscal_year=2026, version=2)
+    app = _priced_application(old, v2)
+    before = _fingerprint()
+
+    def zero_quote(schedule, submitted):
+        return {
+            "fiscal_year": 2026, "tier": 3, "breakdown": [], "admin_fee": 0, "service_fee": 0,
+            "total": 0, "is_valid": True, "error_message": "", "schedule_id": str(schedule.pk),
+        }  # fmt: skip
+
+    monkeypatch.setattr(V3_0008, "quote", zero_quote)
+    with pytest.raises(RuntimeError, match=f"{app.pk} .*inconsistent quote"):
+        _migrate(None)
+
+    assert _fingerprint() == before
+    monkeypatch.undo()
+    InsuranceApplication.objects.filter(pk=app.pk).update(fee_snapshot=None, fee_schedule=None)
+
+
+def test_v3_migration_carries_its_own_frozen_amounts():
+    assert V3_0008.FY2026_V3["tier_fees"] == FY2026_TIER_FEES
+    assert (
+        V3_0008.FY2026_V3["admin_fee_base"],
+        V3_0008.FY2026_V3["admin_fee_per_beneficiary"],
+        V3_0008.FY2026_V3["service_fee"],
+    ) == (200, 175, 800)

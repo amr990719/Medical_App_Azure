@@ -207,3 +207,18 @@ def test_names_are_whitespace_collapsed():
     user = UserFactory()
     client_for(user).patch(URL, {"full_name": "  أحمد   محمد  علي "}, format="json")
     assert Doctor.objects.get(user=user).full_name == "أحمد محمد علي"
+
+
+def test_treatment_card_number_is_gone_and_the_registration_year_stays():
+    doctor = DoctorFactory()
+    client = client_for(doctor.user)
+    response = client.patch(
+        URL,
+        {"treatment_card_number": "12345", "syndicate_registration_year": "٢٠١٥"},
+        format="json",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "treatment_card_number" not in body
+    assert body["syndicate_registration_year"] == 2015
+    assert "treatment_card_number" not in {f.name for f in Doctor._meta.get_fields()}

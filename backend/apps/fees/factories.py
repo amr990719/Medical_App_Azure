@@ -2,7 +2,7 @@ import factory
 
 from .models import FeeSchedule
 
-# Test copy of the FY 2026 (version 2) amounts. The data migration carries its own copy on
+# Test copy of the FY 2026 (version 3) amounts. The data migration carries its own copy on
 # purpose: migrations must not import application code that can change later.
 FY2026_TIER_FEES = {
     "0": {"member": 400, "spouse": 880, "child": 550, "grad_son": None, "parent": 1155},
@@ -18,14 +18,15 @@ def _copy(tier_fees: dict) -> dict:
 
 
 def fy2026_schedule(**overrides) -> FeeSchedule:
-    """Unsaved FY 2026 (version 2) schedule for pure fee-engine tests."""
+    """Unsaved FY 2026 (version 3) schedule for pure fee-engine tests."""
     fields = {
         "fiscal_year": 2026,
-        "version": 2,
+        "version": 3,
         "tier_fees": _copy(FY2026_TIER_FEES),
         "tier_boundaries": [5, 10, 15],
         "admin_fee_base": 200,
         "admin_fee_per_beneficiary": 175,
+        "service_fee": 800,
         "age_cap_threshold": 70,
         "age_cap_amount": 500,
         "registration_year_min": 1950,

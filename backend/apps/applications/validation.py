@@ -74,7 +74,7 @@ MSG_BIRTH_YEAR_MISMATCH = "سنة الميلاد لا تطابق الرقم ال
 MSG_BENEFICIARY_SAME_AS_MEMBER = (
     "المستفيد {name}: الرقم القومي للمستفيد لا يمكن أن يطابق الرقم القومي للعضو"
 )
-MSG_BENEFICIARY_FIRST_TIME = "المستفيد {name}: يرجى تحديد هل يشترك المستفيد لأول مرة"
+MSG_BENEFICIARY_BIRTH_YEAR_MISMATCH = "المستفيد {name}: " + MSG_BIRTH_YEAR_MISMATCH
 
 REQUIRED_MEMBER_TEXT_FIELDS = (  # [14] field → Arabic label
     ("governorate", "محافظة السكن"),
@@ -207,12 +207,18 @@ def _validate_beneficiaries(
         if b.birth_year is None or not (BENEFICIARY_BIRTH_YEAR_MIN <= b.birth_year <= fy):
             c.add(BENEFICIARIES, f"beneficiaries[{n}].birth_year", "INVALID",
                   MSG_BENEFICIARY_BIRTH_YEAR.format(name=name))  # fmt: skip
+        if b.birth_year is not None and b.national_id:
+            # Same parsing and rule as the member's birth year (§13).
+            try:
+                encoded = parse_national_id(b.national_id, today=timezone.localdate()).birth_year
+            except InvalidNationalId:
+                encoded = None  # stored IDs are format-checked on save
+            if encoded is not None and b.birth_year != encoded:
+                c.add(BENEFICIARIES, f"beneficiaries[{n}].birth_year", "BIRTH_YEAR_MISMATCH",
+                      MSG_BENEFICIARY_BIRTH_YEAR_MISMATCH.format(name=name))  # fmt: skip
         if b.national_id and b.national_id == doctor.national_id:
             c.add(BENEFICIARIES, f"beneficiaries[{n}].national_id", "SAME_AS_MEMBER",
                   MSG_BENEFICIARY_SAME_AS_MEMBER.format(name=name))  # fmt: skip
-        if b.is_first_time is None:
-            c.add(BENEFICIARIES, f"beneficiaries[{n}].is_first_time", "REQUIRED",
-                  MSG_BENEFICIARY_FIRST_TIME.format(name=name))  # fmt: skip
         for error in check_kinship_rules(
             kinship=b.kinship, birth_year=b.birth_year, row_number=n, name=name,
             member_gender=doctor.gender or None, fiscal_year=fy,

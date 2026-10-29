@@ -139,6 +139,7 @@ export async function createFeeSchedule(schedule: NewFeeSchedule): Promise<FeeSc
     tier_boundaries: schedule.tierBoundaries,
     admin_fee_base: schedule.adminFeeBase,
     admin_fee_per_beneficiary: schedule.adminFeePerBeneficiary,
+    service_fee: schedule.serviceFee,
     age_cap_threshold: schedule.ageCapThreshold,
     age_cap_amount: schedule.ageCapAmount,
     registration_year_min: schedule.registrationYearMin,

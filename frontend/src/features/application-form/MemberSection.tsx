@@ -46,7 +46,6 @@ export function MemberSection() {
     syndicateType: useMemberError("syndicateType"),
     subSyndicate: useMemberError("subSyndicate"),
     registrationNumber: useMemberError("registrationNumber"),
-    treatmentCardNumber: useMemberError("treatmentCardNumber"),
     syndicateRegistrationYear: useMemberError("syndicateRegistrationYear"),
     workStatus: useMemberError("workStatus"),
     memberName: useMemberError("memberName"),
@@ -104,19 +103,8 @@ export function MemberSection() {
           />
         </Cell>
 
-        {/* Row 2 */}
-        <Cell span={5}>
-          <DashedField
-            label={L.treatmentCard}
-            value={state.treatmentCardNumber}
-            onChange={set("treatmentCardNumber")}
-            numeric
-            maxLength={30}
-            readOnly={readOnly}
-            error={error.treatmentCardNumber}
-          />
-        </Cell>
-        <Cell span={3}>
+        {/* Row 2 — the syndicate registration year sits where the treatment card number was */}
+        <Cell span={8}>
           <DashedField
             label={L.registrationYear}
             value={state.syndicateRegistrationYear}
