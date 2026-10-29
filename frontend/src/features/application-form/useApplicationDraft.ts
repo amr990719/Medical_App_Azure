@@ -8,7 +8,7 @@ import { useReferenceData } from "@/features/reference/useReferenceData";
 import { ar } from "@/i18n/ar";
 import { DraftController, type DraftOptions } from "./draftController";
 import { parseNationalId } from "./nationalId";
-import type { ApplicationFormState, MemberField } from "./types";
+import type { ApplicationFormState, BeneficiaryField, MemberField } from "./types";
 
 /**
  * Instant national-ID consistency hints (§9.4) while the doctor types; the server validation
@@ -25,6 +25,38 @@ function nationalIdErrors(state: ApplicationFormState | null, readOnly: boolean)
   }
   if (state.gender && state.gender !== parsed.gender) errors.gender = ar.form.errors.genderMismatch;
   return errors;
+}
+
+/**
+ * The same instant hint for each beneficiary row: a complete birth year that disagrees with the
+ * year in a complete, valid national ID. The server validation (step 2) stays authoritative.
+ */
+function beneficiaryIdErrors(
+  state: ApplicationFormState | null,
+  readOnly: boolean,
+): Record<number, Partial<Record<BeneficiaryField, string>>> {
+  const errors: Record<number, Partial<Record<BeneficiaryField, string>>> = {};
+  if (!state || readOnly) return errors;
+  state.beneficiaries.forEach((row, index) => {
+    if (row.nationalId.length !== 14 || !/^\d{4}$/.test(row.birthYear)) return;
+    const parsed = parseNationalId(row.nationalId);
+    if (parsed && Number(row.birthYear) !== parsed.birthYear) {
+      errors[index] = { birthYear: ar.form.errors.birthYearMismatch };
+    }
+  });
+  return errors;
+}
+
+/** Refused-save errors win over the instant hints, field by field. */
+function mergeRowErrors(
+  hints: Record<number, Partial<Record<BeneficiaryField, string>>>,
+  refused: Record<number, Partial<Record<BeneficiaryField, string>>>,
+) {
+  const merged = { ...hints };
+  for (const [index, errors] of Object.entries(refused)) {
+    merged[Number(index)] = { ...hints[Number(index)], ...errors };
+  }
+  return merged;
 }
 
 /**
@@ -89,7 +121,7 @@ export function useApplicationDraft(applicationId: string, options: DraftOptions
     saveStatus: snapshot.saveStatus,
     isDirty: snapshot.isDirty,
     fieldErrors: { ...nationalIdErrors(snapshot.state, snapshot.readOnly), ...snapshot.fieldErrors },
-    rowErrors: snapshot.rowErrors,
+    rowErrors: mergeRowErrors(beneficiaryIdErrors(snapshot.state, snapshot.readOnly), snapshot.rowErrors),
     pendingDeletion: snapshot.pendingDeletion,
     memberDocuments,
     rowServer,

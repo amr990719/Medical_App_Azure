@@ -67,6 +67,7 @@ export function FeeScheduleTable({ schedule }: { schedule: FeeSchedule }) {
           {(
             [
               [L.adminFeeFormula, adminFeeRule(schedule)],
+              [L.serviceFee, formatMoney(schedule.serviceFee)],
               [L.ageCapThreshold, String(schedule.ageCapThreshold ?? "")],
               [L.ageCapAmount, formatMoney(schedule.ageCapAmount ?? 0)],
               [L.registrationYearMin, String(schedule.registrationYearMin ?? "")],

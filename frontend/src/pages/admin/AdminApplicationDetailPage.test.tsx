@@ -103,24 +103,22 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     expect(within(row).getByText("شهادة الزواج: غير مرفق")).toBeInTheDocument();
   });
 
-  it("shows a record submitted before the new rules as it is: unanswered first time, missing back side", async () => {
+  it("shows a record submitted before the ID back side existed as it is: missing back side", async () => {
     serve();
     await open();
     const table = screen.getByRole("table", { name: "المستفيدون" });
-    expect(within(table).getByRole("columnheader", { name: "أول مرة؟" })).toBeInTheDocument();
     const wife = within(table).getByRole("row", { name: /سارة محمود علي/ });
-    expect(within(wife).getByText("غير محدد")).toBeInTheDocument(); // never inferred
     expect(within(wife).getByText("بطاقة الرقم القومي للمستفيد (ظهر): غير مرفق")).toBeInTheDocument();
     expect(within(wife).getByRole("button", { name: "عرض بطاقة الرقم القومي للمستفيد (وجه)" })).toBeInTheDocument();
   });
 
-  it("shows the first-time answers", async () => {
-    const [wife, son] = base.beneficiaries;
-    serve({ ...base, beneficiaries: [{ ...wife!, is_first_time: true }, { ...son!, is_first_time: false }] });
+  it("has no first-time column and no treatment card", async () => {
+    serve();
     await open();
     const table = screen.getByRole("table", { name: "المستفيدون" });
-    expect(within(within(table).getByRole("row", { name: /سارة محمود علي/ })).getByText("نعم")).toBeInTheDocument();
-    expect(within(within(table).getByRole("row", { name: /عمر أحمد محمد/ })).getByText("لا")).toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: /أول مرة/ })).toBeNull();
+    expect(screen.queryByText(/كارنيه العلاج|بطاقة العلاج/)).toBeNull();
+    expect(screen.getByText("سنة القيد")).toBeInTheDocument();
   });
 
   it("flags the member's own birth certificate when the application requires it", async () => {
@@ -130,14 +128,18 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     expect(within(panel).getByText("شهادة ميلاد العضو الأصلي لإثبات صلة القرابة بالأم: غير مرفق")).toBeInTheDocument();
   });
 
-  it("shows the fee snapshot, never a recomputed quote — also when its schedule version was removed", async () => {
-    // Priced with FY 2026 v1: fees.0005 removed it and cleared `fee_schedule`; the snapshot stays.
-    expect(base.fee_schedule).toBeNull();
+  it("shows the stored fee snapshot with the administrative and service fee lines, never a recomputed quote", async () => {
     serve();
     await open();
     const fees = screen.getByRole("region", { name: "الرسوم المحسوبة عند التقديم" });
-    expect(within(fees).getByText("2٬475 ج.م")).toBeInTheDocument();
     expect(within(fees).getByText("الدرجة 3")).toBeInTheDocument();
+    const rows = within(fees).getAllByRole("row").map((row) => row.textContent);
+    expect(rows).toEqual(
+      expect.arrayContaining([expect.stringContaining("رسوم إدارية725 ج.م"), expect.stringContaining("رسوم الخدمة800 ج.م")]),
+    );
+    const labels = within(fees).getAllByRole("row").map((row) => row.querySelector("td")?.textContent ?? "");
+    expect(labels.indexOf("رسوم الخدمة")).toBe(labels.indexOf("رسوم إدارية") + 1);
+    expect(within(fees).getByText("4٬055 ج.م")).toBeInTheDocument();
   });
 
   it("shows duplicate warnings", async () => {
@@ -160,7 +162,7 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     const payment = screen.getByRole("region", { name: "إيصال الدفع" });
     await user.click(within(payment).getByRole("button", { name: "تأكيد الدفع" }));
     const dialog = await screen.findByRole("dialog", { name: "تأكيد الدفع" });
-    expect(dialog).toHaveTextContent("2٬475 ج.م");
+    expect(dialog).toHaveTextContent("4٬055 ج.م");
     await user.type(within(dialog).getByRole("textbox"), "مطابق لكشف البنك");
     await user.click(within(dialog).getByRole("button", { name: "تأكيد" }));
 

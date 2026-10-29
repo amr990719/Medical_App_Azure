@@ -16,11 +16,14 @@ describe("FeeSummaryPanel", () => {
     expect(rows.map((r) => r.textContent)).toEqual(
       expect.arrayContaining([
         expect.stringContaining("العضو الأصلي"),
-        expect.stringContaining("رسوم إدارية775 ج.م"),
+        expect.stringContaining("رسوم إدارية725 ج.م"),
+        expect.stringContaining("رسوم الخدمة800 ج.م"),
       ]),
     );
+    const labels = within(panel).getAllByRole("row").map((r) => r.querySelector("td")?.textContent ?? "");
+    expect(labels.indexOf("رسوم الخدمة")).toBe(labels.indexOf("رسوم إدارية") + 1);
     const total = within(panel).getByText("الإجمالي").closest("tr")!;
-    expect(total).toHaveTextContent("3٬025 ج.م");
+    expect(total).toHaveTextContent("3٬775 ج.م");
   });
 
   it("shows a row note when the server sends one", () => {

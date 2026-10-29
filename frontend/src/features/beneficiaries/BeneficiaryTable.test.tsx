@@ -45,9 +45,8 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
       "اسم المستفيد",
       "سنة الميلاد",
       "الرقم القومي",
-      "أول مرة؟هل يشترك المستفيد لأول مرة؟",
     ]);
-    expect(within(table).getByRole("columnheader", { name: "هل يشترك المستفيد لأول مرة؟" })).toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: /أول مرة/ })).toBeNull();
     expect(within(table).getAllByRole("row")).toHaveLength(1 + 10);
   });
 
@@ -178,32 +177,71 @@ describe("BeneficiaryTable (PROMPT.md §9.5)", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
   });
 
-  it("asks whether each beneficiary is a first-time subscriber and autosaves the answer", async () => {
+  it("no longer asks whether a beneficiary subscribes for the first time", async () => {
+    await renderInForm(<BeneficiaryTable />, { app: apiApplication({ beneficiaries: [apiBeneficiary()] }) });
+    expect(screen.queryByRole("combobox", { name: /أول مرة/ })).toBeNull();
+    expect(screen.queryByText(/أول مرة/)).toBeNull();
+  });
+
+  it("no longer asks it on the mobile card either", async () => {
+    mockViewport(false);
+    await renderInForm(<BeneficiaryTable />, { app: apiApplication({ beneficiaries: [apiBeneficiary()] }) });
+    const card = screen.getAllByRole("group", { name: /^المستفيد رقم \d+$/ })[0]!;
+    expect(within(card).queryByRole("combobox", { name: /أول مرة/ })).toBeNull();
+    expect(within(card).queryByText(/أول مرة/)).toBeNull();
+  });
+
+  it("shows an Arabic error beside the birth year when it disagrees with the national ID (Arabic digits accepted)", async () => {
     const bodies: unknown[] = [];
     server.use(
       http.patch(`${API}/applications/${APP_ID}/beneficiaries/b-wife/`, async ({ request }) => {
-        const body = (await request.json()) as { is_first_time: boolean };
+        const body = (await request.json()) as { birth_year: number };
         bodies.push(body);
-        return HttpResponse.json(apiBeneficiary({ is_first_time: body.is_first_time }));
+        return HttpResponse.json(apiBeneficiary({ national_id: "28803150101242", birth_year: body.birth_year }));
       }),
     );
     const { user } = await renderInForm(<BeneficiaryTable />, {
-      app: apiApplication({ beneficiaries: [apiBeneficiary({ is_first_time: null })] }),
+      app: apiApplication({ beneficiaries: [apiBeneficiary({ national_id: "28803150101242", birth_year: 1988 })] }),
     });
-    const select = screen.getByRole("combobox", { name: "هل يشترك المستفيد لأول مرة؟ — المستفيد رقم 1" });
-    expect(select).toHaveValue("");
-    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual(["—", "نعم", "لا"]);
-    await user.selectOptions(select, "yes");
-    await waitFor(() => expect(bodies).toEqual([{ is_first_time: true }]));
+    const birthYear = screen.getByRole("textbox", { name: "سنة الميلاد — المستفيد رقم 1" });
+    expect(birthYear).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryByText("سنة الميلاد لا تطابق الرقم القومي")).toBeNull();
+
+    await user.clear(birthYear);
+    await user.type(birthYear, "١٩٨٩");
+    expect(birthYear).toHaveValue("1989");
+    const message = screen.getByText("سنة الميلاد لا تطابق الرقم القومي");
+    expect(birthYear).toHaveAttribute("aria-invalid", "true");
+    expect(birthYear).toHaveAttribute("aria-describedby", message.id);
+    await waitFor(() => expect(bodies).toContainEqual({ birth_year: 1989 }));
+
+    await user.clear(birthYear);
+    await user.type(birthYear, "1988");
+    expect(screen.queryByText("سنة الميلاد لا تطابق الرقم القومي")).toBeNull();
+    expect(birthYear).not.toHaveAttribute("aria-invalid");
   });
 
-  it("shows a stored first-time answer, also on the mobile card", async () => {
+  it("puts the birth-year error right under the birth year on the mobile card", async () => {
     mockViewport(false);
     await renderInForm(<BeneficiaryTable />, {
-      app: apiApplication({ beneficiaries: [apiBeneficiary({ is_first_time: false })] }),
+      app: apiApplication({ beneficiaries: [apiBeneficiary({ national_id: "28803150101242", birth_year: 1990 })] }),
     });
     const card = screen.getAllByRole("group", { name: /^المستفيد رقم \d+$/ })[0]!;
-    expect(within(card).getByRole("combobox", { name: "هل يشترك المستفيد لأول مرة؟ — المستفيد رقم 1" })).toHaveValue("no");
+    const birthYear = within(card).getByRole("textbox", { name: "سنة الميلاد — المستفيد رقم 1" });
+    const message = within(card).getByText("سنة الميلاد لا تطابق الرقم القومي");
+    expect(birthYear.closest("[data-card-field]")).toContainElement(message);
+  });
+
+  it("shows no birth-year hint while the national ID is incomplete or the year is partial", async () => {
+    await renderInForm(<BeneficiaryTable />, {
+      app: apiApplication({
+        beneficiaries: [
+          apiBeneficiary({ national_id: "2880315010", birth_year: 1990 }),
+          apiBeneficiary({ id: "b-2", row_number: 2, national_id: "28803150101242", birth_year: null }),
+        ],
+      }),
+    });
+    expect(screen.queryByText("سنة الميلاد لا تطابق الرقم القومي")).toBeNull();
   });
 
   it("offers the member's own birth certificate from the mother's row only", async () => {

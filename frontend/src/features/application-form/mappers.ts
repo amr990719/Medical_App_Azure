@@ -14,7 +14,6 @@ import {
   type ApplicationFormState,
   type BeneficiaryField,
   type BeneficiaryRow,
-  type FirstTimeAnswer,
   type MemberField,
   type MemberFields,
 } from "./types";
@@ -31,7 +30,6 @@ const PROFILE_FIELDS = {
   subSyndicate: "sub_syndicate",
   registrationNumber: "syndicate_registration_number",
   syndicateRegistrationYear: "syndicate_registration_year",
-  treatmentCardNumber: "treatment_card_number",
   governorate: "governorate",
   neighborhood: "neighborhood",
   address: "address",
@@ -49,7 +47,6 @@ const ROW_FIELDS = {
   name: "full_name",
   birthYear: "birth_year",
   nationalId: "national_id",
-  isFirstTime: "is_first_time",
 } as const satisfies Record<BeneficiaryField, keyof BeneficiaryPayload>;
 
 type ProfileField = keyof typeof PROFILE_FIELDS;
@@ -64,8 +61,7 @@ const YEAR_FIELDS = new Set<string>(["birthYear", "syndicateRegistrationYear"]);
  * Value to send for a field, or `undefined` while it is still being typed (a 7-digit national
  * ID or a 3-digit year stays local until complete — drafts enforce formats, §10.3).
  */
-function wireValue(field: string, value: string): string | number | boolean | null | undefined {
-  if (field === "isFirstTime") return value === "" ? null : value === "yes";
+function wireValue(field: string, value: string): string | number | null | undefined {
   if (field === "nationalId") {
     if (value === "") return null;
     return value.length === 14 ? value : undefined;
@@ -116,15 +112,7 @@ export function rowFromServer(beneficiary: Beneficiary): BeneficiaryRow {
     name: beneficiary.fullName,
     birthYear: text(beneficiary.birthYear),
     nationalId: text(beneficiary.nationalId),
-    isFirstTime: firstTimeAnswer(beneficiary.isFirstTime),
   };
-}
-
-/** API `is_first_time` (true / false / null = not answered) → the row's select value. */
-export function firstTimeAnswer(value: boolean | null | undefined): FirstTimeAnswer {
-  if (value === true) return "yes";
-  if (value === false) return "no";
-  return "";
 }
 
 export function toFormState(app: Application, profile: DoctorProfile, maxRows: number): ApplicationFormState {
@@ -138,7 +126,6 @@ export function toFormState(app: Application, profile: DoctorProfile, maxRows: n
     syndicateType: profile.syndicateType ?? "",
     subSyndicate: profile.subSyndicate ?? "",
     registrationNumber: profile.syndicateRegistrationNumber ?? "",
-    treatmentCardNumber: profile.treatmentCardNumber ?? "",
     syndicateRegistrationYear: text(profile.syndicateRegistrationYear),
     workStatus: app.workStatus,
     memberName: profile.fullName ?? "",

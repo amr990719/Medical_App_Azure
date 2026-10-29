@@ -101,7 +101,7 @@
     {
       "value": "SON_UNIVERSITY",
       "label": "ابن/ابنة (طالب جامعي)",
-      "fee_key": "grad_son"
+      "fee_key": "child"
     },
     {
       "value": "SON_GRADUATE",
@@ -383,6 +383,9 @@
         "birth_certificate": {
           "type": "BIRTH_CERTIFICATE",
           "required_when_member_gender": "FEMALE",
+          "required_below_age_for_kinships": [
+            "SON_MINOR"
+          ],
           "otherwise": "optional"
         },
         "unknown_birth_year": "below_age"
@@ -390,7 +393,7 @@
     },
     "photo": {
       "type": "BENEFICIARY_PERSONAL_PHOTO",
-      "required_when": "is_first_time",
+      "required_when": "always",
       "exempt_child_below_age": 3,
       "unknown_age_exempt": false
     }

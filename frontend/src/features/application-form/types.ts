@@ -13,7 +13,6 @@ export type MemberFields = {
   syndicateType: SyndicateType | "";
   subSyndicate: string;
   registrationNumber: string;
-  treatmentCardNumber: string;
   syndicateRegistrationYear: string;
   workStatus: WorkStatus | "";
   memberName: string;
@@ -41,12 +40,7 @@ export type BeneficiaryRow = {
   name: string;
   birthYear: string;
   nationalId: string;
-  /** `هل يشترك المستفيد لأول مرة؟` — "" = not answered (API `null`), independent of the
-   * application type. */
-  isFirstTime: FirstTimeAnswer;
 };
-
-export type FirstTimeAnswer = "" | "yes" | "no";
 
 export type BeneficiaryField = Exclude<keyof BeneficiaryRow, "id">;
 
@@ -62,5 +56,4 @@ export const emptyRow = (): BeneficiaryRow => ({
   name: "",
   birthYear: "",
   nationalId: "",
-  isFirstTime: "",
 });

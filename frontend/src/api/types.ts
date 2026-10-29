@@ -92,6 +92,8 @@ export type ApiFeeQuote = {
   tier: number | null;
   breakdown: { label: string; fee: number; note: string }[];
   admin_fee: number;
+  /** رسوم الخدمة: once per application (0 on an invalid quote). */
+  service_fee: number;
   total: number;
   is_valid: boolean;
   error_message: string;
@@ -163,6 +165,7 @@ export type NewFeeSchedule = {
   tierBoundaries: [number, number, number];
   adminFeeBase: number;
   adminFeePerBeneficiary: number;
+  serviceFee: number;
   ageCapThreshold: number;
   ageCapAmount: number;
   registrationYearMin: number;

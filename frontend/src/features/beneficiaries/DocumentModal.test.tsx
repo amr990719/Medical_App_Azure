@@ -31,7 +31,6 @@ const wife: Beneficiary = {
   fullName: "سارة محمود علي",
   birthYear: 1990,
   nationalId: "29001011234567",
-  isFirstTime: true,
   isActive: true,
   requiredDocuments: [
     { type: "BENEFICIARY_NATIONAL_ID", required: true, label: FRONT, ocrCapable: true },

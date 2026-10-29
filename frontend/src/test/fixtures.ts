@@ -63,10 +63,12 @@ export const feeQuote: ApiFeeQuote = {
     { label: "العضو الأصلي", fee: 750, note: "" },
     { label: "زوجة", fee: 750, note: "" },
     { label: "ابن (18 سنة أو أقل)", fee: 750, note: "" },
-    { label: "رسوم إدارية", fee: 775, note: "" },
+    { label: "رسوم إدارية", fee: 725, note: "" },
+    { label: "رسوم الخدمة", fee: 800, note: "" },
   ],
-  admin_fee: 775,
-  total: 3025,
+  admin_fee: 725,
+  service_fee: 800,
+  total: 3775,
   is_valid: true,
   error_message: "",
   schedule_id: "b6b391f1-0205-4a68-9c02-3f538cc52982",
@@ -113,7 +115,6 @@ export function apiProfile(overrides: Partial<ApiProfile> = {}): ApiProfile {
     sub_syndicate: "",
     syndicate_registration_number: "",
     syndicate_registration_year: null,
-    treatment_card_number: "",
     governorate: "",
     neighborhood: "",
     address: "",
@@ -154,7 +155,7 @@ const requirement = (
   hints: extra.hints ?? [],
 });
 
-export const PHOTO_HINT = "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.";
+export const PHOTO_HINT = "صورة شخصية بخلفية بيضاء مطلوبة لكل مستفيد.";
 export const PHOTO_CHILD_EXEMPT_HINT = "لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.";
 
 export const photoRequirement = (required: boolean, hints: string[] = [PHOTO_HINT]) =>
@@ -200,7 +201,6 @@ export function apiBeneficiary(overrides: Partial<ApiBeneficiary> = {}): ApiBene
     full_name: "منى سعيد عبد الله",
     birth_year: 1988,
     national_id: null,
-    is_first_time: null,
     is_active: true,
     required_documents: SPOUSE_REQUIREMENTS,
     documents: [],

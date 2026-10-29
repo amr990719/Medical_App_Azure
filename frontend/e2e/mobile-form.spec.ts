@@ -47,11 +47,11 @@ test("doctor completes and submits the form on a 390 × 844 phone", async ({ pag
   await expect(page.getByRole("table", { name: "بيانات المستفيدين مع العضو الأصلى" })).toBeHidden();
   await expect(rowField(page, "اسم المستفيد", 1)).toHaveValue("منى سعيد عبد الله");
 
-  // Second card: SON_MINOR (birth certificate optional for a male member; uploaded anyway).
+  // Second card: SON_MINOR aged 11 — below 16 the birth certificate is required (male member too),
+  // and every beneficiary from age 3 needs a white-background photo.
   await rowField(page, "درجة القرابة", 2).selectOption("SON_MINOR");
   await rowField(page, "اسم المستفيد", 2).fill("عمر كريم سامي");
   await rowField(page, "سنة الميلاد", 2).fill("٢٠١٥"); // Eastern Arabic digits on a phone keyboard
-  await rowField(page, "هل يشترك المستفيد لأول مرة؟", 2).selectOption("no");
   await page.getByLabel("اسم المقر").fill(draft.doctorName);
   await expect(page.getByText("تم الحفظ")).toBeVisible();
   await expect(rowField(page, "سنة الميلاد", 2)).toHaveValue("2015");
@@ -61,13 +61,17 @@ test("doctor completes and submits the form on a 390 × 844 phone", async ({ pag
   const slot = dialog.getByRole("group", { name: "شهادة ميلاد المستفيد", exact: true });
   await slot.getByLabel("شهادة ميلاد المستفيد", { exact: true }).setInputFiles(fixture("birth-son.png"));
   await expect(slot.getByText("✓ تم الإرفاق: birth-son.png")).toBeVisible();
+  const photo = dialog.getByRole("group", { name: "صورة شخصية للمستفيد بخلفية بيضاء", exact: true });
+  await photo.getByLabel("صورة شخصية للمستفيد بخلفية بيضاء", { exact: true }).setInputFiles(fixture("id-front.png"));
+  await expect(photo.getByText("✓ تم الإرفاق: id-front.png")).toBeVisible();
   const dialogOverflow = await dialog.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(dialogOverflow, "document dialog fits the phone").toBeLessThanOrEqual(0);
   await dialog.getByRole("button", { name: "حفظ وإغلاق" }).tap();
   await expect(page.getByRole("button", { name: /^مستندات المستفيد رقم 2/ })).toHaveAttribute("data-state", "complete");
 
-  // Server quote (FY 2026 v2): tier 3 member 825 + WIFE 1100 + child 605 + admin fee 200 + 2 × 175.
-  await expect(page.getByRole("region", { name: "ملخص الاشتراك — السنة المالية 2026" })).toContainText("3٬080 ج.م");
+  // Server quote (FY 2026 v3): tier 3 member 825 + WIFE 1100 + child 605 + admin fee 200 + 3 × 175
+  // + service fee 800.
+  await expect(page.getByRole("region", { name: "ملخص الاشتراك — السنة المالية 2026" })).toContainText("4٬055 ج.م");
   await page.evaluate(() => window.scrollTo(0, 0));
   await expectNoHorizontalScroll(page, "form");
 

@@ -23,7 +23,8 @@ export function tierRange(boundaries: readonly number[], tier: TierKey): string 
 export const feeCell = (amount: number | null | undefined) =>
   amount === null || amount === undefined ? L.notAvailable : formatNumber(amount);
 
-/** The administrative-fee rule of a version, in words: "200 ج.م + 175 ج.م × عدد المستفيدين". */
+/** The administrative-fee rule of a version, in words: "200 ج.م + 175 ج.م × (عدد المستفيدين + 1)"
+ * — the + 1 is the member. */
 export const adminFeeRule = (schedule: FeeSchedule) =>
   t(L.adminFeeFormulaPerBeneficiary, {
     base: formatMoney(schedule.adminFeeBase),

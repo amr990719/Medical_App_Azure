@@ -150,7 +150,7 @@ describe("DocumentsChecklist (PROMPT.md §9.6)", () => {
         }),
       ),
     );
-    const firstTime = apiBeneficiary({ required_documents: [photoRequirement(true)], is_first_time: true });
+    const firstTime = apiBeneficiary({ required_documents: [photoRequirement(true)] });
     await renderInForm(<DocumentsChecklist />, { app: apiApplication({ beneficiaries: [firstTime] }) });
     const photo = await screen.findByLabelText("رفع صورة شخصية للمستفيد بخلفية بيضاء", { selector: "input" });
     await waitFor(() => expect(photo).toHaveAttribute("accept", "image/jpeg,image/png,image/webp"));

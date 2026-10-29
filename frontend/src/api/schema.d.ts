@@ -585,7 +585,6 @@ export interface components {
             readonly sub_syndicate: string;
             readonly syndicate_registration_number: string;
             readonly syndicate_registration_year: number | null;
-            readonly treatment_card_number: string;
             readonly governorate: string;
             readonly neighborhood: string;
             readonly address: string;
@@ -619,7 +618,6 @@ export interface components {
             readonly birth_year: number | null;
             readonly masked_national_id: string;
             readonly national_id: string | null;
-            readonly is_first_time: boolean | null;
             readonly is_active: boolean;
             readonly required_documents: {
                 [key: string]: unknown;
@@ -643,7 +641,6 @@ export interface components {
             readonly sub_syndicate: string;
             readonly syndicate_registration_number: string;
             readonly syndicate_registration_year: number | null;
-            readonly treatment_card_number: string;
             readonly governorate: string;
             readonly neighborhood: string;
             readonly address: string;
@@ -768,7 +765,6 @@ export interface components {
             readonly full_name: string;
             readonly birth_year: number | null;
             readonly national_id: string | null;
-            readonly is_first_time: boolean | null;
             readonly is_active: boolean;
             readonly required_documents: {
                 [key: string]: unknown;
@@ -784,7 +780,6 @@ export interface components {
             full_name?: string;
             birth_year?: number | null;
             national_id?: string | null;
-            is_first_time?: boolean | null;
         };
         /** @enum {unknown} */
         BlankEnum: "";
@@ -832,7 +827,6 @@ export interface components {
             sub_syndicate?: string;
             syndicate_registration_number?: string;
             syndicate_registration_year?: number | null;
-            treatment_card_number?: string;
             governorate?: components["schemas"]["GovernorateEnum"] | components["schemas"]["BlankEnum"];
             neighborhood?: string;
             address?: string;
@@ -882,7 +876,10 @@ export interface components {
             /** Format: uuid */
             beneficiary_id?: string | null;
         };
-        /** @description Tiers 0-4 and the administrative fee `base + per_beneficiary × active beneficiaries`. */
+        /**
+         * @description Tiers 0-4, the administrative fee `base + per_beneficiary × (active beneficiaries + 1)`
+         *     and the service fee (once per application).
+         */
         FeeSchedule: {
             /** Format: uuid */
             readonly id: string;
@@ -899,6 +896,7 @@ export interface components {
             tier_boundaries: unknown;
             admin_fee_base: number;
             admin_fee_per_beneficiary: number;
+            service_fee: number;
             age_cap_threshold?: number;
             age_cap_amount?: number;
             registration_year_min?: number;
@@ -908,7 +906,10 @@ export interface components {
             /** Format: date-time */
             readonly locked_at: string | null;
         };
-        /** @description Tiers 0-4 and the administrative fee `base + per_beneficiary × active beneficiaries`. */
+        /**
+         * @description Tiers 0-4, the administrative fee `base + per_beneficiary × (active beneficiaries + 1)`
+         *     and the service fee (once per application).
+         */
         FeeScheduleRequest: {
             fiscal_year: number;
             tier_fees: unknown;
@@ -922,6 +923,7 @@ export interface components {
             tier_boundaries: unknown;
             admin_fee_base: number;
             admin_fee_per_beneficiary: number;
+            service_fee: number;
             age_cap_threshold?: number;
             age_cap_amount?: number;
             registration_year_min?: number;
@@ -1078,7 +1080,6 @@ export interface components {
             full_name?: string;
             birth_year?: number | null;
             national_id?: string | null;
-            is_first_time?: boolean | null;
         };
         /**
          * @description The doctor's own profile. Derived fields (date of birth) and the Entra email are
@@ -1095,7 +1096,6 @@ export interface components {
             sub_syndicate?: string;
             syndicate_registration_number?: string;
             syndicate_registration_year?: number | null;
-            treatment_card_number?: string;
             governorate?: components["schemas"]["GovernorateEnum"] | components["schemas"]["BlankEnum"];
             neighborhood?: string;
             address?: string;

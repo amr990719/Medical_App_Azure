@@ -47,7 +47,7 @@ describe("PaymentPage (PROMPT.md §18)", () => {
     await openPayment();
     expect(screen.getByRole("link", { name: "رجوع للاستمارة" })).toHaveAttribute("href", `/application/${APP_ID}/form`);
     const fees = await screen.findByRole("region", { name: "ملخص الرسوم" });
-    expect(await within(fees).findByText("3٬025 ج.م")).toBeInTheDocument();
+    expect(await within(fees).findByText("3٬775 ج.م")).toBeInTheDocument();
     expect(screen.getByText("اسحب صورة الإيصال هنا")).toBeInTheDocument();
     expect(screen.getByText("أو اضغط للاختيار")).toBeInTheDocument();
     expect(screen.getByText("JPG, PNG, WEBP — حتى 8 ميجابايت، وبحد أدنى 400×300 بكسل")).toBeInTheDocument();

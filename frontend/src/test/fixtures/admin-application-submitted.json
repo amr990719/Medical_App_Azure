@@ -10,36 +10,42 @@
   "declaration_accepted_at": "2026-10-05T13:34:57.685781+03:00",
   "fee_snapshot": {
     "tier": 3,
-    "total": 2475,
+    "total": 4055,
     "is_valid": true,
-    "admin_fee": 175,
+    "admin_fee": 725,
+    "service_fee": 800,
     "breakdown": [
       {
-        "fee": 750,
+        "fee": 825,
         "note": "",
         "label": "العضو الأصلي"
       },
       {
-        "fee": 1000,
+        "fee": 1100,
         "note": "",
         "label": "سارة محمود علي"
       },
       {
-        "fee": 550,
+        "fee": 605,
         "note": "",
         "label": "عمر أحمد محمد"
       },
       {
-        "fee": 175,
+        "fee": 725,
         "note": "",
         "label": "رسوم إدارية"
+      },
+      {
+        "fee": 800,
+        "note": "",
+        "label": "رسوم الخدمة"
       }
     ],
     "fiscal_year": 2026,
-    "schedule_id": "5ed606f5-aa47-4703-8b6c-83ab2469c007",
+    "schedule_id": "f2ab0b2f-830a-48e8-ae3b-b26b22816447",
     "error_message": ""
   },
-  "fee_schedule": null,
+  "fee_schedule": "f2ab0b2f-830a-48e8-ae3b-b26b22816447",
   "review_notes": "",
   "reviewed_by_email": null,
   "reviewed_at": null,
@@ -60,7 +66,6 @@
     "sub_syndicate": "القاهرة",
     "syndicate_registration_number": "12345",
     "syndicate_registration_year": 2014,
-    "treatment_card_number": "",
     "governorate": "القاهرة",
     "neighborhood": "مدينة نصر",
     "address": "شارع عباس العقاد",
@@ -76,7 +81,6 @@
       "birth_year": 1988,
       "masked_national_id": "28•••••••••242",
       "national_id": null,
-      "is_first_time": null,
       "is_active": true,
       "required_documents": [
         {
@@ -171,7 +175,6 @@
       "birth_year": 2015,
       "masked_national_id": "",
       "national_id": null,
-      "is_first_time": null,
       "is_active": true,
       "required_documents": [
         {
