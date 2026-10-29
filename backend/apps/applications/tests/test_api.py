@@ -96,15 +96,17 @@ def test_retrieve_includes_nested_beneficiaries_and_documents():
     slots = body["beneficiaries"][0]["required_documents"]
     assert {r["type"] for r in slots if r["required"]} == {
         "BENEFICIARY_NATIONAL_ID", "BENEFICIARY_NATIONAL_ID_BACK", "MARRIAGE_CERTIFICATE",
-        "INSURANCE_PRINT",
+        "INSURANCE_PRINT", "BENEFICIARY_PERSONAL_PHOTO",
     }  # fmt: skip
-    assert {r["type"] for r in slots if not r["required"]} == {"BENEFICIARY_PERSONAL_PHOTO"}
-    assert body["beneficiaries"][0]["is_first_time"] is False
+    assert {r["type"] for r in slots if not r["required"]} == set()
+    assert "is_first_time" not in body["beneficiaries"][0]
     assert [r["type"] for r in body["member_required_documents"]] == [
         "NATIONAL_ID_FRONT", "NATIONAL_ID_BACK", "SYNDICATE_ID", "PERSONAL_PHOTO",
         "PAYMENT_RECEIPT",
     ]  # fmt: skip
-    assert len(body["documents"]) == 11  # incl. the FIRST_TIME member photo
+    assert (
+        len(body["documents"]) == 14
+    )  # incl. the FIRST_TIME member photo and 3 beneficiary photos
     doc = body["documents"][0]
     assert doc["content_url"] == f"/api/v1/documents/{doc['id']}/content/"
     assert "blob_name" not in doc
@@ -248,10 +250,10 @@ def test_patch_requires_csrf_for_session_clients():
 def test_fees_endpoint_matches_example_2():
     app = build_submittable_application()
     body = client_for(app.doctor.user).get(url(app, "fees")).json()
-    assert body["total"] == 3860
+    assert body["total"] == 4835
     assert body["tier"] == 3
     assert body["is_valid"] is True
-    assert [line["fee"] for line in body["breakdown"]] == [825, 1100, 605, 605, 725]
+    assert [line["fee"] for line in body["breakdown"]] == [825, 1100, 605, 605, 900, 800]
     assert body["schedule_id"] == str(FeeSchedule.objects.get(fiscal_year=2026, is_active=True).pk)
 
 
@@ -304,7 +306,7 @@ def test_submit_happy_path_returns_reference():
     body = response.json()
     assert body["status"] == "SUBMITTED"
     assert body["reference_number"] == "MED-2026-000001"
-    assert body["fee_snapshot"]["total"] == 3860
+    assert body["fee_snapshot"]["total"] == 4835
     assert body["is_editable"] is False
 
 

@@ -22,7 +22,7 @@ class BeneficiarySerializer(serializers.ModelSerializer):
         model = Beneficiary
         fields = [
             "id", "row_number", "kinship", "full_name", "birth_year", "national_id",
-            "is_first_time", "is_active", "required_documents", "documents", "updated_at",
+            "is_active", "required_documents", "documents", "updated_at",
         ]  # fmt: skip
         read_only_fields = fields
 
@@ -43,5 +43,3 @@ class BeneficiaryWriteSerializer(serializers.Serializer):
     full_name = CollapsedCharField(max_length=200, allow_blank=True, required=False)
     birth_year = YearField()
     national_id = NationalIdField()
-    # null = "not answered yet" (allowed in drafts; required for active rows at submission).
-    is_first_time = serializers.BooleanField(allow_null=True, required=False)

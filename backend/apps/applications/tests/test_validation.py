@@ -225,6 +225,60 @@ def test_section_14_son_minor_age_rule(app):
     assert find(app, "beneficiaries[2].kinship").code == "SON_MINOR_TOO_OLD"
 
 
+# --- beneficiary birth year vs the birth year in the national ID -----------------------------
+
+
+@pytest.mark.parametrize("birth_year", [1987, 1989])
+def test_beneficiary_birth_year_must_match_the_national_id(app, birth_year):
+    # The wife's ID 28803150101242 encodes 1988.
+    app.beneficiaries.filter(row_number=1).update(birth_year=birth_year)
+    error = find(app, "beneficiaries[1].birth_year")
+    assert (error.step, error.code) == (2, "BIRTH_YEAR_MISMATCH")
+    assert error.message == "المستفيد سارة محمود علي: سنة الميلاد لا تطابق الرقم القومي"
+    assert validate_for_submission(app).is_valid is False
+    assert validate_for_submission(app, stage="form").steps[2] is False
+
+
+def test_beneficiary_birth_year_matching_the_national_id_is_valid(app):
+    assert app.beneficiaries.get(row_number=1).birth_year == 1988
+    assert "beneficiaries[1].birth_year" not in {e.field for e in errors_of(app)}
+
+
+@pytest.mark.parametrize(
+    ("national_id", "birth_year"),
+    [("31503150101231", 2015), ("29001010101239", 1990)],  # 2000s and 1900s centuries
+)
+def test_beneficiary_birth_year_uses_the_century_digit(app, national_id, birth_year):
+    kinship = Kinship.SON_MINOR if birth_year > 2000 else Kinship.FATHER
+    row = _beneficiary(app, 4, kinship=kinship, full_name="مستفيد", birth_year=birth_year,
+                       national_id=national_id)  # fmt: skip
+    assert "beneficiaries[4].birth_year" not in {e.field for e in errors_of(app)}
+    row.birth_year = birth_year + 100 if birth_year < 2000 else birth_year - 100
+    row.save()
+    codes = {e.code for e in errors_of(app) if e.field == "beneficiaries[4].birth_year"}
+    assert "BIRTH_YEAR_MISMATCH" in codes
+
+
+def test_beneficiary_without_a_national_id_has_no_mismatch(app):
+    son = app.beneficiaries.get(row_number=2)
+    assert son.national_id is None
+    son.birth_year = 2012
+    son.save()
+    assert "beneficiaries[2].birth_year" not in {e.field for e in errors_of(app)}
+
+
+def test_missing_beneficiary_birth_year_reports_only_the_required_rule(app):
+    app.beneficiaries.filter(row_number=1).update(birth_year=None)
+    errors = [e for e in errors_of(app) if e.field == "beneficiaries[1].birth_year"]
+    assert [e.code for e in errors] == ["INVALID"]
+
+
+def test_inactive_row_birth_year_mismatch_is_ignored(app):
+    _beneficiary(app, 4, kinship=Kinship.WIFE, full_name=" ", birth_year=1950,
+                 national_id="28803150101250")  # fmt: skip
+    assert validate_for_submission(app).is_valid is True
+
+
 def test_section_14_beneficiary_id_equal_to_member(app):
     app.doctor.national_id = "28803150101242"  # the wife's ID, in memory
     update_doctor(app, gender=Gender.FEMALE, birth_year=1988)
@@ -351,7 +405,7 @@ def test_cross_application_beneficiary_duplicate_is_a_warning_only(app):
     assert len(result.warnings) == 1
 
 
-# --- beneficiary first-time answer and personal photo -----------------------------------------
+# --- beneficiary personal photo: every beneficiary, children under 3 exempt ------------------
 
 
 def _beneficiary(app, row_number, **fields):
@@ -364,95 +418,79 @@ def _with_id_sides(app, beneficiary):
     return beneficiary
 
 
-def test_active_beneficiary_needs_an_explicit_first_time_answer(app):
-    son = app.beneficiaries.get(row_number=2)
-    son.is_first_time = None
-    son.save()
-    error = find(app, "beneficiaries[2].is_first_time")
-    assert (error.step, error.code) == (2, "REQUIRED")
-    assert error.message == "المستفيد عمر أحمد محمد: يرجى تحديد هل يشترك المستفيد لأول مرة"
-
-
-def test_draft_validation_reports_but_tolerates_the_missing_answer(app):
-    son = app.beneficiaries.get(row_number=2)
-    son.is_first_time = None
-    son.save()
-    result = validate_for_submission(app, stage="form")
-    assert result.steps[2] is False
-    assert [e.field for e in result.errors] == ["beneficiaries[2].is_first_time"]
-
-
-def test_inactive_row_needs_no_first_time_answer(app):
-    _beneficiary(app, 4, kinship=Kinship.SON_MINOR, full_name="", is_first_time=None)
-    assert validate_for_submission(app).is_valid is True
+PHOTO_ERROR = "beneficiaries[{n}].documents.BENEFICIARY_PERSONAL_PHOTO"
 
 
 @pytest.mark.parametrize("row_number", [1, 2, 3])  # WIFE, SON_MINOR 2015, SON_MINOR 2018
-def test_first_time_beneficiary_needs_a_photo(app, row_number):
+def test_every_beneficiary_needs_a_photo(app, row_number):
     row = app.beneficiaries.get(row_number=row_number)
-    row.is_first_time = True
-    row.save()
-    error = find(app, f"beneficiaries[{row.row_number}].documents.BENEFICIARY_PERSONAL_PHOTO")
+    remove_document(app, D.BENEFICIARY_PERSONAL_PHOTO, row)
+    error = find(app, PHOTO_ERROR.format(n=row_number))
     assert error.step == 3
     assert error.message.endswith("مستند صورة شخصية للمستفيد بخلفية بيضاء مطلوب")
+
+
+@pytest.mark.parametrize("stored", [True, False, None])
+def test_photo_ignores_any_stored_first_time_value(app, stored):
+    son = app.beneficiaries.get(row_number=2)
+    son.is_first_time = stored  # historical column: no longer collected or read
+    son.save()
+    assert validate_for_submission(app).is_valid is True
+    remove_document(app, D.BENEFICIARY_PERSONAL_PHOTO, son)
+    assert find(app, PHOTO_ERROR.format(n=2))
+
+
+def test_no_first_time_answer_is_required(app):
+    app.beneficiaries.update(is_first_time=None)
+    result = validate_for_submission(app)
+    assert result.is_valid is True
+    assert not [e for e in result.errors if "is_first_time" in e.field]
 
 
 @pytest.mark.parametrize(
     ("kinship", "birth_year"),
     [(Kinship.MOTHER, 1960), (Kinship.FATHER, 1955), (Kinship.SON_UNIVERSITY, 2004),
-     (Kinship.SON_GRADUATE, 1999), (Kinship.HUSBAND, 1980)],
+     (Kinship.SON_GRADUATE, 1999), (Kinship.HUSBAND, 1980), (Kinship.WIFE, 1990),
+     (Kinship.SON_MINOR, 2015)],
 )  # fmt: skip
 def test_photo_rule_applies_to_every_category(app, kinship, birth_year):
-    row = _beneficiary(app, 4, kinship=kinship, full_name="مستفيد جديد", birth_year=birth_year,
-                       is_first_time=True)  # fmt: skip
-    photo = "beneficiaries[4].documents.BENEFICIARY_PERSONAL_PHOTO"
-    assert photo in {e.field for e in errors_of(app)}
-    row.is_first_time = False
-    row.save()
-    assert photo not in {e.field for e in errors_of(app)}
+    _beneficiary(app, 4, kinship=kinship, full_name="مستفيد جديد", birth_year=birth_year)
+    assert PHOTO_ERROR.format(n=4) in {e.field for e in errors_of(app)}
 
 
 @pytest.mark.parametrize(
     ("kinship", "birth_year", "needed"),
-    [(Kinship.SON_MINOR, 2024, False), (Kinship.SON_MINOR, 2023, True)],  # ages 2 / 3
+    [(Kinship.SON_MINOR, 2026, False), (Kinship.SON_MINOR, 2024, False),  # ages 0 / 2
+     (Kinship.SON_MINOR, 2023, True), (Kinship.SON_MINOR, 2022, True)],  # ages 3 / 4
 )  # fmt: skip
-def test_first_time_child_under_3_needs_no_photo(app, kinship, birth_year, needed):
-    child = _beneficiary(app, 4, kinship=kinship, full_name="طفل جديد", birth_year=birth_year,
-                         is_first_time=True)  # fmt: skip
-    DocumentFactory(application=app, beneficiary=child, document_type=D.BIRTH_CERTIFICATE)
+def test_child_under_3_needs_no_photo(app, kinship, birth_year, needed):
+    _beneficiary(app, 4, kinship=kinship, full_name="طفل جديد", birth_year=birth_year)
     fields = {e.field for e in errors_of(app)}
-    assert ("beneficiaries[4].documents.BENEFICIARY_PERSONAL_PHOTO" in fields) is needed
+    assert (PHOTO_ERROR.format(n=4) in fields) is needed
 
 
 def test_unknown_child_age_does_not_exempt_the_photo(app):
-    child = _beneficiary(app, 4, kinship=Kinship.SON_MINOR, full_name="طفل جديد",
-                         birth_year=None, is_first_time=True)  # fmt: skip
-    DocumentFactory(application=app, beneficiary=child, document_type=D.BIRTH_CERTIFICATE)
-    assert find(app, "beneficiaries[4].documents.BENEFICIARY_PERSONAL_PHOTO")
+    _beneficiary(app, 4, kinship=Kinship.SON_MINOR, full_name="طفل جديد", birth_year=None)
+    assert find(app, PHOTO_ERROR.format(n=4))
 
 
-def test_uploaded_photo_satisfies_the_requirement(app):
-    son = app.beneficiaries.get(row_number=2)
-    son.is_first_time = True
-    son.save()
-    DocumentFactory(application=app, beneficiary=son, document_type=D.BENEFICIARY_PERSONAL_PHOTO)
+def test_inactive_row_needs_no_photo(app):
+    _beneficiary(app, 4, kinship=Kinship.SON_MINOR, full_name="", birth_year=2015)
     assert validate_for_submission(app).is_valid is True
 
 
 def test_member_photo_does_not_satisfy_a_beneficiary_photo(app):
     son = app.beneficiaries.get(row_number=2)
-    son.is_first_time = True
-    son.save()
+    remove_document(app, D.BENEFICIARY_PERSONAL_PHOTO, son)
     assert app.documents.filter(document_type=D.PERSONAL_PHOTO, beneficiary=None).exists()
-    assert find(app, "beneficiaries[2].documents.BENEFICIARY_PERSONAL_PHOTO")
+    assert find(app, PHOTO_ERROR.format(n=2))
 
 
-def test_addition_application_beneficiary_can_be_first_time():
+def test_addition_application_beneficiaries_need_photos_too():
     app = build_submittable_application(application_type="ADDITION")
-    son = app.beneficiaries.get(row_number=2)
-    son.is_first_time = True
-    son.save()
-    assert find(app, "beneficiaries[2].documents.BENEFICIARY_PERSONAL_PHOTO")
+    assert validate_for_submission(app).is_valid is True
+    remove_document(app, D.BENEFICIARY_PERSONAL_PHOTO, app.beneficiaries.get(row_number=2))
+    assert find(app, PHOTO_ERROR.format(n=2))
 
 
 # --- national ID front and back ---------------------------------------------------------------
@@ -475,7 +513,8 @@ def test_front_is_still_required_on_its_own(app):
 
 def _add_mother(app, **fields):
     mother = _beneficiary(app, 4, kinship=Kinship.MOTHER, full_name="فاطمة علي أحمد",
-                          birth_year=1960, is_first_time=False, **fields)  # fmt: skip
+                          birth_year=1960, **fields)  # fmt: skip
+    DocumentFactory(application=app, beneficiary=mother, document_type=D.BENEFICIARY_PERSONAL_PHOTO)
     return _with_id_sides(app, mother)
 
 
@@ -502,8 +541,8 @@ def test_a_childs_birth_certificate_does_not_satisfy_it(app):
 
 def test_member_birth_certificate_not_required_without_an_active_mother(app):
     _beneficiary(app, 4, kinship=Kinship.MOTHER, full_name="  ")  # no name: inactive
-    father = _beneficiary(app, 5, kinship=Kinship.FATHER, full_name="محمود", birth_year=1955,
-                          is_first_time=False)  # fmt: skip
+    father = _beneficiary(app, 5, kinship=Kinship.FATHER, full_name="محمود", birth_year=1955)
+    DocumentFactory(application=app, beneficiary=father, document_type=D.BENEFICIARY_PERSONAL_PHOTO)
     _with_id_sides(app, father)
     assert validate_for_submission(app).is_valid is True
 
@@ -521,10 +560,10 @@ def test_female_member_older_child_needs_birth_certificate_and_both_id_sides(
     kinship, birth_year, extra
 ):
     app = ApplicationFactory(doctor=DoctorFactory(gender=Gender.FEMALE))
-    child = _beneficiary(app, 1, kinship=kinship, full_name="ابن العضوة", birth_year=birth_year,
-                         is_first_time=False)  # fmt: skip
+    child = _beneficiary(app, 1, kinship=kinship, full_name="ابن العضوة", birth_year=birth_year)
     prefix = "beneficiaries[1].documents."
-    expected = {D.BIRTH_CERTIFICATE, D.BENEFICIARY_NATIONAL_ID, D.BENEFICIARY_NATIONAL_ID_BACK}
+    expected = {D.BIRTH_CERTIFICATE, D.BENEFICIARY_NATIONAL_ID, D.BENEFICIARY_NATIONAL_ID_BACK,
+                D.BENEFICIARY_PERSONAL_PHOTO}  # fmt: skip
     if extra:
         expected.add(extra)
     missing = {e.field for e in errors_of(app) if e.field.startswith(prefix)}
@@ -534,7 +573,7 @@ def test_female_member_older_child_needs_birth_certificate_and_both_id_sides(
     assert not [e for e in errors_of(app) if e.field.startswith(prefix)]
 
 
-# --- children's birth certificate: required for a female member only -------------------------
+# --- children's birth certificate: female member at any age, minor child below 16 -----------
 
 CHILD_ROWS = [
     (Kinship.SON_MINOR, 2024), (Kinship.SON_MINOR, 2015), (Kinship.SON_MINOR, 2010),
@@ -548,19 +587,41 @@ def _child_errors(app):
     return {e.field for e in errors_of(app) if e.field.startswith("beneficiaries[1].documents.")}
 
 
-@pytest.mark.parametrize(("kinship", "birth_year"), CHILD_ROWS)
-def test_male_member_child_never_needs_a_birth_certificate(kinship, birth_year):
+@pytest.mark.parametrize(
+    ("kinship", "birth_year", "needed"),
+    [(Kinship.SON_MINOR, 2024, True), (Kinship.SON_MINOR, 2011, True),  # ages 2 / 15
+     (Kinship.SON_MINOR, 2010, False), (Kinship.SON_MINOR, 2008, False),  # ages 16 / 18
+     (Kinship.SON_MINOR, None, True),  # unknown age: treated as under 16
+     (Kinship.SON_UNIVERSITY, 2012, False), (Kinship.SON_UNIVERSITY, 2005, False),
+     (Kinship.SON_GRADUATE, 2011, False), (Kinship.SON_GRADUATE, 1998, False)],
+)  # fmt: skip
+def test_male_member_minor_child_needs_a_birth_certificate_below_16(kinship, birth_year, needed):
     app = ApplicationFactory(doctor=DoctorFactory(gender=Gender.MALE))
-    _beneficiary(app, 1, kinship=kinship, full_name="ابن العضو", birth_year=birth_year,
-                 is_first_time=False)  # fmt: skip
-    assert "beneficiaries[1].documents.BIRTH_CERTIFICATE" not in _child_errors(app)
+    child = _beneficiary(app, 1, kinship=kinship, full_name="ابن العضو", birth_year=birth_year)
+    certificate = "beneficiaries[1].documents.BIRTH_CERTIFICATE"
+    assert (certificate in _child_errors(app)) is needed
+    if needed:
+        assert (
+            find(app, certificate).message == "المستفيد ابن العضو: مستند شهادة ميلاد المستفيد مطلوب"
+        )
+        DocumentFactory(application=app, beneficiary=child, document_type=D.BIRTH_CERTIFICATE)
+        assert certificate not in _child_errors(app)
+
+
+def test_male_member_child_aged_16_needs_both_id_sides_instead():
+    app = ApplicationFactory(doctor=DoctorFactory(gender=Gender.MALE))
+    _beneficiary(app, 1, kinship=Kinship.SON_MINOR, full_name="ابن العضو", birth_year=2010)
+    assert _child_errors(app) == {
+        "beneficiaries[1].documents.BENEFICIARY_NATIONAL_ID",
+        "beneficiaries[1].documents.BENEFICIARY_NATIONAL_ID_BACK",
+        "beneficiaries[1].documents.BENEFICIARY_PERSONAL_PHOTO",
+    }
 
 
 @pytest.mark.parametrize(("kinship", "birth_year"), CHILD_ROWS)
 def test_female_member_child_needs_a_birth_certificate_at_any_age(kinship, birth_year):
     app = ApplicationFactory(doctor=DoctorFactory(gender=Gender.FEMALE))
-    child = _beneficiary(app, 1, kinship=kinship, full_name="ابن العضوة", birth_year=birth_year,
-                         is_first_time=False)  # fmt: skip
+    child = _beneficiary(app, 1, kinship=kinship, full_name="ابن العضوة", birth_year=birth_year)
     error = find(app, "beneficiaries[1].documents.BIRTH_CERTIFICATE")
     assert (error.step, error.message) == (
         3,
@@ -570,15 +631,22 @@ def test_female_member_child_needs_a_birth_certificate_at_any_age(kinship, birth
     assert "beneficiaries[1].documents.BIRTH_CERTIFICATE" not in _child_errors(app)
 
 
-def test_male_member_young_children_need_no_documents(app):
-    # Worked example 2: the son (2015) and the daughter (2018) are below the ID threshold.
+def test_male_member_young_children_need_their_birth_certificates(app):
+    # Worked example 2: the son (2015) and the daughter (2018) are below 16.
     for row in (2, 3):
         remove_document(app, D.BIRTH_CERTIFICATE, app.beneficiaries.get(row_number=row))
-    assert validate_for_submission(app).is_valid is True
+    fields = {e.field for e in errors_of(app)}
+    assert fields == {
+        "beneficiaries[2].documents.BIRTH_CERTIFICATE",
+        "beneficiaries[3].documents.BIRTH_CERTIFICATE",
+    }
 
 
-def test_member_gender_change_switches_the_childrens_certificate_requirement(app):
+def test_member_gender_change_switches_an_older_childs_certificate_requirement(app):
     son = app.beneficiaries.get(row_number=2)
+    son.birth_year = 2009  # 17: both ID sides, the certificate is optional for a male member
+    son.save()
+    _with_id_sides(app, son)
     remove_document(app, D.BIRTH_CERTIFICATE, son)
     assert validate_for_submission(app).is_valid is True
     update_doctor(app, gender=Gender.FEMALE)

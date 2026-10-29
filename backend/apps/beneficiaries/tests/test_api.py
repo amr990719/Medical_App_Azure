@@ -54,8 +54,9 @@ def test_create_with_arabic_digits_normalized():
         "BENEFICIARY_NATIONAL_ID_BACK",
         "MARRIAGE_CERTIFICATE",
         "INSURANCE_PRINT",
+        "BENEFICIARY_PERSONAL_PHOTO",
     }
-    assert body["is_first_time"] is None  # not answered: allowed in a draft
+    assert "is_first_time" not in body
     assert body["documents"] == []
     assert "warnings" not in body  # cross-application duplicates are for admins only
 
@@ -243,91 +244,74 @@ def test_admin_gets_403():
     assert client_for(AdminUserFactory()).get(collection(app)).status_code == 403
 
 
-# --- "هل يشترك المستفيد لأول مرة؟" (is_first_time) ----------------------------------------------
+# --- the first-time question is gone; every beneficiary needs a photo ------------------------
 
 
-def test_first_time_answer_is_persisted_on_create_and_reload():
+def test_first_time_answer_is_no_longer_part_of_the_api():
     app = ApplicationFactory()
     client = client_for(app.doctor.user)
-    body = client.post(collection(app), {"kinship": "WIFE", "full_name": "سارة",
-                                         "is_first_time": True}, format="json").json()  # fmt: skip
-    assert body["is_first_time"] is True
-    reloaded = client.get(collection(app)).json()[0]
-    assert reloaded["is_first_time"] is True
+    response = client.post(collection(app), {"kinship": "WIFE", "full_name": "سارة",
+                                             "is_first_time": True}, format="json")  # fmt: skip
+    assert response.status_code == 201
+    assert "is_first_time" not in response.json()
+    assert Beneficiary.objects.get().is_first_time is None  # never stored from the request
     application = client.get(f"/api/v1/applications/{app.pk}/").json()
-    assert application["beneficiaries"][0]["is_first_time"] is True
+    assert "is_first_time" not in application["beneficiaries"][0]
 
 
-def test_first_time_answer_survives_partial_updates_of_other_fields():
+def test_every_beneficiary_photo_slot_is_required_with_its_guidance():
     app = ApplicationFactory()
-    b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, is_first_time=False)
-    client = client_for(app.doctor.user)
-    body = client.patch(item(app, b), {"full_name": "اسم جديد"}, format="json").json()
-    assert (body["full_name"], body["is_first_time"]) == ("اسم جديد", False)
-
-
-def test_first_time_answer_alone_can_be_patched_and_cleared():
-    app = ApplicationFactory()
-    b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, birth_year=2015)
-    client = client_for(app.doctor.user)
-    body = client.patch(item(app, b), {"is_first_time": True}, format="json").json()
-    assert (body["is_first_time"], body["kinship"], body["birth_year"]) == (True, "SON_MINOR", 2015)
+    BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, birth_year=2015)
+    body = client_for(app.doctor.user).get(collection(app)).json()[0]
     photo = next(r for r in body["required_documents"] if r["type"] == "BENEFICIARY_PERSONAL_PHOTO")
-    assert photo["required"] is True
-    assert photo["images_only"] is True
+    assert (photo["required"], photo["images_only"]) == (True, True)
     assert photo["hints"] == [
-        "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة.",
+        "صورة شخصية بخلفية بيضاء مطلوبة لكل مستفيد.",
         "لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات.",
     ]
-    body = client.patch(item(app, b), {"is_first_time": None}, format="json").json()
-    assert body["is_first_time"] is None
-    assert Beneficiary.objects.get(pk=b.pk).is_first_time is None
 
 
-def test_first_time_answer_is_independent_of_the_application_type():
-    app = ApplicationFactory(application_type="ADDITION")
-    body = client_for(app.doctor.user).post(
-        collection(app), {"kinship": "SON_MINOR", "full_name": "مريم", "is_first_time": True},
-        format="json",
-    ).json()  # fmt: skip
-    assert body["is_first_time"] is True
-    first = ApplicationFactory(application_type="FIRST_TIME")
-    body = (
-        client_for(first.doctor.user)
-        .post(collection(first), {"kinship": "SON_MINOR", "full_name": "مريم"}, format="json")
-        .json()
-    )
-    assert body["is_first_time"] is None  # never inferred from FIRST_TIME
-
-
-def test_first_time_answer_rejects_garbage():
+@pytest.mark.parametrize(("birth_year", "required"), [(2024, False), (2023, True)])  # ages 2 / 3
+def test_photo_slot_of_a_young_child(birth_year, required):
     app = ApplicationFactory()
-    response = client_for(app.doctor.user).post(
-        collection(app), {"kinship": "WIFE", "full_name": "سارة", "is_first_time": "ربما"},
-        format="json",
-    )  # fmt: skip
-    assert response.status_code == 400
-    assert "is_first_time" in response.json()["error"]["fields"]
+    BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, birth_year=birth_year)
+    body = client_for(app.doctor.user).get(collection(app)).json()[0]
+    photo = next(r for r in body["required_documents"] if r["type"] == "BENEFICIARY_PERSONAL_PHOTO")
+    assert photo["required"] is required
 
 
-def test_kinship_change_keeps_the_first_time_answer():
-    app = ApplicationFactory()
-    b = BeneficiaryFactory(application=app, kinship=Kinship.SON_MINOR, is_first_time=True)
-    body = (
-        client_for(app.doctor.user)
-        .patch(item(app, b), {"kinship": "SON_UNIVERSITY"}, format="json")
-        .json()
-    )
-    assert body["is_first_time"] is True
-
-
-@pytest.mark.parametrize(("gender", "required"), [("MALE", False), ("FEMALE", True)])
+@pytest.mark.parametrize("gender", ["MALE", "FEMALE"])
 @pytest.mark.parametrize("kinship", ["SON_MINOR", "SON_UNIVERSITY", "SON_GRADUATE"])
-@pytest.mark.parametrize("birth_year", [2024, 2015, 2005])
-def test_child_birth_certificate_slot_follows_the_members_gender(gender, required, kinship,
-                                                                 birth_year):  # fmt: skip
+@pytest.mark.parametrize("birth_year", [2024, 2011, 2010, 2005])  # ages 2 / 15 / 16 / 21
+def test_child_birth_certificate_slot_follows_the_members_gender_and_age(gender, kinship,
+                                                                         birth_year):  # fmt: skip
     app = ApplicationFactory(doctor=DoctorFactory(gender=gender))
     BeneficiaryFactory(application=app, kinship=kinship, birth_year=birth_year)
     body = client_for(app.doctor.user).get(f"/api/v1/applications/{app.pk}/").json()
     slots = {r["type"]: r["required"] for r in body["beneficiaries"][0]["required_documents"]}
-    assert slots["BIRTH_CERTIFICATE"] is required  # always offered, required for a female member
+    # Always offered; required for a female member, and below 16 for a minor child.
+    required = gender == "FEMALE" or (kinship == "SON_MINOR" and 2026 - birth_year < 16)
+    assert slots["BIRTH_CERTIFICATE"] is required
+
+
+def test_birth_year_mismatch_with_arabic_digits_is_reported_beside_the_birth_year():
+    app = ApplicationFactory()
+    client = client_for(app.doctor.user)
+    response = client.post(collection(app), {
+        "kinship": "WIFE", "full_name": "سارة محمود علي", "birth_year": "١٩٨٩",
+        "national_id": "٢٨٨٠٣١٥٠١٠١٢٤٢",
+    }, format="json")  # fmt: skip
+    assert response.status_code == 201  # a draft may hold the mismatch
+    assert (response.json()["birth_year"], response.json()["national_id"]) == (
+        1989,
+        "28803150101242",
+    )
+    errors = client.get(f"/api/v1/applications/{app.pk}/validation/").json()["errors"]
+    mismatch = [e for e in errors if e["field"] == "beneficiaries[1].birth_year"]
+    assert mismatch == [{
+        "step": 2, "field": "beneficiaries[1].birth_year", "code": "BIRTH_YEAR_MISMATCH",
+        "message": "المستفيد سارة محمود علي: سنة الميلاد لا تطابق الرقم القومي",
+    }]  # fmt: skip
+    client.patch(item(app, app.beneficiaries.get()), {"birth_year": "١٩٨٨"}, format="json")
+    errors = client.get(f"/api/v1/applications/{app.pk}/validation/").json()["errors"]
+    assert not [e for e in errors if e["field"] == "beneficiaries[1].birth_year"]

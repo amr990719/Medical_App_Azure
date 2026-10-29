@@ -27,7 +27,7 @@ class AdminDoctorSerializer(serializers.ModelSerializer):
             "id", "email", "full_name", "masked_national_id", "date_of_birth", "birth_year",
             "gender", "religion", "phone_number", "syndicate_type", "sub_syndicate",
             "syndicate_registration_number", "syndicate_registration_year",
-            "treatment_card_number", "governorate", "neighborhood", "address", "created_at",
+            "governorate", "neighborhood", "address", "created_at",
         ]  # fmt: skip
         read_only_fields = fields
 
@@ -54,7 +54,7 @@ class AdminBeneficiarySerializer(serializers.ModelSerializer):
         model = Beneficiary
         fields = [
             "id", "row_number", "kinship", "full_name", "birth_year", "masked_national_id",
-            "national_id", "is_first_time", "is_active", "required_documents", "documents",
+            "national_id", "is_active", "required_documents", "documents",
         ]  # fmt: skip
         read_only_fields = fields
 

@@ -42,6 +42,5 @@ def beneficiary_requirements(beneficiary, application=None) -> list[DocumentRequ
         fiscal_year=application.fiscal_year,
         member_gender=application.doctor.gender or None,
         child_id_age=settings.CHILD_NATIONAL_ID_AGE,
-        is_first_time=beneficiary.is_first_time,
         photo_exempt_child_age=settings.PHOTO_EXEMPT_CHILD_AGE,
     )

@@ -13,6 +13,7 @@ from .models import FeeSchedule
 
 MEMBER_LABEL = "العضو الأصلي"
 ADMIN_FEE_LABEL = "رسوم إدارية"
+SERVICE_FEE_LABEL = "رسوم الخدمة"
 AGE_CAP_NOTE = "تم تطبيق سقف {amount} ج (عمر {age} سنة)"
 INVALID_REGISTRATION_YEAR_MESSAGE = "يرجى إدخال سنة قيد النقابة بشكل صحيح لحساب الاشتراك."
 # A null tier amount means "not eligible" (tier 0 grad_son): never free, never zero.
@@ -51,6 +52,7 @@ class FeeQuote:
     tier: int
     breakdown: list[FeeLine] = field(default_factory=list)
     admin_fee: int = 0
+    service_fee: int = 0
     total: int = 0
     is_valid: bool = True
     error_message: str = ""
@@ -109,8 +111,9 @@ def beneficiary_ineligibility_message(
 
 
 def admin_fee_for(schedule: FeeSchedule, active_beneficiaries: int) -> int:
-    """`admin_fee_base + admin_fee_per_beneficiary × active beneficiaries` (200 + 175 × n)."""
-    return schedule.admin_fee_base + schedule.admin_fee_per_beneficiary * active_beneficiaries
+    """`admin_fee_base + admin_fee_per_beneficiary × (active beneficiaries + 1)`, the + 1 being
+    the member: 200 + 175 × (n + 1)."""
+    return schedule.admin_fee_base + schedule.admin_fee_per_beneficiary * (active_beneficiaries + 1)
 
 
 def calculate_fees(
@@ -161,11 +164,13 @@ def calculate_fees(
 
     admin_fee = admin_fee_for(schedule, len(active))
     breakdown.append(FeeLine(ADMIN_FEE_LABEL, admin_fee))
+    breakdown.append(FeeLine(SERVICE_FEE_LABEL, schedule.service_fee))  # once per application
     return FeeQuote(
         fiscal_year=schedule.fiscal_year,
         tier=tier,
         breakdown=breakdown,
         admin_fee=admin_fee,
+        service_fee=schedule.service_fee,
         total=sum(line.fee for line in breakdown),
         schedule_id=schedule_id,
     )
@@ -197,7 +202,7 @@ def quote_for_application(application, *, schedule: FeeSchedule | None = None) -
 
 # Fields an admin sets on a new version.
 SCHEDULE_FIELDS = (
-    "tier_fees", "tier_boundaries", "admin_fee_base", "admin_fee_per_beneficiary",
+    "tier_fees", "tier_boundaries", "admin_fee_base", "admin_fee_per_beneficiary", "service_fee",
     "age_cap_threshold", "age_cap_amount", "registration_year_min",
 )  # fmt: skip
 

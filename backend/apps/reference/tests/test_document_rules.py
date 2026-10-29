@@ -6,6 +6,7 @@ from apps.reference.constants import CHILD_KINSHIPS, ApplicationType, Gender, Ki
 from apps.reference.constants import DocumentType as D
 from apps.reference.document_rules import (
     DOCUMENT_LABELS,
+    HINT_CHILD_BIRTH_CERTIFICATE_UNDER_AGE,
     HINT_FEMALE_MEMBER_BIRTH_CERTIFICATE,
     HINT_PHOTO,
     HINT_PHOTO_CHILD_EXEMPT,
@@ -99,56 +100,60 @@ def test_member_birth_certificate_is_distinct_from_the_childs():
 
 
 @pytest.mark.parametrize("kinship", [Kinship.HUSBAND, Kinship.WIFE])
-def test_spouse_requires_both_id_sides_marriage_and_insurance_print(kinship):
+def test_spouse_requires_both_id_sides_marriage_insurance_print_and_photo(kinship):
     assert required(reqs_for(kinship, 40)) == ID_SIDES | {
         D.MARRIAGE_CERTIFICATE,
         D.INSURANCE_PRINT,
+        PHOTO,
     }
 
 
 @pytest.mark.parametrize("kinship", [Kinship.MOTHER, Kinship.FATHER])
-def test_parent_requires_both_id_sides(kinship):
+def test_parent_requires_both_id_sides_and_photo(kinship):
     reqs = reqs_for(kinship, 70)
-    assert required(reqs) == ID_SIDES
+    assert required(reqs) == ID_SIDES | {PHOTO}
     assert D.BIRTH_CERTIFICATE not in by_type(reqs)  # the MEMBER's certificate is a member slot
 
 
-def test_male_member_child_under_16_has_only_optional_documents():
+def test_male_member_child_under_16_needs_only_the_birth_certificate_and_photo():
     reqs = reqs_for(Kinship.SON_MINOR, 15)
-    assert required(reqs) == set()
-    assert optional(reqs) == ID_SIDES | {D.BIRTH_CERTIFICATE, PHOTO}
+    assert required(reqs) == {D.BIRTH_CERTIFICATE, PHOTO}
+    assert optional(reqs) == ID_SIDES
 
 
-def test_child_16_with_male_member_needs_both_id_sides_only():
+def test_child_16_with_male_member_needs_both_id_sides_and_photo():
     reqs = reqs_for(Kinship.SON_MINOR, 16)
-    assert required(reqs) == ID_SIDES
+    assert required(reqs) == ID_SIDES | {PHOTO}
     assert by_type(reqs)[D.BIRTH_CERTIFICATE].required is False  # offered, never lost
 
 
 def test_unknown_birth_year_is_treated_as_under_16():
     # Review Focus 3: deterministic requirement even without a birth year.
     reqs = reqs_for(Kinship.SON_MINOR, None)
-    assert required(reqs) == set()
-    assert optional(reqs) == ID_SIDES | {D.BIRTH_CERTIFICATE, PHOTO}
+    assert required(reqs) == {D.BIRTH_CERTIFICATE, PHOTO}
+    assert optional(reqs) == ID_SIDES
     female = reqs_for(Kinship.SON_MINOR, None, member_gender=Gender.FEMALE)
-    assert required(female) == {D.BIRTH_CERTIFICATE}
+    assert required(female) == {D.BIRTH_CERTIFICATE, PHOTO}
 
 
 def test_son_university_adds_university_id():
-    assert required(reqs_for(Kinship.SON_UNIVERSITY, 20)) == ID_SIDES | {D.UNIVERSITY_ID}
-    assert required(reqs_for(Kinship.SON_UNIVERSITY, 15)) == {D.UNIVERSITY_ID}
+    assert required(reqs_for(Kinship.SON_UNIVERSITY, 20)) == ID_SIDES | {D.UNIVERSITY_ID, PHOTO}
+    assert required(reqs_for(Kinship.SON_UNIVERSITY, 15)) == {D.UNIVERSITY_ID, PHOTO}
 
 
 def test_son_graduate_adds_insurance_print():
-    assert required(reqs_for(Kinship.SON_GRADUATE, 25)) == ID_SIDES | {D.INSURANCE_PRINT}
-    assert required(reqs_for(Kinship.SON_GRADUATE, 15)) == {D.INSURANCE_PRINT}
+    assert required(reqs_for(Kinship.SON_GRADUATE, 25)) == ID_SIDES | {D.INSURANCE_PRINT, PHOTO}
+    assert required(reqs_for(Kinship.SON_GRADUATE, 15)) == {D.INSURANCE_PRINT, PHOTO}
 
 
 def test_child_age_threshold_is_configurable():
-    assert required(reqs_for(Kinship.SON_MINOR, 17, child_id_age=18)) == set()
-    assert required(reqs_for(Kinship.SON_MINOR, 18, child_id_age=18)) == ID_SIDES
+    assert required(reqs_for(Kinship.SON_MINOR, 17, child_id_age=18)) == {
+        D.BIRTH_CERTIFICATE,
+        PHOTO,
+    }
+    assert required(reqs_for(Kinship.SON_MINOR, 18, child_id_age=18)) == ID_SIDES | {PHOTO}
     female = reqs_for(Kinship.SON_MINOR, 17, member_gender=Gender.FEMALE, child_id_age=18)
-    assert required(female) == {D.BIRTH_CERTIFICATE}
+    assert required(female) == {D.BIRTH_CERTIFICATE, PHOTO}
 
 
 def test_id_sides_are_separate_slots_with_their_own_labels():
@@ -175,75 +180,101 @@ def test_female_member_children_always_need_a_birth_certificate(kinship, age):
 
 def test_female_member_older_children_keep_their_kinship_documents():
     assert required(reqs_for(Kinship.SON_UNIVERSITY, 20, member_gender=Gender.FEMALE)) == (
-        ID_SIDES | {D.BIRTH_CERTIFICATE, D.UNIVERSITY_ID}
+        ID_SIDES | {D.BIRTH_CERTIFICATE, D.UNIVERSITY_ID, PHOTO}
     )
     assert required(reqs_for(Kinship.SON_GRADUATE, 25, member_gender=Gender.FEMALE)) == (
-        ID_SIDES | {D.BIRTH_CERTIFICATE, D.INSURANCE_PRINT}
+        ID_SIDES | {D.BIRTH_CERTIFICATE, D.INSURANCE_PRINT, PHOTO}
     )
     assert required(reqs_for(Kinship.SON_MINOR, 17, member_gender=Gender.FEMALE)) == (
-        ID_SIDES | {D.BIRTH_CERTIFICATE}
+        ID_SIDES | {D.BIRTH_CERTIFICATE, PHOTO}
     )
 
 
-# --- male member: the child's birth certificate is optional, whatever the age -----------------
+# --- male member: the minor child's birth certificate is required below 16 --------------------
 
 
-@pytest.mark.parametrize("kinship", sorted(CHILD_KINSHIPS))
-@pytest.mark.parametrize("age", [0, 2, 10, 15, 16, 20, 30, None])
-def test_male_member_children_birth_certificate_is_optional(kinship, age):
-    reqs = by_type(reqs_for(kinship, age, member_gender=Gender.MALE))
+@pytest.mark.parametrize(
+    ("age", "needed"),
+    [(0, True), (2, True), (15, True), (16, False), (17, False), (18, False), (None, True)],
+)
+def test_male_member_minor_child_needs_the_birth_certificate_below_16(age, needed):
+    reqs = by_type(reqs_for(Kinship.SON_MINOR, age, member_gender=Gender.MALE))
     certificate = reqs[D.BIRTH_CERTIFICATE]
-    assert certificate.required is False  # offered, so an uploaded certificate stays visible
-    assert certificate.hints == ()
+    assert certificate.required is needed  # always offered: an upload stays visible from 16
+    assert certificate.hints == ((HINT_CHILD_BIRTH_CERTIFICATE_UNDER_AGE,) if needed else ())
     older = age is not None and age >= 16
     assert all(reqs[t].required is older for t in ID_SIDES)  # the ID rule is unchanged
 
 
-@pytest.mark.parametrize("kinship", sorted(CHILD_KINSHIPS))
-def test_unknown_member_gender_does_not_require_the_birth_certificate(kinship):
-    assert by_type(reqs_for(kinship, 5, member_gender=None))[D.BIRTH_CERTIFICATE].required is False
+@pytest.mark.parametrize("kinship", [Kinship.SON_UNIVERSITY, Kinship.SON_GRADUATE])
+@pytest.mark.parametrize("age", [15, 16, 20, 30])
+def test_male_member_other_child_kinships_keep_the_certificate_optional(kinship, age):
+    reqs = by_type(reqs_for(kinship, age, member_gender=Gender.MALE))
+    assert reqs[D.BIRTH_CERTIFICATE].required is False
+    assert reqs[D.BIRTH_CERTIFICATE].hints == ()
+
+
+def test_under_age_hint_names_the_configured_threshold():
+    assert HINT_CHILD_BIRTH_CERTIFICATE_UNDER_AGE == (
+        "شهادة ميلاد الابن/الابنة مطلوبة لمن هم أقل من 16 سنة."
+    )
+    reqs = by_type(reqs_for(Kinship.SON_MINOR, 16, child_id_age=18))
+    assert reqs[D.BIRTH_CERTIFICATE].required is True
+    assert reqs[D.BIRTH_CERTIFICATE].hints == (
+        "شهادة ميلاد الابن/الابنة مطلوبة لمن هم أقل من 18 سنة.",
+    )
+
+
+@pytest.mark.parametrize(("age", "needed"), [(5, True), (15, True), (16, False)])
+def test_unknown_member_gender_minor_child(age, needed):
+    reqs = by_type(reqs_for(Kinship.SON_MINOR, age, member_gender=None))
+    assert reqs[D.BIRTH_CERTIFICATE].required is needed
 
 
 def test_birth_certificate_follows_the_members_gender_not_the_childs():
-    # A child of a male member: optional; a child of a female member: required.
-    assert by_type(reqs_for(Kinship.SON_MINOR, 5))[D.BIRTH_CERTIFICATE].required is False
-    son = reqs_for(Kinship.SON_MINOR, 5, member_gender=Gender.FEMALE)
+    # From 16: a child of a male member: optional; a child of a female member: required.
+    assert by_type(reqs_for(Kinship.SON_MINOR, 17))[D.BIRTH_CERTIFICATE].required is False
+    son = reqs_for(Kinship.SON_MINOR, 17, member_gender=Gender.FEMALE)
     assert by_type(son)[D.BIRTH_CERTIFICATE].required is True
 
 
-def test_male_member_child_certificate_has_no_mother_hint():
-    assert by_type(reqs_for(Kinship.SON_MINOR, 5))[D.BIRTH_CERTIFICATE].hints == ()
+def test_female_member_hint_is_kept_below_16():
+    reqs = by_type(reqs_for(Kinship.SON_MINOR, 5, member_gender=Gender.FEMALE))
+    assert reqs[D.BIRTH_CERTIFICATE].hints == (HINT_FEMALE_MEMBER_BIRTH_CERTIFICATE,)
 
 
-# --- personal photo for first-time beneficiaries ---------------------------------------------
+# --- personal photo for every beneficiary ---------------------------------------------------
 
 
 @pytest.mark.parametrize("kinship", list(Kinship))
-def test_first_time_beneficiary_of_any_kinship_needs_a_photo(kinship):
+def test_every_beneficiary_of_any_kinship_needs_a_photo(kinship):
     age = 30 if kinship not in CHILD_KINSHIPS else 10
-    assert PHOTO in required(reqs_for(kinship, age, is_first_time=True))
+    assert PHOTO in required(reqs_for(kinship, age))
 
 
-@pytest.mark.parametrize("kinship", list(Kinship))
-@pytest.mark.parametrize("answer", [False, None])
-def test_photo_is_optional_unless_first_time(kinship, answer):
-    reqs = by_type(reqs_for(kinship, 10, is_first_time=answer))
-    assert reqs[PHOTO].required is False  # the slot is still offered
+def test_first_time_answer_is_no_longer_an_input():
+    with pytest.raises(TypeError):
+        reqs_for(Kinship.WIFE, 30, is_first_time=False)
 
 
 @pytest.mark.parametrize(("age", "needed"), [(0, False), (2, False), (3, True), (4, True)])
 @pytest.mark.parametrize("kinship", sorted(CHILD_KINSHIPS))
 def test_children_under_3_need_no_photo(kinship, age, needed):
-    assert (PHOTO in required(reqs_for(kinship, age, is_first_time=True))) is needed
+    assert (PHOTO in required(reqs_for(kinship, age))) is needed
+    assert PHOTO in by_type(reqs_for(kinship, age))  # always offered
+
+
+@pytest.mark.parametrize("kinship", [k for k in Kinship if k not in CHILD_KINSHIPS])
+def test_a_young_age_never_exempts_other_kinships(kinship):
+    assert PHOTO in required(reqs_for(kinship, 2))
 
 
 def test_unknown_age_never_grants_the_photo_exemption():
-    assert PHOTO in required(reqs_for(Kinship.SON_MINOR, None, is_first_time=True))
+    assert PHOTO in required(reqs_for(Kinship.SON_MINOR, None))
 
 
 def test_photo_exemption_age_is_configurable():
-    reqs = reqs_for(Kinship.SON_MINOR, 3, is_first_time=True, photo_exempt_child_age=4)
-    assert PHOTO not in required(reqs)
+    assert PHOTO not in required(reqs_for(Kinship.SON_MINOR, 3, photo_exempt_child_age=4))
 
 
 def test_photo_slot_is_image_only_and_has_its_guidance():
@@ -251,7 +282,7 @@ def test_photo_slot_is_image_only_and_has_its_guidance():
     assert son.images_only is True
     assert son.label == "صورة شخصية للمستفيد بخلفية بيضاء"
     assert son.hints == (HINT_PHOTO, HINT_PHOTO_CHILD_EXEMPT)
-    assert HINT_PHOTO == "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة."
+    assert HINT_PHOTO == "صورة شخصية بخلفية بيضاء مطلوبة لكل مستفيد."
     assert HINT_PHOTO_CHILD_EXEMPT == "لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات."
 
 
@@ -265,7 +296,7 @@ def test_member_and_beneficiary_photos_are_distinct_image_only_slots():
     assert PHOTO not in by_type(
         member_document_requirements(application_type=ApplicationType.FIRST_TIME)
     )
-    assert D.PERSONAL_PHOTO not in by_type(reqs_for(Kinship.WIFE, 30, is_first_time=True))
+    assert D.PERSONAL_PHOTO not in by_type(reqs_for(Kinship.WIFE, 30))
 
 
 # --- shared -----------------------------------------------------------------------------------
@@ -338,7 +369,14 @@ def test_reference_data_is_json_serializable_and_complete():
     assert child["birth_certificate"] == {
         "type": "BIRTH_CERTIFICATE",
         "required_when_member_gender": "FEMALE",
+        "required_below_age_for_kinships": ["SON_MINOR"],
         "otherwise": "optional",
+    }
+    assert data["photo"] == {
+        "type": "BENEFICIARY_PERSONAL_PHOTO",
+        "required_when": "always",
+        "exempt_child_below_age": 3,
+        "unknown_age_exempt": False,
     }
     assert [m["type"] for m in data["member"] if m["required"]] == [
         "NATIONAL_ID_FRONT",

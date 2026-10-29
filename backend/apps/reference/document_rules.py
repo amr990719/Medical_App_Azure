@@ -48,11 +48,16 @@ BENEFICIARY_NATIONAL_ID_SIDES: tuple[DocumentType, ...] = (
     DocumentType.BENEFICIARY_NATIONAL_ID_BACK,
 )
 
-HINT_PHOTO = "صورة شخصية بخلفية بيضاء مطلوبة عند الاشتراك لأول مرة."
+HINT_PHOTO = "صورة شخصية بخلفية بيضاء مطلوبة لكل مستفيد."
 HINT_PHOTO_CHILD_EXEMPT = "لا تُطلب صورة شخصية للأطفال أقل من 3 سنوات."
 HINT_FEMALE_MEMBER_BIRTH_CERTIFICATE = (
     "شهادة ميلاد الابن/الابنة مطلوبة لإثبات صلة القرابة بالأم (العضوة) مهما كان العمر."
 )
+_HINT_CHILD_BIRTH_CERTIFICATE_UNDER = "شهادة ميلاد الابن/الابنة مطلوبة لمن هم أقل من {age} سنة."
+HINT_CHILD_BIRTH_CERTIFICATE_UNDER_AGE = _HINT_CHILD_BIRTH_CERTIFICATE_UNDER.format(age=16)
+# Below CHILD_NATIONAL_ID_AGE the birth certificate is the kinship proof of a minor child,
+# whatever the member's gender (owner, 2026-10-29).
+BIRTH_CERTIFICATE_BELOW_AGE_KINSHIPS: frozenset[Kinship] = frozenset({Kinship.SON_MINOR})
 HINT_MEMBER_BIRTH_CERTIFICATE = (
     "مطلوبة لإضافة الأم: شهادة ميلاد العضو الأصلي نفسه، ولا تغني عنها شهادة ميلاد الأم."
 )
@@ -152,30 +157,31 @@ def member_document_requirements(
 
 
 def _child_requirements(
-    age: int | None, member_gender: Gender | None, child_id_age: int
+    kinship: Kinship, age: int | None, member_gender: Gender | None, child_id_age: int
 ) -> list[DocumentRequirement]:
     # Unknown birth year → treated as younger than the threshold (Review Focus 3).
     under_threshold = age is None or age < child_id_age
-    # The certificate proves the kinship to a female member (the MEMBER's gender, never the
-    # child's); for any other member it is offered as optional, so an upload stays visible.
+    # The certificate proves the kinship to a female member at any age (the MEMBER's gender,
+    # never the child's), and that of a minor child below the ID age for any member. Otherwise
+    # it is offered as optional, so an upload stays visible.
     female_member = member_gender == Gender.FEMALE
+    minor_proof = under_threshold and kinship in BIRTH_CERTIFICATE_BELOW_AGE_KINSHIPS
     reqs = [_requirement(t, not under_threshold) for t in BENEFICIARY_NATIONAL_ID_SIDES]
-    hints = (HINT_FEMALE_MEMBER_BIRTH_CERTIFICATE,) if female_member else ()
-    reqs.append(_requirement(DocumentType.BIRTH_CERTIFICATE, female_member, hints=hints))
+    if female_member:
+        hints: tuple[str, ...] = (HINT_FEMALE_MEMBER_BIRTH_CERTIFICATE,)
+    elif minor_proof:
+        hints = (_HINT_CHILD_BIRTH_CERTIFICATE_UNDER.format(age=child_id_age),)
+    else:
+        hints = ()
+    reqs.append(
+        _requirement(DocumentType.BIRTH_CERTIFICATE, female_member or minor_proof, hints=hints)
+    )
     return reqs
 
 
-def photo_required(
-    kinship: Kinship,
-    age: int | None,
-    *,
-    is_first_time: bool | None,
-    photo_exempt_child_age: int,
-) -> bool:
-    """A first-time beneficiary needs a white-background photo; children younger than
-    `photo_exempt_child_age` do not. An unknown age never grants the exemption."""
-    if is_first_time is not True:
-        return False
+def photo_required(kinship: Kinship, age: int | None, *, photo_exempt_child_age: int) -> bool:
+    """Every beneficiary needs a white-background photo, except children younger than
+    `photo_exempt_child_age`. An unknown age never grants the exemption."""
     exempt = kinship in CHILD_KINSHIPS and age is not None and age < photo_exempt_child_age
     return not exempt
 
@@ -187,14 +193,12 @@ def beneficiary_document_requirements(
     fiscal_year: int,
     member_gender: Gender | str | None,
     child_id_age: int = 16,
-    is_first_time: bool | None = None,
     photo_exempt_child_age: int = 3,
 ) -> list[DocumentRequirement]:
     """Required (and optional) document slots for one beneficiary row.
 
     age = fiscal_year − birth_year. Optional slots are returned with `required=False` so the
-    DocumentModal can offer them. The photo slot is always offered; it is required only for a
-    first-time beneficiary (see `photo_required`).
+    DocumentModal can offer them. The photo slot is always offered (see `photo_required`).
     """
     if not kinship:
         return []
@@ -207,7 +211,7 @@ def beneficiary_document_requirements(
     elif rule.base_rule == "parent":
         reqs = [_requirement(t, True) for t in BENEFICIARY_NATIONAL_ID_SIDES]
     else:
-        reqs = _child_requirements(age, gender, child_id_age)
+        reqs = _child_requirements(kinship, age, gender, child_id_age)
     present = {r.document_type for r in reqs}
     reqs.extend(_requirement(t, True) for t in rule.extra_required if t not in present)
 
@@ -217,12 +221,7 @@ def beneficiary_document_requirements(
     reqs.append(
         _requirement(
             DocumentType.BENEFICIARY_PERSONAL_PHOTO,
-            photo_required(
-                kinship,
-                age,
-                is_first_time=is_first_time,
-                photo_exempt_child_age=photo_exempt_child_age,
-            ),
+            photo_required(kinship, age, photo_exempt_child_age=photo_exempt_child_age),
             hints=photo_hints,
         )
     )
@@ -272,6 +271,9 @@ def rules_as_reference_data(*, child_id_age: int, photo_exempt_child_age: int = 
                 "birth_certificate": {
                     "type": DocumentType.BIRTH_CERTIFICATE.value,
                     "required_when_member_gender": Gender.FEMALE.value,
+                    "required_below_age_for_kinships": sorted(
+                        k.value for k in BIRTH_CERTIFICATE_BELOW_AGE_KINSHIPS
+                    ),
                     "otherwise": "optional",
                 },
                 "unknown_birth_year": "below_age",
@@ -279,7 +281,7 @@ def rules_as_reference_data(*, child_id_age: int, photo_exempt_child_age: int = 
         },
         "photo": {
             "type": DocumentType.BENEFICIARY_PERSONAL_PHOTO.value,
-            "required_when": "is_first_time",
+            "required_when": "always",
             "exempt_child_below_age": photo_exempt_child_age,
             "unknown_age_exempt": False,
         },

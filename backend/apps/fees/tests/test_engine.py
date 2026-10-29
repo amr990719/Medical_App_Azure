@@ -1,5 +1,5 @@
-"""Fee engine — worked examples (FY 2026 version 2), tier 0, eligibility, administrative fee
-and boundaries.
+"""Fee engine — worked examples (FY 2026 version 3), tier 0, eligibility, administrative fee,
+service fee and boundaries.
 
 Pure functions: the schedule is an unsaved FeeSchedule instance, no database needed.
 """
@@ -13,6 +13,7 @@ from apps.fees.services import (
     ADMIN_FEE_LABEL,
     INVALID_REGISTRATION_YEAR_MESSAGE,
     MEMBER_LABEL,
+    SERVICE_FEE_LABEL,
     BeneficiaryInput,
     admin_fee_for,
     beneficiary_ineligibility_message,
@@ -41,59 +42,66 @@ def lines(q):
 
 # --- Worked examples (exact breakdown and totals) ---------------------------------------------
 
+A, S = ADMIN_FEE_LABEL, SERVICE_FEE_LABEL
+
 WORKED_EXAMPLES = [
     pytest.param(
         2026, 1990, W, [],
-        0, [(MEMBER_LABEL, 400), (ADMIN_FEE_LABEL, 200)], 200, 600,
-        id="tier0-member-only-600",
+        0, [(MEMBER_LABEL, 400), (A, 375), (S, 800)], 375, 1575,
+        id="tier0-member-only-1575",
     ),
     pytest.param(
         2026, 1990, W, [(Kinship.SON_MINOR, "عمر", 2020)],
-        0, [(MEMBER_LABEL, 400), ("عمر", 550), (ADMIN_FEE_LABEL, 375)], 375, 1325,
-        id="tier0-one-son-minor-1325",
+        0, [(MEMBER_LABEL, 400), ("عمر", 550), (A, 550), (S, 800)], 550, 2300,
+        id="tier0-one-son-minor-2300",
+    ),
+    pytest.param(
+        2026, 1990, W, [(Kinship.SON_UNIVERSITY, "يوسف", 2005)],
+        0, [(MEMBER_LABEL, 400), ("يوسف", 550), (A, 550), (S, 800)], 550, 2300,
+        id="tier0-university-child-priced-as-minor-2300",
     ),
     pytest.param(
         2014, 1985, W, [(Kinship.WIFE, "سارة", 1988), (Kinship.SON_MINOR, "عمر", 2015)],
-        3, [(MEMBER_LABEL, 825), ("سارة", 1100), ("عمر", 605), (ADMIN_FEE_LABEL, 550)], 550,
-        3080,
-        id="tier3-wife-son-3080",
+        3, [(MEMBER_LABEL, 825), ("سارة", 1100), ("عمر", 605), (A, 725), (S, 800)], 725,
+        4055,
+        id="tier3-wife-son-4055",
     ),
     pytest.param(
         2023, 1995, W, [],
-        1, [(MEMBER_LABEL, 660), (ADMIN_FEE_LABEL, 200)], 200, 860,
-        id="ex1-member-only-tier1-860",
+        1, [(MEMBER_LABEL, 660), (A, 375), (S, 800)], 375, 1835,
+        id="ex1-member-only-tier1-1835",
     ),
     pytest.param(
         2014, 1985, W,
         [(Kinship.WIFE, "سارة", 1988), (Kinship.SON_MINOR, "عمر", 2015),
          (Kinship.SON_MINOR, "مريم", 2018)],
         3, [(MEMBER_LABEL, 825), ("سارة", 1100), ("عمر", 605), ("مريم", 605),
-            (ADMIN_FEE_LABEL, 725)], 725, 3860,
-        id="ex2-family-tier3-3860",
+            (A, 900), (S, 800)], 900, 4835,
+        id="ex2-family-tier3-4835",
     ),
     pytest.param(
         1990, 1950, P,
         [(Kinship.WIFE, "فاطمة", 1955), (Kinship.SON_GRADUATE, "خالد", 1995)],
-        4, [(MEMBER_LABEL, 500), ("فاطمة", 500), ("خالد", 1925), (ADMIN_FEE_LABEL, 550)],
-        550, 3475,
-        id="ex3-pensioner-age-caps-3475",
+        4, [(MEMBER_LABEL, 500), ("فاطمة", 500), ("خالد", 1925), (A, 725), (S, 800)],
+        725, 4450,
+        id="ex3-pensioner-age-caps-4450",
     ),
     pytest.param(
         2018, 1990, W,
         [(Kinship.MOTHER, "زينب", 1960), (Kinship.SON_UNIVERSITY, "يوسف", 2005)],
-        2, [(MEMBER_LABEL, 770), ("زينب", 1320), ("يوسف", 1540), (ADMIN_FEE_LABEL, 550)],
-        550, 4180,
-        id="ex4-mother-university-son-tier2-4180",
+        2, [(MEMBER_LABEL, 770), ("زينب", 1320), ("يوسف", 605), (A, 725), (S, 800)],
+        725, 4220,
+        id="ex4-mother-university-son-tier2-4220",
     ),
     pytest.param(
         2023, 1995, W, [(Kinship.WIFE, "", 1996), (Kinship.SON_MINOR, "   ", 2020)],
-        1, [(MEMBER_LABEL, 660), (ADMIN_FEE_LABEL, 200)], 200, 860,
-        id="ex8-kinship-without-name-ignored-admin-200",
+        1, [(MEMBER_LABEL, 660), (A, 375), (S, 800)], 375, 1835,
+        id="ex8-kinship-without-name-ignored-admin-375",
     ),
     pytest.param(
         2023, 1995, W, [(Kinship.FATHER, "محمود", 1950)],
-        1, [(MEMBER_LABEL, 660), ("محمود", 1155), (ADMIN_FEE_LABEL, 375)], 375, 2190,
-        id="ex9-father-76-not-capped-2190",
+        1, [(MEMBER_LABEL, 660), ("محمود", 1155), (A, 550), (S, 800)], 550, 3165,
+        id="ex9-father-76-not-capped-3165",
     ),
 ]  # fmt: skip
 
@@ -110,6 +118,7 @@ def test_worked_examples(reg, born, status, bens, tier, expected_lines, admin_fe
     assert q.tier == tier
     assert lines(q) == expected_lines
     assert q.admin_fee == admin_fee
+    assert q.service_fee == 800
     assert q.total == total
     assert q.total == sum(line.fee for line in q.breakdown)
 
@@ -117,7 +126,9 @@ def test_worked_examples(reg, born, status, bens, tier, expected_lines, admin_fe
 def test_example3_notes_name_the_ages():
     q = quote(1990, 1950, [(Kinship.WIFE, "فاطمة", 1955), (Kinship.SON_GRADUATE, "خالد", 1995)], P)
     notes = [line.note for line in q.breakdown]
-    assert notes == ["تم تطبيق سقف 500 ج (عمر 76 سنة)", "تم تطبيق سقف 500 ج (عمر 71 سنة)", "", ""]
+    assert notes == [
+        "تم تطبيق سقف 500 ج (عمر 76 سنة)", "تم تطبيق سقف 500 ج (عمر 71 سنة)", "", "", "",
+    ]  # fmt: skip
 
 
 # --- Tiers: tier 0, boundaries, pensioner override ---------------------------------------------
@@ -141,8 +152,9 @@ def test_tier_0_uses_the_schedule_fiscal_year_not_the_clock():
 
 def test_valid_tier_0_quote_is_distinct_from_an_invalid_quote():
     valid, invalid = quote(2026, 1990), quote(2027, 1990)
-    assert (valid.tier, valid.is_valid, valid.total) == (0, True, 600)
+    assert (valid.tier, valid.is_valid, valid.total) == (0, True, 1575)
     assert (invalid.tier, invalid.is_valid, invalid.total) == (0, False, 0)
+    assert (invalid.admin_fee, invalid.service_fee) == (0, 0)
 
 
 def test_pensioner_is_always_tier_4_even_when_registered_this_year():
@@ -163,32 +175,57 @@ def test_missing_work_status_is_priced_like_working():
 # --- Tier 0 eligibility (grad_son: null = NOT ELIGIBLE, never free) ---------------------------
 
 
-@pytest.mark.parametrize("kinship", [Kinship.SON_UNIVERSITY, Kinship.SON_GRADUATE])
-def test_tier_0_university_or_graduate_child_makes_the_quote_invalid(kinship):
-    q = quote(2026, 1990, [(Kinship.WIFE, "سارة", 1992), (kinship, "يوسف", 2004)])
+def test_tier_0_graduate_child_makes_the_quote_invalid():
+    q = quote(2026, 1990, [(Kinship.WIFE, "سارة", 1992), (Kinship.SON_GRADUATE, "يوسف", 2000)])
     assert q.is_valid is False
     assert q.tier == 0
     assert q.breakdown == []
-    assert (q.admin_fee, q.total) == (0, 0)
+    assert (q.admin_fee, q.service_fee, q.total) == (0, 0, 0)
     assert q.error_message == (
-        f"المستفيد يوسف: لا يمكن الاشتراك بدرجة القرابة «{kinship.label}» للأعضاء المقيدين "
+        "المستفيد يوسف: لا يمكن الاشتراك بدرجة القرابة «ابن/ابنة (خريج)» للأعضاء المقيدين "
         "في نفس سنة الاشتراك."
     )
 
 
+def test_tier_0_university_child_is_eligible():
+    q = quote(2026, 1990, [(Kinship.WIFE, "سارة", 1992), (Kinship.SON_UNIVERSITY, "يوسف", 2004)])
+    assert q.is_valid is True
+    assert lines(q)[2] == ("يوسف", 550)
+    assert beneficiary_ineligibility_message(SCHEDULE, 0, Kinship.SON_UNIVERSITY, "يوسف") == ""
+
+
+@pytest.mark.parametrize(
+    ("reg_year", "status", "tier", "fee"),
+    [(2026, W, 0, 550), (2025, W, 1, 550), (2020, W, 2, 605), (2015, W, 3, 605),
+     (2010, W, 4, 660), (2026, P, 4, 660)],
+)  # fmt: skip
+def test_university_child_costs_the_same_as_a_minor_child_in_every_tier(
+    reg_year, status, tier, fee
+):
+    university = quote(reg_year, 1980, [(Kinship.SON_UNIVERSITY, "يوسف", 2005)], status)
+    minor = quote(reg_year, 1980, [(Kinship.SON_MINOR, "يوسف", 2015)], status)
+    assert university.tier == minor.tier == tier
+    assert university.breakdown[1].fee == minor.breakdown[1].fee == fee
+    assert university.total == minor.total
+
+
+def test_graduate_child_keeps_its_own_fee_category():
+    for reg_year, fee in ((2025, 1320), (2020, 1540), (2015, 1650), (2010, 1925)):
+        assert lines(quote(reg_year, 1980, [(Kinship.SON_GRADUATE, "خالد", 2000)]))[1] == (
+            "خالد",
+            fee,
+        )
+
+
 def test_tier_0_ineligible_row_without_a_name_is_ignored():
-    q = quote(2026, 1990, [(Kinship.SON_UNIVERSITY, "  ", 2004)])
-    assert (q.is_valid, q.total) == (True, 600)
+    q = quote(2026, 1990, [(Kinship.SON_GRADUATE, "  ", 2000)])
+    assert (q.is_valid, q.total) == (True, 1575)
 
 
-def test_pensioner_registered_this_year_may_add_a_university_child():
-    q = quote(2026, 1960, [(Kinship.SON_UNIVERSITY, "يوسف", 2004)], P)
+def test_pensioner_registered_this_year_may_add_a_graduate_child():
+    q = quote(2026, 1960, [(Kinship.SON_GRADUATE, "يوسف", 2000)], P)
     assert q.is_valid is True
     assert lines(q)[1] == ("يوسف", 1925)
-
-
-def test_university_child_is_eligible_from_tier_1():
-    assert lines(quote(2025, 1990, [(Kinship.SON_GRADUATE, "خالد", 2000)]))[1] == ("خالد", 1320)
 
 
 def test_ineligibility_message_helper():
@@ -198,10 +235,10 @@ def test_ineligibility_message_helper():
     assert "خالد" in beneficiary_ineligibility_message(SCHEDULE, 0, Kinship.SON_GRADUATE, " خالد ")
 
 
-# --- Administrative fee: 200 + 175 × active beneficiaries -------------------------------------
+# --- Administrative fee: 200 + 175 × (active beneficiaries + 1 for the member) ---------------
 
 
-@pytest.mark.parametrize(("count", "fee"), [(0, 200), (1, 375), (2, 550), (3, 725), (10, 1950)])
+@pytest.mark.parametrize(("count", "fee"), [(0, 375), (1, 550), (2, 725), (3, 900), (10, 2125)])
 def test_admin_fee_formula(count, fee):
     assert admin_fee_for(SCHEDULE, count) == fee
     bens = [(Kinship.SON_MINOR, f"ابنة {i}", 2015) for i in range(count)]
@@ -216,13 +253,40 @@ def test_admin_fee_counts_only_active_rows():
         (Kinship.SON_MINOR, "مريم", 2021),
     ]
     q = quote(2023, 1995, bens)
-    assert q.admin_fee == 550
-    assert lines(q) == [(MEMBER_LABEL, 660), ("سارة", 880), ("مريم", 550), (ADMIN_FEE_LABEL, 550)]
+    assert q.admin_fee == 725
+    assert lines(q) == [
+        (MEMBER_LABEL, 660), ("سارة", 880), ("مريم", 550), (ADMIN_FEE_LABEL, 725),
+        (SERVICE_FEE_LABEL, 800),
+    ]  # fmt: skip
 
 
 def test_admin_fee_amounts_come_from_the_schedule():
     custom = fy2026_schedule(admin_fee_base=250, admin_fee_per_beneficiary=100)
-    assert quote(2023, 1995, [(Kinship.WIFE, "سارة", 1996)], schedule=custom).admin_fee == 350
+    assert quote(2023, 1995, [(Kinship.WIFE, "سارة", 1996)], schedule=custom).admin_fee == 450
+
+
+# --- Service fee: a fixed amount per application -----------------------------------------------
+
+
+@pytest.mark.parametrize("count", [0, 1, 2, 5])
+def test_service_fee_is_charged_once_per_application(count):
+    bens = [(Kinship.SON_MINOR, f"ابنة {i}", 2015) for i in range(count)]
+    q = quote(2023, 1995, bens)
+    assert q.service_fee == 800
+    assert [line for line in lines(q) if line[0] == SERVICE_FEE_LABEL] == [(SERVICE_FEE_LABEL, 800)]
+    assert q.total == 660 + 550 * count + 200 + 175 * (count + 1) + 800
+
+
+def test_service_fee_line_comes_directly_after_the_admin_fee():
+    q = quote(2014, 1985, [(Kinship.WIFE, "سارة", 1988)])
+    assert [line.label for line in q.breakdown][-2:] == [ADMIN_FEE_LABEL, SERVICE_FEE_LABEL]
+    assert SERVICE_FEE_LABEL == "رسوم الخدمة"
+
+
+def test_service_fee_amount_comes_from_the_schedule():
+    custom = fy2026_schedule(service_fee=950)
+    q = quote(2023, 1995, schedule=custom)
+    assert (q.service_fee, q.breakdown[-1].fee, q.total) == (950, 950, 660 + 375 + 950)
 
 
 # --- Member age cap boundary ------------------------------------------------------------------
@@ -232,14 +296,14 @@ def test_cap_applies_at_70():
     q = quote(2023, 1956)
     assert q.breakdown[0].fee == 500
     assert q.breakdown[0].note == "تم تطبيق سقف 500 ج (عمر 70 سنة)"
-    assert q.total == 700
+    assert q.total == 500 + 375 + 800
 
 
 def test_cap_does_not_apply_at_69():
     q = quote(2023, 1957)
     assert q.breakdown[0].fee == 660
     assert q.breakdown[0].note == ""
-    assert q.total == 860
+    assert q.total == 660 + 375 + 800
 
 
 def test_tier_0_member_fee_below_the_cap_is_not_raised():
@@ -261,6 +325,7 @@ def test_invalid_registration_year(reg_year):
     assert q.tier == 0
     assert q.breakdown == []
     assert q.admin_fee == 0
+    assert q.service_fee == 0
     assert q.total == 0
     assert q.error_message == INVALID_REGISTRATION_YEAR_MESSAGE
     assert (
@@ -306,7 +371,7 @@ def test_beneficiary_names_are_trimmed_in_labels():
 
 def test_row_without_kinship_is_ignored():
     q = quote(2023, 1995, [(None, "اسم بلا قرابة", 1990)])
-    assert q.total == 860
+    assert q.total == 1835
 
 
 def test_fee_key_per_kinship_tier4():
@@ -316,7 +381,7 @@ def test_fee_key_per_kinship_tier4():
         (Kinship.MOTHER, "g", 1955), (Kinship.FATHER, "h", 1950),
     ])  # fmt: skip
     assert [line.fee for line in q.breakdown] == [
-        935, 1155, 1155, 660, 1925, 1925, 1540, 1540, 200 + 7 * 175,
+        935, 1155, 1155, 660, 660, 1925, 1540, 1540, 200 + 8 * 175, 800,
     ]  # fmt: skip
 
 
@@ -338,11 +403,14 @@ def test_as_dict_shape():
         "tier",
         "breakdown",
         "admin_fee",
+        "service_fee",
         "total",
         "is_valid",
         "error_message",
         "schedule_id",
     }
     assert data["breakdown"][0] == {"label": "العضو الأصلي", "fee": 825, "note": ""}
-    assert data["breakdown"][-1] == {"label": "رسوم إدارية", "fee": 375, "note": ""}
+    assert data["breakdown"][-2] == {"label": "رسوم إدارية", "fee": 550, "note": ""}
+    assert data["breakdown"][-1] == {"label": "رسوم الخدمة", "fee": 800, "note": ""}
+    assert (data["admin_fee"], data["service_fee"], data["total"]) == (550, 800, 825 + 1100 + 1350)
     assert data["schedule_id"] == str(SCHEDULE.id)

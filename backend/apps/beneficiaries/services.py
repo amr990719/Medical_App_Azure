@@ -80,7 +80,6 @@ def upsert_beneficiary(
     birth_year: int | None,
     national_id: str | None,
     actor,
-    is_first_time: bool | None = None,
 ) -> Beneficiary:
     """Create or update the row `row_number`. A kinship change discards that row's documents,
     because the required document set changes (the UI confirms before calling)."""
@@ -100,7 +99,6 @@ def upsert_beneficiary(
     beneficiary.full_name = _collapse(full_name)
     beneficiary.birth_year = birth_year
     beneficiary.national_id = nid
-    beneficiary.is_first_time = is_first_time
     try:
         with transaction.atomic():
             beneficiary.save()
@@ -111,7 +109,7 @@ def upsert_beneficiary(
 
 
 MSG_ROW_TAKEN = "هذا الصف مستخدم لمستفيد آخر"
-BENEFICIARY_FIELDS = ("kinship", "full_name", "birth_year", "national_id", "is_first_time")
+BENEFICIARY_FIELDS = ("kinship", "full_name", "birth_year", "national_id")
 
 
 @transaction.atomic

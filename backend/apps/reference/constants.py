@@ -123,7 +123,7 @@ KINSHIP_FEE_KEY: dict[Kinship, FeeKey] = {
     Kinship.MOTHER: "parent",
     Kinship.FATHER: "parent",
     Kinship.SON_MINOR: "child",
-    Kinship.SON_UNIVERSITY: "grad_son",
+    Kinship.SON_UNIVERSITY: "child",  # priced like a minor child in every tier (2026-10-29)
     Kinship.SON_GRADUATE: "grad_son",
     Kinship.HUSBAND: "spouse",
     Kinship.WIFE: "spouse",

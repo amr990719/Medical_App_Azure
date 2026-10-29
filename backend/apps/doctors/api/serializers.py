@@ -30,7 +30,6 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
     sub_syndicate = CollapsedCharField(max_length=100, allow_blank=True, required=False)
     syndicate_registration_number = DigitsCharField(max_length=32, allow_blank=True, required=False)
     syndicate_registration_year = YearField()
-    treatment_card_number = DigitsCharField(max_length=32, allow_blank=True, required=False)
     governorate = _choice([(g, g) for g in GOVERNORATES])
     neighborhood = CollapsedCharField(max_length=100, allow_blank=True, required=False)
     address = CollapsedCharField(max_length=300, allow_blank=True, required=False)
@@ -41,6 +40,6 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
             "id", "email", "full_name", "national_id", "date_of_birth", "birth_year", "gender",
             "religion", "phone_number", "syndicate_type", "sub_syndicate",
             "syndicate_registration_number", "syndicate_registration_year",
-            "treatment_card_number", "governorate", "neighborhood", "address", "updated_at",
+            "governorate", "neighborhood", "address", "updated_at",
         ]  # fmt: skip
         read_only_fields = ["id", "email", "date_of_birth", "updated_at"]

@@ -46,11 +46,13 @@ def test_seed_submits_the_worked_example_2_application_waiting_for_payment_revie
     assert app.status == ApplicationStatus.SUBMITTED
     assert app.payment_status == PaymentStatus.PENDING_REVIEW
     assert REFERENCE.fullmatch(app.reference_number)
-    # FY 2026 v2, tier 3: 825 + 1100 + 605 + 605 + (200 + 3 × 175)
-    assert (app.fee_snapshot["tier"], app.fee_snapshot["total"]) == (3, 3860)
+    # FY 2026 v3, tier 3: 825 + 1100 + 605 + 605 + (200 + 4 × 175) + 800
+    assert (app.fee_snapshot["tier"], app.fee_snapshot["total"]) == (3, 4835)
     assert app.fee_schedule == FeeSchedule.objects.get(fiscal_year=2026, is_active=True)
-    rows = list(app.beneficiaries.order_by("row_number").values_list("kinship", "is_first_time"))
-    assert rows == [("WIFE", False), ("SON_MINOR", True), ("SON_MINOR", False)]
+    rows = list(app.beneficiaries.order_by("row_number").values_list("kinship", flat=True))
+    assert rows == ["WIFE", "SON_MINOR", "SON_MINOR"]
+    photos = Document.objects.filter(application=app, document_type="BENEFICIARY_PERSONAL_PHOTO")
+    assert photos.count() == 3  # every beneficiary
     types = set(Document.objects.filter(application=app).values_list("document_type", flat=True))
     assert {"NATIONAL_ID_FRONT", "PAYMENT_RECEIPT", "MARRIAGE_CERTIFICATE",
             "BENEFICIARY_NATIONAL_ID_BACK", "BENEFICIARY_PERSONAL_PHOTO"} <= types  # fmt: skip
@@ -64,7 +66,8 @@ def test_seed_gives_the_second_doctor_an_application_needing_correction():
     assert REFERENCE.fullmatch(app.reference_number)
     assert app.reviewed_by.email == "admin@dev.local"
     assert app.doctor.gender == "FEMALE"
-    assert app.fee_snapshot["total"] == 2465  # tier 2: 770 + mother 1320 + (200 + 175)
+    # tier 2: 770 + mother 1320 + (200 + 2 × 175) + 800
+    assert app.fee_snapshot["total"] == 3440
     member_docs = app.documents.filter(beneficiary__isnull=True)
     assert member_docs.filter(document_type="MEMBER_BIRTH_CERTIFICATE").exists()
 
@@ -73,22 +76,23 @@ def test_seed_ensures_the_fy2026_fee_schedule():
     FeeSchedule.objects.all().delete()
     seed()
     schedule = FeeSchedule.objects.get(fiscal_year=2026, is_active=True)
-    # The current (version 2) pricing — never the obsolete version 1 seed.
+    # The current (version 3) pricing — never an obsolete version.
     assert schedule.tier_fees["3"] == {
         "member": 825, "spouse": 1100, "child": 605, "grad_son": 1650, "parent": 1430,
     }  # fmt: skip
     assert schedule.tier_fees["0"]["grad_son"] is None
     assert (schedule.admin_fee_base, schedule.admin_fee_per_beneficiary) == (200, 175)
-    # Even on an empty table the removed version 1 is never recreated.
-    assert schedule.version == 2
+    assert schedule.service_fee == 800
+    # Even on an empty table the removed versions 1 and 2 are never recreated.
+    assert schedule.version == 3
     assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 1
 
 
 def test_seed_keeps_an_existing_active_schedule():
     seed()
-    assert FeeSchedule.objects.get(fiscal_year=2026, is_active=True).version == 2
+    assert FeeSchedule.objects.get(fiscal_year=2026, is_active=True).version == 3
     assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 1
-    assert not FeeSchedule.objects.filter(fiscal_year=2026, version=1).exists()
+    assert not FeeSchedule.objects.filter(fiscal_year=2026, version__in=[1, 2]).exists()
 
 
 def test_seed_is_idempotent():
@@ -97,7 +101,7 @@ def test_seed_is_idempotent():
     seed()
     assert User.objects.filter(email__endswith="@dev.local").count() == 4
     assert {a.pk: a.reference_number for a in InsuranceApplication.objects.all()} == first
-    assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 1  # v2 only
+    assert FeeSchedule.objects.filter(fiscal_year=2026).count() == 1  # v3 only
 
 
 @override_settings(DEV_AUTH_ENABLED=False)

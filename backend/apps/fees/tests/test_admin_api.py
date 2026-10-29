@@ -30,6 +30,7 @@ def fy2026_payload(**overrides) -> dict:
         "tier_boundaries": [5, 10, 15],
         "admin_fee_base": 200,
         "admin_fee_per_beneficiary": 175,
+        "service_fee": 800,
         "age_cap_threshold": 70,
         "age_cap_amount": 500,
         "registration_year_min": 1950,
@@ -38,15 +39,16 @@ def fy2026_payload(**overrides) -> dict:
     return payload
 
 
-def test_list_and_detail_show_version_2_only():
+def test_list_and_detail_show_version_3_only():
     admin = client_for(AdminUserFactory())
     rows = [r for r in admin.get(URL).json()["results"] if r["fiscal_year"] == 2026]
-    assert [(r["version"], r["is_active"]) for r in rows] == [(2, True)]
+    assert [(r["version"], r["is_active"]) for r in rows] == [(3, True)]
     current = admin.get(f"{URL}{rows[0]['id']}/").json()
     assert sorted(current["tier_fees"]) == ["0", "1", "2", "3", "4"]
     assert current["tier_fees"]["3"]["spouse"] == 1100
     assert current["tier_fees"]["0"]["grad_son"] is None
     assert (current["admin_fee_base"], current["admin_fee_per_beneficiary"]) == (200, 175)
+    assert current["service_fee"] == 800
     removed = {"admin_fee_formula", "admin_fee_member_only", "admin_fee_with_beneficiaries"}
     assert removed.isdisjoint(current)
 
@@ -54,22 +56,23 @@ def test_list_and_detail_show_version_2_only():
 def test_new_fee_schedule_version_deactivates_previous_and_keeps_its_amounts():
     admin_user = AdminUserFactory()
     app = build_submittable_application()
-    submit(app, actor=app.doctor.user)  # locks v2
-    payload = fy2026_payload(admin_fee_base=250)
+    submit(app, actor=app.doctor.user)  # locks v3
+    payload = fy2026_payload(admin_fee_base=250, service_fee=950)
     payload["tier_fees"]["1"]["member"] = 650
     response = client_for(admin_user).post(URL, payload, format="json")
     assert response.status_code == 201, response.json()
     body = response.json()
-    assert (body["version"], body["is_active"], body["locked_at"]) == (3, True, None)
+    assert (body["version"], body["is_active"], body["locked_at"]) == (4, True, None)
     assert (body["admin_fee_base"], body["admin_fee_per_beneficiary"]) == (250, 175)
+    assert body["service_fee"] == 950
     assert body["tier_fees"]["0"]["grad_son"] is None
-    v2 = FeeSchedule.objects.get(fiscal_year=2026, version=2)
-    assert v2.is_active is False
-    assert v2.is_locked is True
-    assert (v2.tier_fees["1"]["member"], v2.admin_fee_base) == (660, 200)
+    v3 = FeeSchedule.objects.get(fiscal_year=2026, version=3)
+    assert v3.is_active is False
+    assert v3.is_locked is True
+    assert (v3.tier_fees["1"]["member"], v3.admin_fee_base, v3.service_fee) == (660, 200, 800)
     entry = AuditLog.objects.get(action=AuditAction.FEE_SCHEDULE_CHANGED)
     assert entry.user == admin_user
-    assert entry.metadata["version"] == 3
+    assert entry.metadata["version"] == 4
 
 
 def test_removed_legacy_fields_are_ignored_on_write():
@@ -88,14 +91,15 @@ def test_new_version_drives_live_quotes_but_not_snapshots():
     submitted_app = build_submittable_application()
     submit(submitted_app, actor=submitted_app.doctor.user)
     draft = build_submittable_application(doctor=DoctorFactory())
-    payload = fy2026_payload(admin_fee_per_beneficiary=100)
+    payload = fy2026_payload(admin_fee_per_beneficiary=100, service_fee=900)
     payload["tier_fees"]["3"]["member"] = 900
     admin.post(URL, payload, format="json")
     doctor = client_for(draft.doctor.user)
-    # tier 3: 900 + 1100 + 605 + 605 + (200 + 3 × 100)
-    assert doctor.get(f"/api/v1/applications/{draft.pk}/fees/").json()["total"] == 3710
+    # tier 3: 900 + 1100 + 605 + 605 + (200 + (3 + 1) × 100) + 900
+    assert doctor.get(f"/api/v1/applications/{draft.pk}/fees/").json()["total"] == 4710
     owner = client_for(submitted_app.doctor.user)
-    assert owner.get(f"/api/v1/applications/{submitted_app.pk}/fees/").json()["total"] == 3860
+    # the snapshot on v3: 825 + 1100 + 605 + 605 + (200 + 4 × 175) + 800
+    assert owner.get(f"/api/v1/applications/{submitted_app.pk}/fees/").json()["total"] == 4835
 
 
 @pytest.mark.parametrize(
@@ -113,10 +117,14 @@ def test_new_version_drives_live_quotes_but_not_snapshots():
         lambda p: p.update(admin_fee_base=None),
         lambda p: p.pop("admin_fee_per_beneficiary"),
         lambda p: p.update(admin_fee_per_beneficiary=-5),
+        lambda p: p.update(service_fee=None),
+        lambda p: p.pop("service_fee"),
+        lambda p: p.update(service_fee=-1),
     ],
     ids=["float", "string", "missing-key", "missing-tier", "missing-tier-0", "null-tier-1",
          "null-member", "boundaries", "negative", "null-admin-base", "missing-per-beneficiary",
-         "negative-per-beneficiary"],
+         "negative-per-beneficiary", "null-service-fee", "missing-service-fee",
+         "negative-service-fee"],
 )  # fmt: skip
 def test_invalid_schedule_rejected(mutate):
     payload = fy2026_payload()
