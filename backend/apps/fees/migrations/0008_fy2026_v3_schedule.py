@@ -5,10 +5,16 @@ The rules that changed with it live in the engine: the administrative fee counts
 (`200 + 175 × (active beneficiaries + 1)`) and a university child is priced like a minor child.
 
 By owner decision, earlier quotes are NOT preserved: every FY 2026 application holding a
-`fee_snapshot` is re-priced on version 3 from its current data and points at it (version 3 is
-then locked), and every other FY 2026 version is deleted. Nothing else changes — no other column
-(not even `updated_at`), beneficiaries, documents, audit entries or `submitted_snapshot`. Other
-fiscal years are not touched.
+`fee_snapshot` is re-priced on version 3 and points at it (version 3 is then locked), and every
+other FY 2026 version is deleted. The price is computed from the data the application was
+SUBMITTED with (`submitted_snapshot`: member, application and beneficiaries), never from the
+current rows — an application sent back for correction holds unfinished edits (a cleared
+registration year would give an invalid zero quote). Every replacement quote is checked before
+anything is written. If any application lacks complete submitted data or does not give a valid,
+consistent quote, the migration raises with the list of applications and reasons, and the whole
+migration rolls back: nothing is re-priced, version 2 stays. Nothing else changes — no other
+column (not even `updated_at`), beneficiaries, documents, audit entries or `submitted_snapshot`.
+Other fiscal years are not touched.
 
 The pricing below is a frozen copy of `apps.fees.services.calculate_fees` as of this migration
 (migrations must not import application code that can change later). Idempotent: with version 3
@@ -62,6 +68,66 @@ NOT_ELIGIBLE = (
     "في نفس سنة الاشتراك."
 )
 
+REFUSED = (
+    "fees.0008 stopped: {count} FY {fiscal_year} application(s) cannot be re-priced from the "
+    "data they were submitted with, so nothing was changed (the migration rolled back and "
+    "version 2 is still active). For each application below, restore a complete "
+    "submitted_snapshot (member, application and beneficiaries exactly as submitted) or, if it "
+    "was never really submitted, clear its fee_snapshot and fee_schedule; then run migrate "
+    "again.\n{problems}"
+)
+_SUBMITTED_ROW_KEYS = ("row_number", "kinship", "full_name", "birth_year")
+
+
+class SubmittedDataError(Exception):
+    """The application's submitted data cannot be priced; the message never holds personal data."""
+
+
+def _year_or_none(value) -> bool:
+    return value is None or type(value) is int
+
+
+def submitted_inputs(application) -> dict:
+    """The pricing inputs exactly as submitted, checked for completeness and types."""
+    snapshot = application.submitted_snapshot
+    if not isinstance(snapshot, dict) or not snapshot:
+        raise SubmittedDataError("no submitted_snapshot")
+    for part, kind in (("member", dict), ("application", dict), ("beneficiaries", list)):
+        if not isinstance(snapshot.get(part), kind):
+            raise SubmittedDataError(f"submitted_snapshot lacks {part}")
+    member, submitted = snapshot["member"], snapshot["application"]
+    for key in ("syndicate_registration_year", "birth_year"):
+        if key not in member:
+            raise SubmittedDataError(f"submitted_snapshot lacks member.{key}")
+    if "work_status" not in submitted:
+        raise SubmittedDataError("submitted_snapshot lacks application.work_status")
+    if submitted.get("fiscal_year") != application.fiscal_year:
+        raise SubmittedDataError(
+            f"submitted_snapshot is for fiscal year {submitted.get('fiscal_year')}, "
+            f"not {application.fiscal_year}"
+        )
+    if not _year_or_none(member["birth_year"]):
+        raise SubmittedDataError("member.birth_year must be a whole number or empty")
+    rows = snapshot["beneficiaries"]
+    for row in rows:
+        if not isinstance(row, dict) or any(key not in row for key in _SUBMITTED_ROW_KEYS):
+            raise SubmittedDataError(
+                "a submitted beneficiary lacks one of " + ", ".join(_SUBMITTED_ROW_KEYS)
+            )
+        if type(row["row_number"]) is not int:
+            raise SubmittedDataError("a submitted beneficiary has no whole-number row_number")
+        number = row["row_number"]
+        if not _year_or_none(row["birth_year"]):
+            raise SubmittedDataError(f"row {number}: birth_year must be a whole number or empty")
+        if row["kinship"] and row["kinship"] not in FEE_KEY:
+            raise SubmittedDataError(f"row {number}: unknown kinship {row['kinship']!r}")
+    return {
+        "registration_year": member["syndicate_registration_year"],
+        "member_birth_year": member["birth_year"],
+        "work_status": submitted["work_status"],
+        "beneficiaries": sorted(rows, key=lambda row: row["row_number"]),
+    }
+
 
 def _invalid(schedule, tier: int, message: str) -> dict:
     return {
@@ -92,32 +158,39 @@ def _capped(schedule, fee: int, birth_year) -> tuple[int, str]:
     return fee, ""
 
 
-def quote(schedule, application) -> dict:
-    doctor = application.doctor
-    year = doctor.syndicate_registration_year
-    if not (type(year) is int and schedule.registration_year_min <= year <= schedule.fiscal_year):
-        return _invalid(schedule, 0, INVALID_REGISTRATION_YEAR)
-    tier = _tier(schedule, year, application.work_status)
-    fees = schedule.tier_fees[str(tier)]
-    active = [
-        b
-        for b in application.beneficiaries.order_by("row_number")
-        if b.kinship and (b.full_name or "").strip()
+def _active(submitted) -> list[dict]:
+    return [
+        row
+        for row in submitted["beneficiaries"]
+        if row["kinship"] and isinstance(row["full_name"], str) and row["full_name"].strip()
     ]
-    for b in active:
-        if fees[FEE_KEY[b.kinship]] is None:
+
+
+def _registration_year_valid(schedule, year) -> bool:
+    return type(year) is int and schedule.registration_year_min <= year <= schedule.fiscal_year
+
+
+def quote(schedule, submitted) -> dict:
+    year = submitted["registration_year"]
+    if not _registration_year_valid(schedule, year):
+        return _invalid(schedule, 0, INVALID_REGISTRATION_YEAR)
+    tier = _tier(schedule, year, submitted["work_status"])
+    fees = schedule.tier_fees[str(tier)]
+    active = _active(submitted)
+    for row in active:
+        if fees[FEE_KEY[row["kinship"]]] is None:
             message = NOT_ELIGIBLE.format(
-                name=b.full_name.strip(), kinship=KINSHIP_LABEL[b.kinship]
+                name=row["full_name"].strip(), kinship=KINSHIP_LABEL[row["kinship"]]
             )
             return _invalid(schedule, tier, message)
 
-    member_fee, member_note = _capped(schedule, fees["member"], doctor.birth_year)
+    member_fee, member_note = _capped(schedule, fees["member"], submitted["member_birth_year"])
     breakdown = [{"label": MEMBER_LABEL, "fee": member_fee, "note": member_note}]
-    for b in active:
-        fee, note = fees[FEE_KEY[b.kinship]], ""
-        if b.kinship in SPOUSES:
-            fee, note = _capped(schedule, fee, b.birth_year)
-        breakdown.append({"label": b.full_name.strip(), "fee": fee, "note": note})
+    for row in active:
+        fee, note = fees[FEE_KEY[row["kinship"]]], ""
+        if row["kinship"] in SPOUSES:
+            fee, note = _capped(schedule, fee, row["birth_year"])
+        breakdown.append({"label": row["full_name"].strip(), "fee": fee, "note": note})
     admin_fee = schedule.admin_fee_base + schedule.admin_fee_per_beneficiary * (len(active) + 1)
     breakdown.append({"label": ADMIN_FEE_LABEL, "fee": admin_fee, "note": ""})
     breakdown.append({"label": SERVICE_FEE_LABEL, "fee": schedule.service_fee, "note": ""})
@@ -127,6 +200,39 @@ def quote(schedule, application) -> dict:
         "total": sum(line["fee"] for line in breakdown), "is_valid": True, "error_message": "",
         "schedule_id": str(schedule.pk),
     }  # fmt: skip
+
+
+def quote_problem(schedule, submitted, priced: dict) -> str | None:
+    """Why `priced` must not be saved, or None. Reasons name rows and kinships, never people."""
+    if not priced.get("is_valid"):
+        year = submitted["registration_year"]
+        if not _registration_year_valid(schedule, year):
+            return (
+                f"submitted registration year {year!r} is missing or outside "
+                f"{schedule.registration_year_min}..{schedule.fiscal_year}"
+            )
+        ineligible = [f"row {row['row_number']} ({row['kinship']})" for row in _active(submitted)
+                      if schedule.tier_fees[str(priced.get("tier"))][FEE_KEY[row["kinship"]]]
+                      is None]  # fmt: skip
+        return f"not eligible at tier {priced.get('tier')}: " + ", ".join(ineligible)
+    breakdown = priced.get("breakdown") or []
+    fees = [line.get("fee") for line in breakdown]
+    active = len(_active(submitted))
+    expected_admin = schedule.admin_fee_base + schedule.admin_fee_per_beneficiary * (active + 1)
+    consistent = (
+        priced.get("fiscal_year") == schedule.fiscal_year
+        and priced.get("schedule_id") == str(schedule.pk)
+        and priced.get("tier") in (0, 1, 2, 3, 4)
+        and len(breakdown) == active + 3
+        and all(type(fee) is int and fee >= 0 for fee in fees)
+        and breakdown[0].get("label") == MEMBER_LABEL
+        and breakdown[-2] == {"label": ADMIN_FEE_LABEL, "fee": expected_admin, "note": ""}
+        and breakdown[-1] == {"label": SERVICE_FEE_LABEL, "fee": schedule.service_fee, "note": ""}
+        and priced.get("admin_fee") == expected_admin
+        and priced.get("service_fee") == schedule.service_fee
+        and priced.get("total") == sum(fees) > 0
+    )
+    return None if consistent else "inconsistent quote (lines, fees or total do not add up)"
 
 
 def forwards(apps, schema_editor):
@@ -147,16 +253,32 @@ def forwards(apps, schema_editor):
         InsuranceApplication.objects.select_for_update()
         .filter(fiscal_year=fiscal_year, fee_snapshot__isnull=False)
         .exclude(fee_schedule=v3, fee_snapshot__schedule_id=str(v3.pk))
-        .select_related("doctor")
         .order_by("pk")
     )
-    repriced = 0
+    # Price and check everything first; write only when every application passes.
+    replacements, problems = [], []
     for application in priced:
-        InsuranceApplication.objects.filter(pk=application.pk).update(
-            fee_snapshot=quote(v3, application), fee_schedule=v3
+        try:
+            submitted = submitted_inputs(application)
+            replacement = quote(v3, submitted)
+            problem = quote_problem(v3, submitted, replacement)
+        except SubmittedDataError as error:
+            problem = str(error)
+        label = f"- {application.pk} ({application.reference_number}, {application.status}): "
+        if problem:
+            problems.append(label + problem)
+        else:
+            replacements.append((application.pk, replacement))
+    if problems:
+        raise RuntimeError(
+            REFUSED.format(
+                count=len(problems), fiscal_year=fiscal_year, problems="\n".join(problems)
+            )
         )
-        repriced += 1
-    if repriced and v3.locked_at is None:
+
+    for pk, replacement in replacements:
+        InsuranceApplication.objects.filter(pk=pk).update(fee_snapshot=replacement, fee_schedule=v3)
+    if replacements and v3.locked_at is None:
         FeeSchedule.objects.filter(pk=v3.pk).update(locked_at=timezone.now())
 
     others = FeeSchedule.objects.filter(fiscal_year=fiscal_year).exclude(pk=v3.pk)
