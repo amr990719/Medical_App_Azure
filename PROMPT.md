@@ -480,7 +480,7 @@ Placed BEFORE the member fields so OCR can fill them:
 | Row | Fields |
 |---|---|
 | 1 | `الـنـقـابـة :` radio boxes بشري / صيدلي / أسنان / بيطري (6 cols) · `النقابة الفرعية :` (3) · `رقم قيد النقابة :` (3) |
-| 2 | `سنة قيد النقابة :` (4; a short underline sized for a 4-digit year, not the whole cell) · `حالة العميل :` radio boxes يعمل / معاش / متوفى (8; all three side by side on one row, never wrapped) — the paper's `رقم بطاقة العلاج` was removed (owner requirement of 2026-10-29); the existing registration year takes its place (one field, no duplicate). Underline and single row: owner requirement of 2026-10-30 |
+| 2 | `سنة قيد النقابة :` (4; a short underline sized for a 4-digit year, not the whole cell) · `حالة العميل :` radio boxes يعمل / معاش / متوفى (8; all three side by side on one row, never wrapped; on desktop the group sits at the end of its cell, so the `متوفى` box's left edge is under the left end of the `رقم قيد النقابة` line) — the paper's `رقم بطاقة العلاج` was removed (owner requirement of 2026-10-29); the existing registration year takes its place (one field, no duplicate). Underline and single row: owner requirement of 2026-10-30 |
 | 3 | `أسم العضو :` (8) · `الديانة :` radio boxes مسلم / مسيحي (4) |
 | 4 | `الرقم القومي :` 14-box NidInput (8) · `النوع :` radio boxes ذكر / أنثى (4) |
 | 5 | `سنة الميلاد :` (5) · `محافظة السكن :` select of the 27 governorates (3) · `الحي :` (4) |

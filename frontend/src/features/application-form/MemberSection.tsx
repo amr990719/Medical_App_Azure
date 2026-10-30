@@ -127,6 +127,7 @@ export function MemberSection() {
             disabled={readOnly}
             error={error.workStatus}
             nowrap
+            className="md:justify-end"
           />
         </Cell>
 
