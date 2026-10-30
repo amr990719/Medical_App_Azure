@@ -1332,6 +1332,17 @@ group gets `md:justify-end`, so in RTL it moves to the left end of its 8-column 
   line's left edge at 1280 / 1024 / 768 px (231.5 / 103.5 / 49 px); the three boxes stay on one
   row; no horizontal scroll at 375 px.
 
+### Session 20 (cont. 3) — 2026-10-30 — Alignment deployed to dev
+
+- **Deploy:** PR #13 (CI green: frontend, Playwright) merged as `4f88eac`; it also carried the
+  PR #12 deploy note (`41ed174`). Only the `frontend` workflow ran: run `41070224883` succeeded
+  (deploy-dev; staging/prod skipped). No backend image, no migration.
+- **Post-check:** through the SWA host the SPA and `/api/ready/` answer 200, reference data 401
+  without a session (as designed); the served bundle is the one built locally (`index-6-5BF_kV.js`)
+  and contains `md:justify-end`, `flex-nowrap` and `lineClassName`.
+- **NOT VERIFIED on dev:** the signed-in form (row 2 on screen) — needs an Entra sign-in; on the
+  owner smoke list.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -2076,10 +2087,11 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**Session 20 (D184, member row 2 layout) is merged (PR #12, `2c2de9a`) and deployed to dev**, with
-the Session 19 deploy note; this Session 20 deploy note is on the local branch
-`docs/dev-deploy-2026-10-30`, not pushed. Owner smoke list (step 3) now also covers row 2: a short
-registration-year line and يعمل / معاش / متوفى on one row. **Session 19 (D176–D183)** is merged
+**Session 20 (D184, member row 2 layout) is merged (PR #12, `2c2de9a`; alignment PR #13,
+`4f88eac`) and deployed to dev**; the last deploy note is on the local branch
+`docs/dev-deploy-2026-10-30-align`, not pushed. Owner smoke list (step 3) now also covers row 2: a
+short registration-year line and يعمل / معاش / متوفى on one row, `متوفى` under the left end of the
+`رقم قيد النقابة` line. **Session 19 (D176–D183)** is merged
 (PR #11, `caaeb28`) and deployed to dev; steps 1–2 below are done (see "Session 19 (cont.)"). Next:
 1. **Owner review** of the new rules and answers to Q-B30–Q-B32, Q-T22; then, on confirmation,
    push the branch and open the PR (CI: backend, frontend, Playwright, image).
