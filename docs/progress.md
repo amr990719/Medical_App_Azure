@@ -1318,6 +1318,20 @@ Owner request of 2026-10-30. Local only, branch `feat/member-row2-layout-2026-10
 - **NOT VERIFIED on dev:** the signed-in form (row 2 on screen) — needs an Entra sign-in; added to
   the owner smoke list.
 
+### Session 20 (cont. 2) — 2026-10-30 — Work status aligned under the registration number
+
+Owner change (owner's own edit in the working tree, kept as written): from `md` up the work-status
+group gets `md:justify-end`, so in RTL it moves to the left end of its 8-column cell and the
+`متوفى` box lines up under the left end of the `رقم قيد النقابة` line. Below 768px unchanged
+(label above, start-aligned). Local only, branch `feat/member-row2-align-2026-10-30` from
+`docs/dev-deploy-2026-10-30` (`41ed174`); nothing pushed or deployed.
+
+- **Verification:** a test for the class (red with the line removed, green with it); frontend
+  `vitest` **341 passed**, lint, typecheck, `rtl:check` 0 errors, `build` OK. In the browser
+  against the local compose backend, the `متوفى` box's left edge equals the registration-number
+  line's left edge at 1280 / 1024 / 768 px (231.5 / 103.5 / 49 px); the three boxes stay on one
+  row; no horizontal scroll at 375 px.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
