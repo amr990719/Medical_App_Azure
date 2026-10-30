@@ -12,6 +12,8 @@ export interface DashedFieldProps
   error?: string;
   /** The paper's line under the value: dashed (default) or dotted. */
   underline?: "dashed" | "dotted";
+  /** Width of the line (e.g. `w-24` for a 4-digit year); by default it fills the rest of the row. */
+  lineClassName?: string;
 }
 
 /**
@@ -25,6 +27,7 @@ export function DashedField({
   numeric = false,
   error,
   underline = "dashed",
+  lineClassName,
   maxLength,
   dir,
   inputMode,
@@ -41,7 +44,7 @@ export function DashedField({
       <label htmlFor={inputId} className="shrink-0 font-bold text-charcoal">
         {label}
       </label>
-      <div className="min-w-0 flex-1">
+      <div className={cx("min-w-0", lineClassName ?? "flex-1")}>
         <input
           id={inputId}
           value={value}

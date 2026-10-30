@@ -42,7 +42,8 @@ describe("MemberSection (PROMPT.md §9.4)", () => {
     const year = within(grid).getByRole("textbox", { name: "سنة قيد النقابة :" });
     const cell = year.closest("[class*='md:col-span']");
     // Row 2 is now the registration year and the work status, nothing else.
-    expect(cell).toHaveClass("md:col-span-8");
+    expect(cell).toHaveClass("md:col-span-4");
+    expect(cell?.nextElementSibling).toHaveClass("md:col-span-8");
     expect(cell?.nextElementSibling).toContainElement(screen.getByRole("radiogroup", { name: "حالة العميل :" }));
     expect(within(grid).getAllByRole("textbox", { name: "سنة قيد النقابة :" })).toHaveLength(1);
   });
@@ -59,6 +60,16 @@ describe("MemberSection (PROMPT.md §9.4)", () => {
     expect(within(screen.getByRole("radiogroup", { name: "حالة العميل :" })).getAllByRole("radio")).toHaveLength(3);
     expect(within(screen.getByRole("radiogroup", { name: "الديانة :" })).getAllByRole("radio")).toHaveLength(2);
     expect(within(screen.getByRole("radiogroup", { name: "النوع :" })).getAllByRole("radio")).toHaveLength(2);
+  });
+
+  it("keeps the registration-year line short and the work-status boxes on one row", async () => {
+    await renderInForm(<MemberSection />);
+    const yearLine = screen.getByLabelText("سنة قيد النقابة :").parentElement;
+    expect(yearLine).not.toHaveClass("flex-1");
+    expect(yearLine).toHaveClass("w-24");
+    const workStatus = screen.getByRole("radiogroup", { name: "حالة العميل :" });
+    expect(workStatus).toHaveClass("flex-nowrap");
+    expect(workStatus).not.toHaveClass("flex-wrap");
   });
 
   it("offers the 27 governorates from reference data", async () => {

@@ -57,4 +57,16 @@ describe("DashedField", () => {
     const { container } = render(<DashedField label="الحي :" value="" onChange={() => {}} />);
     expect((container.firstChild as HTMLElement).className).toMatch(/flex-col.*md:flex-row/);
   });
+
+  it("fills the row by default", () => {
+    render(<DashedField label="الحي :" value="" onChange={() => {}} />);
+    expect(screen.getByLabelText("الحي :").parentElement).toHaveClass("flex-1");
+  });
+
+  it("shortens the line to lineClassName instead of filling the row", () => {
+    render(<DashedField label="سنة :" value="" onChange={() => {}} lineClassName="w-24" />);
+    const line = screen.getByLabelText("سنة :").parentElement;
+    expect(line).toHaveClass("w-24");
+    expect(line).not.toHaveClass("flex-1");
+  });
 });
