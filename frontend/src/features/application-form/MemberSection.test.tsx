@@ -72,6 +72,14 @@ describe("MemberSection (PROMPT.md §9.4)", () => {
     expect(workStatus).not.toHaveClass("flex-wrap");
   });
 
+  it("pushes the work-status group to the end (left) on desktop, under the registration-number line", async () => {
+    await renderInForm(<MemberSection />);
+    const group = screen.getByRole("radiogroup", { name: "حالة العميل :" });
+    const field = group.closest("[class*='md:col-span']")?.firstElementChild;
+    expect(field).toHaveClass("md:justify-end");
+    expect(field).not.toHaveClass("justify-end"); // mobile keeps the label above, start-aligned
+  });
+
   it("offers the 27 governorates from reference data", async () => {
     await renderInForm(<MemberSection />);
     const select = screen.getByRole("combobox", { name: "محافظة السكن :" });
