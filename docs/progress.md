@@ -1307,6 +1307,17 @@ Owner request of 2026-10-30. Local only, branch `feat/member-row2-layout-2026-10
   at 1280 px the year line is 96 px holding «2014» and the three boxes share one row, 6 px apart,
   right to left; at 375 px still one row, no horizontal scroll. Screenshot not committed.
 
+### Session 20 (cont.) — 2026-10-30 — Deployed to dev
+
+- **Deploy:** PR #12 (CI green: frontend, Playwright) merged as `2c2de9a`; it also carried the
+  Session 19 deploy note (`6393e4d`). Frontend-only, so only the `frontend` workflow ran: run
+  `41065568191` succeeded (deploy-dev; staging/prod skipped). No backend image, no migration.
+- **Post-check:** through the SWA host the SPA and `/api/ready/` answer 200, reference data 401
+  without a session (as designed); the served bundle is the one built locally (`index-CihXIk0d.js`)
+  and contains `lineClassName`, `flex-nowrap` and `w-24`.
+- **NOT VERIFIED on dev:** the signed-in form (row 2 on screen) — needs an Entra sign-in; added to
+  the owner smoke list.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -2051,9 +2062,11 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**Session 19 (D176–D183) is merged (PR #11, `caaeb28`) and deployed to dev**; steps 1–2 below are
-done (see "Session 19 (cont.)"). This deploy note is on the local branch
-`docs/dev-deploy-2026-10-29`, not pushed. Next:
+**Session 20 (D184, member row 2 layout) is merged (PR #12, `2c2de9a`) and deployed to dev**, with
+the Session 19 deploy note; this Session 20 deploy note is on the local branch
+`docs/dev-deploy-2026-10-30`, not pushed. Owner smoke list (step 3) now also covers row 2: a short
+registration-year line and يعمل / معاش / متوفى on one row. **Session 19 (D176–D183)** is merged
+(PR #11, `caaeb28`) and deployed to dev; steps 1–2 below are done (see "Session 19 (cont.)"). Next:
 1. **Owner review** of the new rules and answers to Q-B30–Q-B32, Q-T22; then, on confirmation,
    push the branch and open the PR (CI: backend, frontend, Playwright, image).
 2. **Pre-deploy check on dev** (read-only, old image): `SELECT fiscal_year, version, is_active,
