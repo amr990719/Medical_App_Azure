@@ -1291,6 +1291,22 @@ nothing pushed or deployed.
   **1270 passed, 1 skipped**; ruff, `makemigrations --check` clean. Frontend `vitest` **335 passed**,
   lint, typecheck, `rtl:check` clean.
 
+### Session 20 — 2026-10-30 — Owner layout change: member row 2
+
+Owner request of 2026-10-30. Local only, branch `feat/member-row2-layout-2026-10-30` from
+`docs/dev-deploy-2026-10-29` (`6393e4d`); nothing pushed or deployed.
+
+- **Row 2 (D184):** the `سنة قيد النقابة` underline is now `w-24` (room for a 4-digit year) instead
+  of filling 8 columns; the cell is 4 columns and `حالة العميل` gets 8, with its three boxes on one
+  row (`RadioBoxGroup nowrap`; the group's existing `gap-1.5`, RTL start-aligned). New props:
+  `DashedField.lineClassName` (default: fill the row) and `RadioBoxGroup.nowrap` (default: wrap).
+  PROMPT.md §9.4 row 2 updated. Fonts, colours and the other rows unchanged.
+- **Verification:** tests first (red: 4, for the two props and the row); frontend `vitest`
+  **340 passed**, lint, typecheck, `rtl:check` 0 errors, `build` OK (existing >500 kB chunk
+  warning). In the browser against the local compose backend (dev login, existing application):
+  at 1280 px the year line is 96 px holding «2014» and the three boxes share one row, 6 px apart,
+  right to left; at 375 px still one row, no horizontal scroll. Screenshot not committed.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1824,6 +1840,9 @@ nothing pushed or deployed.
   beneficiary birth year vs ID) are merged with refused-save errors so that only a non-empty server
   message wins; a cleared one (`undefined`) no longer hides the hint. Submission validation on the
   server stays authoritative.
+- **D184 — Short year line, one-row work status:** per the owner, row 2 is 4 + 8 columns instead of
+  8 + 4; the year line has a fixed width rather than a shorter cell alone, so it stays short at
+  every width. `nowrap` is opt-in and used only for work status (three short labels).
 
 ## Deviations from PROMPT.md
 
