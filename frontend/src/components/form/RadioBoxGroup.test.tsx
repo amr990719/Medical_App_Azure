@@ -75,4 +75,16 @@ describe("RadioBoxGroup", () => {
     );
     expect(screen.getByRole("radiogroup", { name: "النوع :" })).toHaveAccessibleDescription("يرجى اختيار النوع");
   });
+
+  it("wraps its boxes by default", () => {
+    render(<Harness />);
+    expect(screen.getByRole("radiogroup")).toHaveClass("flex-wrap");
+  });
+
+  it("keeps every box on one row when nowrap is set", () => {
+    render(<RadioBoxGroup label="النوع :" name="gender" options={OPTIONS} value="" onChange={() => {}} nowrap />);
+    const group = screen.getByRole("radiogroup", { name: "النوع :" });
+    expect(group).toHaveClass("flex-nowrap");
+    expect(group).not.toHaveClass("flex-wrap");
+  });
 });

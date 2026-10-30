@@ -103,19 +103,21 @@ export function MemberSection() {
           />
         </Cell>
 
-        {/* Row 2 — the syndicate registration year sits where the treatment card number was */}
-        <Cell span={8}>
+        {/* Row 2 — the syndicate registration year sits where the treatment card number was;
+            its line is only as long as a year, which leaves the work status one row of boxes */}
+        <Cell span={4}>
           <DashedField
             label={L.registrationYear}
             value={state.syndicateRegistrationYear}
             onChange={set("syndicateRegistrationYear")}
             numeric
             maxLength={4}
+            lineClassName="w-24"
             readOnly={readOnly}
             error={error.syndicateRegistrationYear}
           />
         </Cell>
-        <Cell span={4}>
+        <Cell span={8}>
           <RadioBoxGroup
             label={L.workStatus}
             name="workStatus"
@@ -124,6 +126,7 @@ export function MemberSection() {
             onChange={set("workStatus")}
             disabled={readOnly}
             error={error.workStatus}
+            nowrap
           />
         </Cell>
 

@@ -1172,6 +1172,25 @@ PROMPT.md, `docs/business-rules.md` and the rules skill were updated). Local onl
 - **NOT VERIFIED on dev:** the signed-in flows (dropdown without «ابنة», female-member certificate,
   FIRST_TIME photo, no print button) — part of the owner smoke list.
 
+### Session 19 (cont.) — 2026-10-29 — Deployed to dev
+
+- **Pre-deploy check** (read-only, old image `15e3ff5`, execution `caj-medsyn-dev-migrate-bwpr70g`,
+  `transaction_read_only = on`): `fees` at 0006, `doctors` at 0001; FY 2026 v2 active, not locked;
+  1 application (DRAFT), 0 fee snapshots, so 0008 had nothing to re-price and could not refuse
+  (D182); 1 stored treatment card number (deleted by `doctors.0002`, as the owner required); 0
+  stored first-time answers.
+- **Deploy:** PR #11 (CI green: backend, frontend, Playwright, image build) merged as `caaeb28`;
+  `backend` run `40891631358` and `frontend` run `40891631488` succeeded (staging/prod skipped).
+  Migrate job execution `caj-medsyn-dev-migrate-80x1mw0` Succeeded; revision
+  `ca-medsyn-dev-api--gcaaeb28aa75b-1` Healthy with 100 % traffic. Through the SWA host
+  `/api/ready/` and the SPA answer 200; reference data answers 401 without a session (as designed).
+- **Post-check** (read-only, new image, execution `caj-medsyn-dev-migrate-2q98xor`): `fees.0008`
+  and `doctors.0002` applied; FY 2026 v3 is the only schedule (active, service fee 800, admin fee
+  200 / 175, not locked — no submission yet); `doctors_doctor.treatment_card_number` absent; 1
+  application, 0 snapshots; `SON_UNIVERSITY` priced on the `child` key.
+- **NOT VERIFIED on dev:** the signed-in flows and the quotes 1,575 / 2,300 / 4,055 on screen — part
+  of the owner smoke list (Next session, step 3).
+
 ### Session 19 — 2026-10-29 — Owner requirements: certificates, photos, fees, treatment card
 
 Owner requirements of 2026-10-29 (they supersede PROMPT.md / business-rules where they conflict;
@@ -1271,6 +1290,22 @@ nothing pushed or deployed.
   missing `submitted_snapshot` → 0008 refused, v2 kept, all six totals unchanged. Backend `pytest`
   **1270 passed, 1 skipped**; ruff, `makemigrations --check` clean. Frontend `vitest` **335 passed**,
   lint, typecheck, `rtl:check` clean.
+
+### Session 20 — 2026-10-30 — Owner layout change: member row 2
+
+Owner request of 2026-10-30. Local only, branch `feat/member-row2-layout-2026-10-30` from
+`docs/dev-deploy-2026-10-29` (`6393e4d`); nothing pushed or deployed.
+
+- **Row 2 (D184):** the `سنة قيد النقابة` underline is now `w-24` (room for a 4-digit year) instead
+  of filling 8 columns; the cell is 4 columns and `حالة العميل` gets 8, with its three boxes on one
+  row (`RadioBoxGroup nowrap`; the group's existing `gap-1.5`, RTL start-aligned). New props:
+  `DashedField.lineClassName` (default: fill the row) and `RadioBoxGroup.nowrap` (default: wrap).
+  PROMPT.md §9.4 row 2 updated. Fonts, colours and the other rows unchanged.
+- **Verification:** tests first (red: 4, for the two props and the row); frontend `vitest`
+  **340 passed**, lint, typecheck, `rtl:check` 0 errors, `build` OK (existing >500 kB chunk
+  warning). In the browser against the local compose backend (dev login, existing application):
+  at 1280 px the year line is 96 px holding «2014» and the three boxes share one row, 6 px apart,
+  right to left; at 375 px still one row, no horizontal scroll. Screenshot not committed.
 
 ## Decisions
 
@@ -1805,6 +1840,9 @@ nothing pushed or deployed.
   beneficiary birth year vs ID) are merged with refused-save errors so that only a non-empty server
   message wins; a cleared one (`undefined`) no longer hides the hint. Submission validation on the
   server stays authoritative.
+- **D184 — Short year line, one-row work status:** per the owner, row 2 is 4 + 8 columns instead of
+  8 + 4; the year line has a fixed width rather than a shorter cell alone, so it stays short at
+  every width. `nowrap` is opt-in and used only for work status (three short labels).
 
 ## Deviations from PROMPT.md
 
@@ -2013,8 +2051,9 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**Branch `feat/owner-requirements-2026-10-29` (Session 19, D176–D183) is local only** — not pushed,
-no PR, not deployed. Dev still runs `15e3ff5`. Next:
+**Session 19 (D176–D183) is merged (PR #11, `caaeb28`) and deployed to dev**; steps 1–2 below are
+done (see "Session 19 (cont.)"). This deploy note is on the local branch
+`docs/dev-deploy-2026-10-29`, not pushed. Next:
 1. **Owner review** of the new rules and answers to Q-B30–Q-B32, Q-T22; then, on confirmation,
    push the branch and open the PR (CI: backend, frontend, Playwright, image).
 2. **Pre-deploy check on dev** (read-only, old image): `SELECT fiscal_year, version, is_active,

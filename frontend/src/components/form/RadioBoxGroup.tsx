@@ -14,6 +14,8 @@ export interface RadioBoxGroupProps<T extends string> {
   onChange: (value: T) => void;
   disabled?: boolean;
   error?: string;
+  /** Keep every box on one row instead of wrapping (short option lists only). */
+  nowrap?: boolean;
   className?: string;
 }
 
@@ -29,6 +31,7 @@ export function RadioBoxGroup<T extends string>({
   onChange,
   disabled = false,
   error,
+  nowrap = false,
   className,
 }: RadioBoxGroupProps<T>) {
   const labelId = useId();
@@ -45,7 +48,7 @@ export function RadioBoxGroup<T extends string>({
           aria-labelledby={labelId}
           aria-describedby={error ? errorId : undefined}
           aria-invalid={error ? true : undefined}
-          className="flex flex-wrap gap-1.5"
+          className={cx("flex gap-1.5", nowrap ? "flex-nowrap" : "flex-wrap")}
         >
           {options.map((option) => {
             const checked = option.value === value;
