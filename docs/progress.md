@@ -1343,6 +1343,37 @@ group gets `md:justify-end`, so in RTL it moves to the left end of its 8-column 
 - **NOT VERIFIED on dev:** the signed-in form (row 2 on screen) — needs an Entra sign-in; on the
   owner smoke list.
 
+### Session 21 — 2026-10-31 — Custom domain `neqabacare.com` on dev (D185)
+
+Scope set by the user: serve the existing dev app at `https://neqabacare.com` (canonical) with
+`www` redirected to it, via Cloudflare DNS + Azure. No code change, no new Azure resource.
+- **Cloudflare** (zone `neqabacare.com`, Free plan, active; it had **no DNS records**, so nothing
+  was replaced): TXT `_dnsauth` and TXT `@` (SWA apex validation token), CNAME `@` → SWA default
+  host (**DNS-only**, CNAME flattening), CNAME `www` → SWA default host (**proxied**, only for the
+  redirect). Zone settings: SSL **Full (strict)**, Always Use HTTPS on, minimum TLS 1.2. Single
+  Redirect rule `www.neqabacare.com` → `https://neqabacare.com${path}`, 301, query kept.
+- **Static Web App** `swa-medsyn-dev-yoepoxdsywea2`: custom domains `neqabacare.com` (TXT
+  validation) and `www.neqabacare.com` (CNAME delegation, validated before `www` was proxied),
+  both **Ready**, SWA-managed DigiCert certificates until 2027-04-30 (auto-renewed by SWA).
+  Not set as the SWA "default domain" (portal-only action, see Q-T24).
+- **Entra** app `medical-syndicates-dev`: added `https://neqabacare.com/api/v1/auth/callback/`
+  and `https://neqabacare.com/signed-out` through Graph; the SWA-host and localhost URIs are kept.
+- **Container App** `ca-medsyn-dev-api`: `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`,
+  `ENTRA_REDIRECT_URI`, `ENTRA_POST_LOGOUT_REDIRECT_URI` set to what Bicep computes for
+  `publicHostname=neqabacare.com` (the SWA host stays allowed and trusted); revision
+  `--0000004` Healthy, 100 % traffic, same image `caaeb28`. GitHub `dev` variable
+  `PUBLIC_HOSTNAME=neqabacare.com` set so the next infrastructure run keeps these values.
+- **Verified:** 1.1.1.1 / 8.8.8.8 resolve the apex to SWA and `www` to Cloudflare;
+  `http://neqabacare.com` → 301 https; `https://neqabacare.com/`, `/doctor/form`, `/api/health/`,
+  `/api/ready/` 200, `/api/v1/reference-data/` 401 (signed out, by design); `www` (http and https)
+  → one 301 from Cloudflare to the apex with path and query; certificates valid (apex and `www`
+  on SWA: DigiCert; `www` at the Cloudflare edge: Let's Encrypt universal); `/api/v1/auth/login/`
+  302 to `medicalsyndicates.ciamlogin.com` with `redirect_uri=https://neqabacare.com/api/v1/auth/callback/`
+  and PKCE S256, the authorize page renders without an AADSTS error; the session cookie is
+  `Secure`/`HttpOnly`; in a browser the SPA calls `/api/v1/auth/me/` same-origin (401 signed out).
+- **NOT VERIFIED:** a full sign-in and a CSRF-protected POST on `neqabacare.com` (needs an Entra
+  user); on the owner smoke list.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1879,6 +1910,14 @@ group gets `md:justify-end`, so in RTL it moves to the left end of its 8-column 
 - **D184 — Short year line, one-row work status:** per the owner, row 2 is 4 + 8 columns instead of
   8 + 4; the year line has a fixed width rather than a shorter cell alone, so it stays short at
   every width. `nowrap` is opt-in and used only for work status (three short labels).
+- **D185 — Apex DNS-only, `www` proxied only to redirect:** the apex is not proxied through
+  Cloudflare. A proxy would add a third `X-Forwarded-For` hop (with `TRUSTED_PROXY_COUNT=2` the
+  anonymous `auth_callback` throttle would count per Cloudflare edge IP), would stand in front of
+  SWA's managed certificate (a renewal failure under Full (strict) is a 526 outage), and protects
+  little while the `*.azurestaticapps.net` origin stays public. SWA Standard already serves from
+  its own edge with TLS. `www` is proxied only so a Cloudflare Single Redirect answers it; the
+  origin is never contacted for `www`. Proxying the apex later needs `TRUSTED_PROXY_COUNT=3`
+  (after Q-T13 is verified) and an origin certificate that stays valid.
 
 ## Deviations from PROMPT.md
 
@@ -2084,8 +2123,15 @@ confirmed by the organization). Technical/environment questions for the user:
   are already committed (each migration is its own transaction): the old revision keeps serving
   with the card column gone (Q-T22 window) until the listed applications are fixed and the migrate
   job is re-run. The pre-deploy query (Next session, step 2) is there to catch this first.
+- **Q-T24** Since D185 the Entra redirect URI is `https://neqabacare.com/...`, so a sign-in started
+  on the old `victorious-meadow-…azurestaticapps.net` host returns to `neqabacare.com` without its
+  session and fails. Owner choice: in the portal, Static Web App → Custom domains →
+  `neqabacare.com` → **Set default** (Microsoft documents no CLI/REST for it). SWA then 301s the
+  old host (and `www`) to the apex. Not done: it changes what the old URL serves.
 
 ## Next session starts with
+
+**Session 21 (D185):** dev is live at `https://neqabacare.com` (`www` → apex 301); Q-T24 open.
 
 **Session 20 (D184, member row 2 layout) is merged (PR #12, `2c2de9a`; alignment PR #13,
 `4f88eac`) and deployed to dev**; the last deploy note is on the local branch
