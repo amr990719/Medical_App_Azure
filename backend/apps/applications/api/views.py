@@ -18,7 +18,8 @@ from apps.applications.validation import validate_for_submission
 from apps.beneficiaries.models import Beneficiary
 from apps.common.exceptions import ValidationFailed
 from apps.doctors.services import get_or_create_doctor
-from apps.documents.models import Document
+from apps.documents.models import DUES_RECEIPT_TYPE, Document
+from apps.dues.models import DuesReceipt, SyndicateDuesRequest
 from apps.fees.services import NoActiveFeeSchedule, quote_for_application
 
 from .serializers import (
@@ -37,6 +38,7 @@ def doctor_applications(user):
 
 def with_details(queryset):
     active_documents = Document.objects.order_by("created_at")
+    receipts = DuesReceipt.objects.select_related("document", "reviewed_by").order_by("created_at")
     return queryset.select_related("doctor").prefetch_related(
         Prefetch(
             "beneficiaries",
@@ -44,7 +46,14 @@ def with_details(queryset):
                 Prefetch("documents", queryset=active_documents)
             ),
         ),
-        Prefetch("documents", queryset=active_documents),
+        # Form documents only: dues receipts belong to their request (`dues_requests`).
+        Prefetch("documents", queryset=active_documents.exclude(document_type=DUES_RECEIPT_TYPE)),
+        Prefetch(
+            "dues_requests",
+            queryset=SyndicateDuesRequest.objects.select_related("created_by", "resolved_by")
+            .order_by("created_at")
+            .prefetch_related(Prefetch("receipts", queryset=receipts)),
+        ),
     )
 
 

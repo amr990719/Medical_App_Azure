@@ -269,3 +269,66 @@ export const adminHandlers = {
   audit: (id: string = ADMIN_APP_ID, audit: ApiPage<Schemas["AuditEntry"]> = adminAudit) =>
     http.get(`${API}/admin/applications/${id}/audit/`, () => HttpResponse.json(audit)),
 };
+
+// ---- Additional syndicate dues ----------------------------------------------------------------
+
+export type ApiDuesRequest = Schemas["DuesRequest"];
+export type ApiDuesReceipt = Schemas["DuesReceipt"];
+export type ApiAdminDuesRequest = Schemas["AdminDuesRequest"];
+export type ApiAdminDuesReceipt = Schemas["AdminDuesReceipt"];
+
+export const DUES_ID = "7d0e0c4a-0000-4000-8000-0000000000d1";
+
+export function apiDuesReceipt(overrides: Partial<ApiDuesReceipt> = {}): ApiDuesReceipt {
+  const id = overrides.id ?? "r-1";
+  return {
+    id,
+    status: "PENDING_REVIEW",
+    rejection_reason: "",
+    created_at: "2026-11-01T10:00:00+02:00",
+    reviewed_at: null,
+    document: apiDocument({
+      id: `doc-${id}`,
+      document_type: "SYNDICATE_DUES_RECEIPT",
+      original_filename: "dues.jpg",
+      content_type: "image/jpeg",
+    }),
+    ...overrides,
+  };
+}
+
+export function apiDuesRequest(overrides: Partial<ApiDuesRequest> = {}): ApiDuesRequest {
+  return {
+    id: DUES_ID,
+    amount: "1250.50",
+    reason: "اشتراك النقابة الفرعية لعام 2026",
+    status: "REQUESTED",
+    created_at: "2026-11-01T09:00:00+02:00",
+    resolved_at: null,
+    receipts: [],
+    can_upload_receipt: true,
+    ...overrides,
+  };
+}
+
+export function apiAdminDuesReceipt(overrides: Partial<ApiAdminDuesReceipt> = {}): ApiAdminDuesReceipt {
+  return { ...apiDuesReceipt(overrides), reviewed_by_email: null, ...overrides };
+}
+
+export function apiAdminDuesRequest(overrides: Partial<ApiAdminDuesRequest> = {}): ApiAdminDuesRequest {
+  const member = apiDuesRequest();
+  return {
+    id: member.id,
+    amount: member.amount,
+    reason: member.reason,
+    status: member.status,
+    created_at: member.created_at,
+    resolved_at: member.resolved_at,
+    receipts: [],
+    created_by_email: "admin@dev.local",
+    resolved_by_email: null,
+    cancellation_reason: "",
+    allowed_actions: ["CANCEL"],
+    ...overrides,
+  };
+}

@@ -14,6 +14,8 @@ class Transition:
     actor_role: Role
     requires_notes: bool = False
     requires_payment_confirmed: bool = False
+    # Every additional syndicate dues request confirmed or cancelled (apps.dues).
+    requires_dues_settled: bool = False
 
 
 ALLOWED: dict[tuple[str, str], Transition] = {
@@ -24,7 +26,9 @@ ALLOWED: dict[tuple[str, str], Transition] = {
     (S.SUBMITTED, S.UNDER_REVIEW): Transition(Role.ADMIN),
     (S.SUBMITTED, S.NEEDS_CORRECTION): Transition(Role.ADMIN, requires_notes=True),
     (S.UNDER_REVIEW, S.NEEDS_CORRECTION): Transition(Role.ADMIN, requires_notes=True),
-    (S.UNDER_REVIEW, S.APPROVED): Transition(Role.ADMIN, requires_payment_confirmed=True),
+    (S.UNDER_REVIEW, S.APPROVED): Transition(
+        Role.ADMIN, requires_payment_confirmed=True, requires_dues_settled=True
+    ),
     (S.SUBMITTED, S.REJECTED): Transition(Role.ADMIN, requires_notes=True),
     (S.UNDER_REVIEW, S.REJECTED): Transition(Role.ADMIN, requires_notes=True),
 }

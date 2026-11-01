@@ -25,7 +25,7 @@ Where two PROMPT.md sections disagree, the more specific one wins.
 ```text
 backend/        Django 5 LTS + DRF, Python 3.12+, PostgreSQL (psycopg 3), Gunicorn
   config/settings/{base,development,test,production}.py
-  apps/{accounts,doctors,applications,beneficiaries,documents,fees,ocr,reference,audit}
+  apps/{accounts,doctors,applications,beneficiaries,documents,dues,fees,ocr,reference,audit}
 frontend/       React + TypeScript (strict) + Vite + Tailwind, Arabic RTL, TanStack Query, RHF + Zod
 infrastructure/ Bicep modules, parameters, Entra scripts
 .github/        GitHub Actions (frontend.yml, backend.yml, infrastructure.yml)

@@ -11,12 +11,20 @@ const timeFormat = new Intl.DateTimeFormat("ar-EG", { hour: "2-digit", minute: "
 
 /** A short, value-free description of what changed (metadata never holds personal data, §39). */
 function detail(entry: AuditEntry, reference: ReferenceData | undefined): string {
-  const { from, to, documentType } = entry.metadata as { from?: string; to?: string; documentType?: DocumentType };
+  const { from, to, documentType, decision } = entry.metadata as {
+    from?: string;
+    to?: string;
+    documentType?: DocumentType;
+    decision?: string;
+  };
   if (entry.action === "APPLICATION_STATUS_CHANGED" && from && to) {
     return `${choiceLabel(reference?.statuses, from)} ← ${choiceLabel(reference?.statuses, to)}`;
   }
   if (entry.action === "PAYMENT_STATUS_CHANGED" && from && to) {
     return `${choiceLabel(reference?.paymentStatuses, from)} ← ${choiceLabel(reference?.paymentStatuses, to)}`;
+  }
+  if (entry.action === "DUES_RECEIPT_REVIEWED" && decision) {
+    return choiceLabel(reference?.duesReceiptStatuses, decision);
   }
   if (documentType) return documentTypeLabel(reference, documentType);
   return "";

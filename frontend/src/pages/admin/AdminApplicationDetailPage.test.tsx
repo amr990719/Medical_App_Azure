@@ -185,7 +185,8 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     await open();
     const actions = screen.getByRole("region", { name: "إجراءات المراجعة" });
     const labels = within(actions).getAllByRole("button").map((b) => b.textContent?.trim());
-    expect(labels).toEqual(["بدء المراجعة", "طلب تصحيح", "رفض الطلب"]);
+    // The dues request (server: can_request_dues) sits right after the correction request.
+    expect(labels).toEqual(["بدء المراجعة", "طلب تصحيح", "طلب سداد مستحقات نقابية", "رفض الطلب"]);
   });
 
   it("requires review notes for a correction and sends them", async () => {

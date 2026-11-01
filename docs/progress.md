@@ -1332,6 +1332,141 @@ group gets `md:justify-end`, so in RTL it moves to the left end of its 8-column 
   line's left edge at 1280 / 1024 / 768 px (231.5 / 103.5 / 49 px); the three boxes stay on one
   row; no horizontal scroll at 375 px.
 
+### Session 20 (cont. 3) — 2026-10-30 — Alignment deployed to dev
+
+- **Deploy:** PR #13 (CI green: frontend, Playwright) merged as `4f88eac`; it also carried the
+  PR #12 deploy note (`41ed174`). Only the `frontend` workflow ran: run `41070224883` succeeded
+  (deploy-dev; staging/prod skipped). No backend image, no migration.
+- **Post-check:** through the SWA host the SPA and `/api/ready/` answer 200, reference data 401
+  without a session (as designed); the served bundle is the one built locally (`index-6-5BF_kV.js`)
+  and contains `md:justify-end`, `flex-nowrap` and `lineClassName`.
+- **NOT VERIFIED on dev:** the signed-in form (row 2 on screen) — needs an Entra sign-in; on the
+  owner smoke list.
+
+### Session 21 — 2026-10-31 — Custom domain `neqabacare.com` on dev (D185)
+
+Scope set by the user: serve the existing dev app at `https://neqabacare.com` (canonical) with
+`www` redirected to it, via Cloudflare DNS + Azure. No code change, no new Azure resource.
+- **Cloudflare** (zone `neqabacare.com`, Free plan, active; it had **no DNS records**, so nothing
+  was replaced): TXT `_dnsauth` and TXT `@` (SWA apex validation token), CNAME `@` → SWA default
+  host (**DNS-only**, CNAME flattening), CNAME `www` → SWA default host (**proxied**, only for the
+  redirect). Zone settings: SSL **Full (strict)**, Always Use HTTPS on, minimum TLS 1.2. Single
+  Redirect rule `www.neqabacare.com` → `https://neqabacare.com${path}`, 301, query kept.
+- **Static Web App** `swa-medsyn-dev-yoepoxdsywea2`: custom domains `neqabacare.com` (TXT
+  validation) and `www.neqabacare.com` (CNAME delegation, validated before `www` was proxied),
+  both **Ready**, SWA-managed DigiCert certificates until 2027-04-30 (auto-renewed by SWA).
+  Not set as the SWA "default domain" (portal-only action, see Q-T24).
+- **Entra** app `medical-syndicates-dev`: added `https://neqabacare.com/api/v1/auth/callback/`
+  and `https://neqabacare.com/signed-out` through Graph; the SWA-host and localhost URIs are kept.
+- **Container App** `ca-medsyn-dev-api`: `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`,
+  `ENTRA_REDIRECT_URI`, `ENTRA_POST_LOGOUT_REDIRECT_URI` set to what Bicep computes for
+  `publicHostname=neqabacare.com` (the SWA host stays allowed and trusted); revision
+  `--0000004` Healthy, 100 % traffic, same image `caaeb28`. GitHub `dev` variable
+  `PUBLIC_HOSTNAME=neqabacare.com` set so the next infrastructure run keeps these values.
+- **Verified:** 1.1.1.1 / 8.8.8.8 resolve the apex to SWA and `www` to Cloudflare;
+  `http://neqabacare.com` → 301 https; `https://neqabacare.com/`, `/doctor/form`, `/api/health/`,
+  `/api/ready/` 200, `/api/v1/reference-data/` 401 (signed out, by design); `www` (http and https)
+  → one 301 from Cloudflare to the apex with path and query; certificates valid (apex and `www`
+  on SWA: DigiCert; `www` at the Cloudflare edge: Let's Encrypt universal); `/api/v1/auth/login/`
+  302 to `medicalsyndicates.ciamlogin.com` with `redirect_uri=https://neqabacare.com/api/v1/auth/callback/`
+  and PKCE S256, the authorize page renders without an AADSTS error; the session cookie is
+  `Secure`/`HttpOnly`; in a browser the SPA calls `/api/v1/auth/me/` same-origin (401 signed out).
+- **NOT VERIFIED:** a full sign-in and a CSRF-protected POST on `neqabacare.com` (needs an Entra
+  user); on the owner smoke list.
+
+### Session 22 — 2026-11-01 — Additional syndicate dues (مستحقات نقابية)
+
+Owner requirement of 2026-11-01 (PROMPT.md §18.1 added; §16.2, §19, §24, §39, §44,
+`docs/business-rules.md` §4a, `docs/database.md`, `docs/api.md`, the rules skill and the CLAUDE.md
+layout updated). Local only, branch `feat/syndicate-dues-2026-11-01` from
+`docs/dev-deploy-2026-10-30-align` (`186df5c`); nothing pushed or deployed.
+
+- **New app `apps/dues` (D186):** `SyndicateDuesRequest` (amount `numeric(10,2)` > 0, reason,
+  status `REQUESTED / PENDING_REVIEW / REJECTED / CONFIRMED / CANCELLED`, `created_by`,
+  `resolved_by/at`, `cancellation_reason`) and `DuesReceipt` (request, one `Document`, status
+  `PENDING_REVIEW / CONFIRMED / REJECTED / CANCELLED`, `rejection_reason`, `reviewed_by/at`).
+  CHECKs: positive amount, reason present, cancellation reason ⇔ CANCELLED, resolver ⇔ final,
+  rejection reason ⇔ REJECTED, reviewer ⇔ decided; partial UNIQUEs: one pending and one confirmed
+  receipt per request. Enums in `reference/constants.py`, served in reference data
+  (`dues_request_statuses`, `dues_receipt_statuses`).
+- **Services (`dues/services.py`, the only writer):** `create_dues_request` (admin; SUBMITTED /
+  UNDER_REVIEW / NEEDS_CORRECTION; changes nothing on the application), `submit_dues_receipt`
+  (owner only; request REQUESTED or REJECTED; no edit / resubmission), `review_dues_receipt`
+  (admin; `receipt_id` must be the receipt waiting; rejection needs a reason), `cancel_dues_request`
+  (admin; recorded reason; a waiting receipt is closed `CANCELLED`). Every mutation locks the
+  application row first (shared with `transition`), then the request (D187). Audit:
+  `DUES_REQUEST_CREATED`, `DUES_RECEIPT_UPLOADED`, `DUES_RECEIPT_REVIEWED`, `DUES_REQUEST_CANCELLED`
+  on the request (ids, amount, decision — never the reason texts) plus the usual
+  `DOCUMENT_UPLOADED` / `DOCUMENT_VIEWED`; the admin audit endpoint includes them.
+- **Approval:** `Transition.requires_dues_settled` on UNDER_REVIEW → APPROVED; `transition` refuses
+  with `INVALID_STATUS_TRANSITION` «لا يمكن قبول الطلب قبل تأكيد سداد جميع المستحقات النقابية
+  المطلوبة» while any request is unresolved; `admin_allowed_transitions` hides approval. Correction
+  and rejection are not blocked. The treatment `payment_status` rule is unchanged.
+- **Receipts as documents (D188):** type `SYNDICATE_DUES_RECEIPT` «إيصال سداد مستحقات نقابية»;
+  `documents.0004` excludes it from `uniq_active_document_per_slot` and allows it without a
+  beneficiary in `document_type_matches_owner`. Upload reuses `validate_upload` (receipt minimum
+  400×300 now applies to both receipt types), the private Blob store and the authorized
+  `/documents/{id}/content/`; `store_document` was split into `stored_blob` + `create_document_row`
+  so both paths share them. The generic upload refuses the type (400), DELETE refuses it (403), the
+  cleanup job keeps the blobs (they have rows), and the type is excluded from the form `documents`
+  lists and the submitted snapshot.
+- **API:** `POST /applications/{id}/dues-requests/{dues_id}/receipts/` (member, `uploads` throttle,
+  scoped to own requests → 404 otherwise); `POST /admin/applications/{id}/dues-requests/`,
+  `…/{dues_id}/review/`, `…/{dues_id}/cancel/` (return the admin detail). `MoneyField` (common
+  fields): JSON number or digit string, Arabic digits and `٫` accepted, never a float; more than two
+  decimals refused, never rounded (D189). Detail payloads: doctor `dues_requests`
+  (+`can_upload_receipt`; no reviewer e-mails or cancellation reason), admin `dues_requests`
+  (+`allowed_actions`, reviewer and resolver e-mails, cancellation reason), `can_request_dues`,
+  `outstanding_dues_count`.
+- **Admin UI:** «طلب سداد مستحقات نقابية» directly after «طلب تصحيح» (`TransitionButtons`, shown
+  when `can_request_dues`); dialog with amount (LTR, Arabic digits) and reason; «المستحقات النقابية»
+  panel per request: amount, status, reason, requester / resolver, every receipt with its status,
+  rejection reason, reviewer and a viewer button; confirm / reject (reason required, shown to the
+  member) / cancel (reason required, admin-only) from `allowed_actions`; approval blocker text
+  «لا يمكن قبول الطلب قبل تأكيد سداد المستحقات النقابية المطلوبة ({count}).». `ActionDialog` can
+  now be a plain confirmation and takes its own "missing" message.
+- **Member UI (status page):** «مستحقات نقابية مطلوبة» banner above the reference card with amount,
+  the admin's explanation, the state («يرجى سداد المبلغ…», «الإيصال قيد المراجعة» — upload is not
+  payment —, «تم رفض الإيصال: {reason}»), «رفع إيصال السداد» when `can_upload_receipt` (receipt
+  pre-check shared with PaymentPage via `preCheckReceipt`) and the list of earlier submissions;
+  settled requests in «مستحقات نقابية سابقة». All strings in `ar.ts`; amounts formatted from the
+  decimal string (`formatAmount`, no float).
+- **Migrations:** `documents.0004_syndicate_dues_receipt` (2s `lock_timeout`; recreates the slot
+  unique index — a short write lock on `documents_document`), `dues.0001_initial`,
+  `audit.0004_dues_actions` (choices only). Expand-only: the previous revision works on the new
+  schema.
+- **Tests (TDD, red first):** backend `apps/dues/tests` — 82 tests: creation states / amount /
+  reason / permissions / DB constraints, the full request → upload → reject → re-upload → confirm
+  flow keeping every submission, stale receipt id, cancellation (with and without a waiting
+  receipt), approval blocked in every unresolved state and allowed after confirm / cancel,
+  treatment payment still required, ownership (other doctor 404, admin cannot upload, foreign
+  application 404), upload validation (executable 415, 300×200 `IMAGE_TOO_SMALL`), original
+  `PAYMENT_RECEIPT`, `payment_status` and `fee_snapshot` untouched, generic upload / delete refused,
+  cleanup job keeps the blobs, Arabic digits; the scoping tests were mutation-checked (removing the
+  view scope makes them fail). Existing guards extended: audit coverage (every new action produced,
+  no reason text in metadata), document type count. Frontend — `formatAmount`, `parseAmountInput`,
+  `TransitionButtons` (placement, hidden when not allowed, blocker), admin page (request with Arabic
+  digits, server field error, history, viewer, reject needs a reason, confirm, cancel, terminal),
+  status page (prominent request, upload → under review, size pre-check, rejection + history +
+  re-upload, settled list, nothing when none). Fixtures: reference data re-captured from the
+  backend (only the two status lists and the new document type differ); empty dues fields added
+  to the application and admin-detail captures.
+- **Verification (local, compose stack):** backend `pytest` **1356 passed, 1 skipped** (baseline
+  1270 + 86; skip = `test_envfile`), `ruff check` + `format --check`, `manage.py check`,
+  `makemigrations --check --dry-run`, `spectacular --validate --fail-on-warn`; frontend `gen:api`,
+  `lint`, `typecheck`, `vitest` **374 passed** (3 consecutive runs), `rtl:check` 0, `build` OK
+  (existing >500 kB warning); Playwright **10 passed, 4 skipped**. In the browser (Vite + compose
+  backend, dev login) on `MED-2026-000001`: request 1٬250.50 with «١٢٥٠٫٥٠» → status and payment
+  unchanged; member upload (real multipart / CSRF / Azurite) → «الإيصال قيد المراجعة»; admin viewer
+  streams it; reject with reason → member sees it and re-uploads (both kept); with the treatment
+  payment confirmed, approval stays hidden with the blocker text; confirm dues → «قبول الطلب»
+  appears → APPROVED; database check: snapshot 4,835, one active `PAYMENT_RECEIPT`, both dues
+  documents active. 1280 px and 375 px screenshots inspected, not committed. The local compose
+  database now holds this approved application and new e2e data.
+- **NOT VERIFIED — requires Azure credentials:** nothing deployed; the dev migrate job has not run
+  `documents.0004`, `dues.0001`, `audit.0004`; SAS delivery (`DOCUMENT_CONTENT_DELIVERY=sas`) of a
+  dues receipt was not exercised (same code path as every document).
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -1868,6 +2003,43 @@ group gets `md:justify-end`, so in RTL it moves to the left end of its 8-column 
 - **D184 — Short year line, one-row work status:** per the owner, row 2 is 4 + 8 columns instead of
   8 + 4; the year line has a fixed width rather than a shorter cell alone, so it stays short at
   every width. `nowrap` is opt-in and used only for work status (three short labels).
+- **D185 — Apex DNS-only, `www` proxied only to redirect:** the apex is not proxied through
+  Cloudflare. A proxy would add a third `X-Forwarded-For` hop (with `TRUSTED_PROXY_COUNT=2` the
+  anonymous `auth_callback` throttle would count per Cloudflare edge IP), would stand in front of
+  SWA's managed certificate (a renewal failure under Full (strict) is a 526 outage), and protects
+  little while the `*.azurestaticapps.net` origin stays public. SWA Standard already serves from
+  its own edge with TLS. `www` is proxied only so a Cloudflare Single Redirect answers it; the
+  origin is never contacted for `www`. Proxying the apex later needs `TRUSTED_PROXY_COUNT=3`
+  (after Q-T13 is verified) and an origin certificate that stays valid.
+- **D186 — A separate `dues` app, not fields on the application:** each request has its own
+  lifecycle, several can exist over time, and the treatment fee, `fee_snapshot` and
+  `payment_status` must stay untouched; a small app keeps that boundary visible. The approval
+  rule lives in the transition table (`requires_dues_settled`) so `transition` stays the one place
+  where status changes.
+- **D187 — One lock order for dues and approval:** every dues mutation locks the application row
+  (`lock_application`) before the request and its receipts, as `transition` does, so a new request
+  and an approval serialize: either the approval sees the request, or the request sees APPROVED and
+  is refused. Database constraints back the one-pending-receipt rule.
+- **D188 — Dues receipts are `Document` rows outside the slot constraint:** the blob cleanup job
+  deletes any blob without a `Document` row, and the authorized content endpoint, validation and
+  audit all key on `Document`, so reusing it is safer than a parallel table. The one-per-slot
+  unique index now excludes `SYNDICATE_DUES_RECEIPT` (every submission is history; the admin's
+  review references a specific receipt id). The type never appears among form documents, cannot
+  be uploaded through the slot endpoint and cannot be deleted.
+- **D189 — Money is `numeric(10,2)` and refused, not rounded:** amounts arrive as strings or JSON
+  numbers through `MoneyField` (never `float` internally) and the service refuses more than two
+  decimals; the SPA keeps the server's decimal string and formats it without converting.
+- **D190 — Cancellation reason is admin-only; a waiting receipt is closed `CANCELLED`:** the
+  requirement asks for a *recorded* reason; the member sees «ملغي». Closing the waiting receipt
+  keeps the "reviewed ⇔ decided" invariant without pretending it was rejected (Q-B33).
+- **D191 — Requests freeze with the application:** creation, upload, review and cancellation need
+  SUBMITTED / UNDER_REVIEW / NEEDS_CORRECTION; APPROVED and REJECTED keep their existing terminal
+  restrictions, and rejecting an application does not cancel its requests (Q-B34).
+- **D192 — Test async timeout 3 s:** with the admin page now pulling in the dues components, the
+  first `findBy` of an admin test file (cold, lazily loaded route chunk, all files in parallel)
+  intermittently passed RTL's 1 s default on this machine (the unchanged baseline passed 3/3; with
+  the change 1–3 first-tests timed out per run). `configure({ asyncUtilTimeout: 3000 })` in the
+  test setup changes only waiting time, never assertions; 3 consecutive full runs green.
 
 ## Deviations from PROMPT.md
 
@@ -2073,13 +2245,43 @@ confirmed by the organization). Technical/environment questions for the user:
   are already committed (each migration is its own transaction): the old revision keeps serving
   with the card column gone (Q-T22 window) until the listed applications are fixed and the migrate
   job is re-run. The pre-deploy query (Next session, step 2) is there to catch this first.
+- **Q-T24** Since D185 the Entra redirect URI is `https://neqabacare.com/...`, so a sign-in started
+  on the old `victorious-meadow-…azurestaticapps.net` host returns to `neqabacare.com` without its
+  session and fails. Owner choice: in the portal, Static Web App → Custom domains →
+  `neqabacare.com` → **Set default** (Microsoft documents no CLI/REST for it). SWA then 301s the
+  old host (and `www`) to the apex. Not done: it changes what the old URL serves.
+- **Q-B33** Should the member see why an admin cancelled a dues request? Default: no (admin-only,
+  D190). The rejection reason of a receipt is always shown.
+- **Q-B34** Should rejecting an application cancel its outstanding dues requests automatically?
+  Default: no; they stay frozen with the application (D191).
+- **Q-B35** May an admin revise a dues decision (a confirmed receipt, a cancellation)? Default: no —
+  final; create a new request instead.
 
 ## Next session starts with
 
-**Session 20 (D184, member row 2 layout) is merged (PR #12, `2c2de9a`) and deployed to dev**, with
-the Session 19 deploy note; this Session 20 deploy note is on the local branch
-`docs/dev-deploy-2026-10-30`, not pushed. Owner smoke list (step 3) now also covers row 2: a short
-registration-year line and يعمل / معاش / متوفى on one row. **Session 19 (D176–D183)** is merged
+**Session 22 (D186–D192, additional syndicate dues) is committed locally** on
+`feat/syndicate-dues-2026-11-01` (from `docs/dev-deploy-2026-10-30-align`, which still holds the
+unpushed Session 20/21 deploy notes). Not pushed, no PR, not deployed. Next:
+1. **Owner review** of the dues workflow and answers to Q-B33–Q-B35; then, on confirmation, push
+   the branch and open the PR (CI: backend, frontend, Playwright, image).
+2. **Deploy to dev** (needs the backend image + migrate job: `audit.0004`, `documents.0004`,
+   `dues.0001`, all expand-only; `documents.0004` briefly locks `documents_document` while the
+   slot index is rebuilt, 2s `lock_timeout`). Post-check: `/api/ready/`, reference data has
+   `dues_request_statuses`, then the owner smoke test: request dues on a submitted application,
+   upload as the member, reject → re-upload → confirm, approval appears only afterwards.
+3. Carry-over: the open items of the previous handoff below (owner answers Q-B30–Q-B32 and Q-T22,
+   the owner smoke list on dev, Q-T24 SWA default domain, `docs/final-report.md` §16, staging
+   checklist, Q-B23–Q-B25, Q-B28, Q-T21, legal L1–L8, required status checks D143).
+
+### Previous handoff (Session 21)
+
+Session 21 (D185): dev is live at `https://neqabacare.com` (`www` → apex 301); Q-T24 open.
+
+**Session 20 (D184, member row 2 layout) is merged (PR #12, `2c2de9a`; alignment PR #13,
+`4f88eac`) and deployed to dev**; the last deploy note is on the local branch
+`docs/dev-deploy-2026-10-30-align`, not pushed. Owner smoke list (step 3) now also covers row 2: a
+short registration-year line and يعمل / معاش / متوفى on one row, `متوفى` under the left end of the
+`رقم قيد النقابة` line. **Session 19 (D176–D183)** is merged
 (PR #11, `caaeb28`) and deployed to dev; steps 1–2 below are done (see "Session 19 (cont.)"). Next:
 1. **Owner review** of the new rules and answers to Q-B30–Q-B32, Q-T22; then, on confirmation,
    push the branch and open the PR (CI: backend, frontend, Playwright, image).

@@ -20,6 +20,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/applications/{application_id}/dues-requests/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description `POST /admin/applications/{id}/dues-requests/` {amount, reason}. */
+        post: operations["admin_dues_requests_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/applications/{application_id}/dues-requests/{dues_id}/cancel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description `POST /admin/applications/{id}/dues-requests/{dues_id}/cancel/` {reason}. */
+        post: operations["admin_dues_requests_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/applications/{application_id}/dues-requests/{dues_id}/review/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description `POST /admin/applications/{id}/dues-requests/{dues_id}/review/`
+         *     {receipt_id, decision: CONFIRMED | REJECTED, reason (required to reject)}.
+         */
+        post: operations["admin_dues_requests_review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/applications/{id}/": {
         parameters: {
             query?: never;
@@ -44,7 +98,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Audit history of the application and of its documents (incl. replaced ones). */
+        /**
+         * @description Audit history of the application, of its documents (incl. replaced ones) and of its
+         *     additional dues requests.
+         */
         get: operations["admin_applications_audit_list"];
         put?: never;
         post?: never;
@@ -249,6 +306,26 @@ export interface paths {
         put?: never;
         /** @description `POST /applications/{id}/documents/` (multipart). Re-uploading a slot replaces it. */
         post: operations["documents_upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/applications/{application_id}/dues-requests/{dues_id}/receipts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description `POST /applications/{id}/dues-requests/{dues_id}/receipts/` (multipart) — the member's
+         *     receipt for one request. Allowed while the application is under review; no edit needed.
+         */
+        post: operations["dues_receipts_upload"];
         delete?: never;
         options?: never;
         head?: never;
@@ -529,9 +606,13 @@ export interface components {
          *     * `ADMIN_ROLE_GRANTED` - Admin Role Granted
          *     * `ADMIN_ROLE_REVOKED` - Admin Role Revoked
          *     * `NATIONAL_ID_REVEALED` - National Id Revealed
+         *     * `DUES_REQUEST_CREATED` - Dues Request Created
+         *     * `DUES_RECEIPT_UPLOADED` - Dues Receipt Uploaded
+         *     * `DUES_RECEIPT_REVIEWED` - Dues Receipt Reviewed
+         *     * `DUES_REQUEST_CANCELLED` - Dues Request Cancelled
          * @enum {string}
          */
-        ActionEnum: "APPLICATION_CREATED" | "APPLICATION_SUBMITTED" | "APPLICATION_RESUBMITTED" | "APPLICATION_STATUS_CHANGED" | "PAYMENT_STATUS_CHANGED" | "FEE_SNAPSHOT_CREATED" | "DOCUMENT_UPLOADED" | "DOCUMENT_REPLACED" | "DOCUMENT_DELETED" | "DOCUMENT_VIEWED" | "OCR_REQUESTED" | "ADMIN_APPLICATION_VIEWED" | "ADMIN_NOTE_ADDED" | "FEE_SCHEDULE_CHANGED" | "ADMIN_ROLE_GRANTED" | "ADMIN_ROLE_REVOKED" | "NATIONAL_ID_REVEALED";
+        ActionEnum: "APPLICATION_CREATED" | "APPLICATION_SUBMITTED" | "APPLICATION_RESUBMITTED" | "APPLICATION_STATUS_CHANGED" | "PAYMENT_STATUS_CHANGED" | "FEE_SNAPSHOT_CREATED" | "DOCUMENT_UPLOADED" | "DOCUMENT_REPLACED" | "DOCUMENT_DELETED" | "DOCUMENT_VIEWED" | "OCR_REQUESTED" | "ADMIN_APPLICATION_VIEWED" | "ADMIN_NOTE_ADDED" | "FEE_SCHEDULE_CHANGED" | "ADMIN_ROLE_GRANTED" | "ADMIN_ROLE_REVOKED" | "NATIONAL_ID_REVEALED" | "DUES_REQUEST_CREATED" | "DUES_RECEIPT_UPLOADED" | "DUES_RECEIPT_REVIEWED" | "DUES_REQUEST_CANCELLED";
         AdminApplicationDetail: {
             /** Format: uuid */
             readonly id: string;
@@ -567,6 +648,10 @@ export interface components {
             readonly member_required_documents: {
                 [key: string]: unknown;
             }[];
+            readonly dues_requests: components["schemas"]["AdminDuesRequest"][];
+            readonly can_request_dues: boolean;
+            /** @description Requests still blocking approval (not confirmed, not cancelled). */
+            readonly outstanding_dues_count: number;
         };
         AdminApplicationDoctor: {
             /** Format: uuid */
@@ -662,6 +747,41 @@ export interface components {
             readonly phone_number: string;
             readonly applications_count: number;
         };
+        AdminDuesReceipt: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly status: components["schemas"]["DuesReceiptStatusEnum"];
+            readonly rejection_reason: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly reviewed_at: string | null;
+            readonly document: components["schemas"]["DocumentSummary"];
+            /** Format: email */
+            readonly reviewed_by_email: string | null;
+        };
+        AdminDuesRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            /**
+             * Format: decimal
+             * @example 250.00
+             */
+            readonly amount: string;
+            readonly reason: string;
+            readonly status: components["schemas"]["DuesRequestStatusEnum"];
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly resolved_at: string | null;
+            readonly receipts: components["schemas"]["AdminDuesReceipt"][];
+            /** Format: email */
+            readonly created_by_email: string;
+            /** Format: email */
+            readonly resolved_by_email: string | null;
+            readonly cancellation_reason: string;
+            readonly allowed_actions: components["schemas"]["DuesAdminActionEnum"][];
+        };
         AdminNote: {
             /** Format: uuid */
             readonly id: string;
@@ -721,6 +841,7 @@ export interface components {
             readonly member_required_documents: {
                 [key: string]: unknown;
             }[];
+            readonly dues_requests: components["schemas"]["DuesRequest"][];
         };
         ApplicationCreateRequest: {
             /** @default FIRST_TIME */
@@ -792,6 +913,12 @@ export interface components {
             readonly display_name: string;
             readonly has_profile: boolean;
         };
+        /**
+         * @description * `CONFIRMED` - CONFIRMED
+         *     * `REJECTED` - REJECTED
+         * @enum {string}
+         */
+        DecisionEnum: "CONFIRMED" | "REJECTED";
         DevLoginRequest: {
             /** Format: email */
             email: string;
@@ -866,15 +993,91 @@ export interface components {
          *     * `INSURANCE_PRINT` - برينت تأميني
          *     * `UNIVERSITY_ID` - كارنيه الجامعة
          *     * `OTHER` - مستند آخر
+         *     * `SYNDICATE_DUES_RECEIPT` - إيصال سداد مستحقات نقابية
          * @enum {string}
          */
-        DocumentTypeEnum: "NATIONAL_ID_FRONT" | "NATIONAL_ID_BACK" | "SYNDICATE_ID" | "PERSONAL_PHOTO" | "PAYMENT_RECEIPT" | "MEMBER_BIRTH_CERTIFICATE" | "BENEFICIARY_NATIONAL_ID" | "BENEFICIARY_NATIONAL_ID_BACK" | "BENEFICIARY_PERSONAL_PHOTO" | "BIRTH_CERTIFICATE" | "MARRIAGE_CERTIFICATE" | "INSURANCE_PRINT" | "UNIVERSITY_ID" | "OTHER";
+        DocumentTypeEnum: "NATIONAL_ID_FRONT" | "NATIONAL_ID_BACK" | "SYNDICATE_ID" | "PERSONAL_PHOTO" | "PAYMENT_RECEIPT" | "MEMBER_BIRTH_CERTIFICATE" | "BENEFICIARY_NATIONAL_ID" | "BENEFICIARY_NATIONAL_ID_BACK" | "BENEFICIARY_PERSONAL_PHOTO" | "BIRTH_CERTIFICATE" | "MARRIAGE_CERTIFICATE" | "INSURANCE_PRINT" | "UNIVERSITY_ID" | "OTHER" | "SYNDICATE_DUES_RECEIPT";
         DocumentUploadRequest: {
             /** Format: binary */
             file: string;
             document_type: components["schemas"]["DocumentTypeEnum"];
             /** Format: uuid */
             beneficiary_id?: string | null;
+        };
+        /**
+         * @description * `CONFIRM_RECEIPT` - CONFIRM_RECEIPT
+         *     * `REJECT_RECEIPT` - REJECT_RECEIPT
+         *     * `CANCEL` - CANCEL
+         * @enum {string}
+         */
+        DuesAdminActionEnum: "CONFIRM_RECEIPT" | "REJECT_RECEIPT" | "CANCEL";
+        DuesCancelRequest: {
+            reason: string;
+        };
+        DuesReceipt: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly status: components["schemas"]["DuesReceiptStatusEnum"];
+            readonly rejection_reason: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly reviewed_at: string | null;
+            readonly document: components["schemas"]["DocumentSummary"];
+        };
+        /**
+         * @description * `PENDING_REVIEW` - قيد المراجعة
+         *     * `CONFIRMED` - مقبول
+         *     * `REJECTED` - مرفوض
+         *     * `CANCELLED` - لم يُراجع (أُلغي الطلب)
+         * @enum {string}
+         */
+        DuesReceiptStatusEnum: "PENDING_REVIEW" | "CONFIRMED" | "REJECTED" | "CANCELLED";
+        DuesReceiptUploadRequest: {
+            /** Format: binary */
+            file: string;
+        };
+        /** @description Member view: amount, the admin's explanation, status, own receipts and what is possible. */
+        DuesRequest: {
+            /** Format: uuid */
+            readonly id: string;
+            /**
+             * Format: decimal
+             * @example 250.00
+             */
+            readonly amount: string;
+            readonly reason: string;
+            readonly status: components["schemas"]["DuesRequestStatusEnum"];
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly resolved_at: string | null;
+            readonly receipts: components["schemas"]["DuesReceipt"][];
+            readonly can_upload_receipt: boolean;
+        };
+        DuesRequestCreateRequest: {
+            /**
+             * Format: decimal
+             * @example 250.00
+             */
+            amount: string;
+            reason: string;
+        };
+        /**
+         * @description * `REQUESTED` - بانتظار السداد
+         *     * `PENDING_REVIEW` - الإيصال قيد المراجعة
+         *     * `REJECTED` - الإيصال مرفوض
+         *     * `CONFIRMED` - تم تأكيد السداد
+         *     * `CANCELLED` - ملغي
+         * @enum {string}
+         */
+        DuesRequestStatusEnum: "REQUESTED" | "PENDING_REVIEW" | "REJECTED" | "CONFIRMED" | "CANCELLED";
+        DuesReviewRequest: {
+            /** Format: uuid */
+            receipt_id?: string | null;
+            decision: components["schemas"]["DecisionEnum"];
+            /** @default  */
+            reason: string;
         };
         /**
          * @description Tiers 0-4, the administrative fee `base + per_beneficiary × (active beneficiaries + 1)`
@@ -1253,6 +1456,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedAdminApplicationRowList"];
+                };
+            };
+        };
+    };
+    admin_dues_requests_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuesRequestCreateRequest"];
+                "multipart/form-data": components["schemas"]["DuesRequestCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminApplicationDetail"];
+                };
+            };
+        };
+    };
+    admin_dues_requests_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+                dues_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuesCancelRequest"];
+                "multipart/form-data": components["schemas"]["DuesCancelRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminApplicationDetail"];
+                };
+            };
+        };
+    };
+    admin_dues_requests_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+                dues_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DuesReviewRequest"];
+                "multipart/form-data": components["schemas"]["DuesReviewRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminApplicationDetail"];
                 };
             };
         };
@@ -1885,6 +2168,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentSummary"];
+                };
+            };
+        };
+    };
+    dues_receipts_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+                dues_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["DuesReceiptUploadRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DuesRequest"];
                 };
             };
         };

@@ -1,6 +1,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addAdminNote,
+  cancelDuesRequest,
+  createDuesRequest,
   createFeeSchedule,
   fetchAdminApplication,
   fetchAdminApplications,
@@ -10,6 +12,7 @@ import {
   fetchAdminStats,
   fetchAudit,
   fetchFeeSchedules,
+  reviewDuesReceipt,
   reviewPayment,
   transitionApplication,
   type AdminApplicationQuery,
@@ -76,6 +79,31 @@ export function usePaymentReview(id: string) {
       onDetail(detail);
       void queryClient.invalidateQueries({ queryKey: keys.notes(id) });
     },
+  });
+}
+
+export function useCreateDuesRequest(id: string) {
+  const onDetail = useDetailUpdate(id);
+  return useMutation({
+    mutationFn: ({ amount, reason }: { amount: string; reason: string }) => createDuesRequest(id, amount, reason),
+    onSuccess: onDetail,
+  });
+}
+
+export function useReviewDuesReceipt(id: string) {
+  const onDetail = useDetailUpdate(id);
+  return useMutation({
+    mutationFn: (input: { duesId: string; receiptId: string; decision: "CONFIRMED" | "REJECTED"; reason: string }) =>
+      reviewDuesReceipt(id, input.duesId, input.receiptId, input.decision, input.reason),
+    onSuccess: onDetail,
+  });
+}
+
+export function useCancelDuesRequest(id: string) {
+  const onDetail = useDetailUpdate(id);
+  return useMutation({
+    mutationFn: ({ duesId, reason }: { duesId: string; reason: string }) => cancelDuesRequest(id, duesId, reason),
+    onSuccess: onDetail,
   });
 }
 

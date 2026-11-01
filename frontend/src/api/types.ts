@@ -25,6 +25,11 @@ export type DoctorProfile = Camelize<Schemas["DoctorProfile"]>;
 export type DocumentSummary = Camelize<Schemas["DocumentSummary"]>;
 export type Application = Camelize<Schemas["Application"]>;
 export type Beneficiary = Camelize<Schemas["Beneficiary"]>;
+export type DuesRequest = Camelize<Schemas["DuesRequest"]>;
+export type DuesReceipt = Camelize<Schemas["DuesReceipt"]>;
+export type DuesRequestStatus = Schemas["DuesRequestStatusEnum"];
+export type DuesReceiptStatus = Schemas["DuesReceiptStatusEnum"];
+export type DuesAdminAction = Schemas["DuesAdminActionEnum"];
 
 export type ApiPage<T> = { count: number; next?: string | null; previous?: string | null; results: T[] };
 export type Page<T> = Camelize<ApiPage<T>>;
@@ -57,6 +62,8 @@ export type ApiReferenceData = {
   application_types: Choice<ApplicationType>[];
   statuses: Choice<ApplicationStatus>[];
   payment_statuses: Choice<PaymentStatus>[];
+  dues_request_statuses: Choice<Schemas["DuesRequestStatusEnum"]>[];
+  dues_receipt_statuses: Choice<Schemas["DuesReceiptStatusEnum"]>[];
   document_rules: {
     document_types: { type: DocumentType; label: string; ocr_capable: boolean; images_only: boolean }[];
     /** Global member slots; the application's own list is `member_required_documents`. */
@@ -145,6 +152,8 @@ export type ApiAdminApplicationDetail = Omit<
 
 export type AdminApplicationDetail = Camelize<ApiAdminApplicationDetail>;
 export type AdminBeneficiary = AdminApplicationDetail["beneficiaries"][number];
+export type AdminDuesRequest = AdminApplicationDetail["duesRequests"][number];
+export type AdminDuesReceipt = AdminDuesRequest["receipts"][number];
 
 export type FeeKey = "member" | "spouse" | "child" | "grad_son" | "parent";
 export type TierKey = "0" | "1" | "2" | "3" | "4";

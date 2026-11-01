@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.applications",
     "apps.beneficiaries",
     "apps.documents",
+    "apps.dues",
     "apps.ocr",
     "apps.audit",
 ]
@@ -192,6 +193,9 @@ SPECTACULAR_SETTINGS = {
         "PaymentStatusEnum": "apps.reference.constants.PaymentStatus",
         "DocumentTypeEnum": "apps.reference.constants.DocumentType",
         "KinshipEnum": "apps.reference.constants.Kinship",
+        "DuesRequestStatusEnum": "apps.reference.constants.DuesRequestStatus",
+        "DuesReceiptStatusEnum": "apps.reference.constants.DuesReceiptStatus",
+        "DuesAdminActionEnum": ["CONFIRM_RECEIPT", "REJECT_RECEIPT", "CANCEL"],
     },
 }
 API_DOCS_ENABLED: bool = env.bool("API_DOCS_ENABLED", default=False)

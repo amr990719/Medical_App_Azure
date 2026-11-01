@@ -842,7 +842,7 @@ SUBMITTED  UNDER_REVIEW  APPROVED  REJECTED  →  read-only for the doctor
 | DRAFT | SUBMITTED | doctor | full validation passes, receipt uploaded, declaration accepted |
 | SUBMITTED | UNDER_REVIEW | admin | — |
 | SUBMITTED / UNDER_REVIEW | NEEDS_CORRECTION | admin | `review_notes` required |
-| UNDER_REVIEW | APPROVED | admin | `payment_status = CONFIRMED` |
+| UNDER_REVIEW | APPROVED | admin | `payment_status = CONFIRMED` and every additional syndicate dues request confirmed or cancelled (§18.1) |
 | SUBMITTED / UNDER_REVIEW | REJECTED | admin | `review_notes` required |
 | NEEDS_CORRECTION | SUBMITTED | doctor | full validation passes again; may replace documents and receipt |
 
@@ -985,6 +985,16 @@ Port `ReceiptPage.jsx`:
 - Validate type, size and pixel dimensions on the server with Pillow (frontend pre-check only for UX). Reject images that fail to decode.
 - Only admins can set `CONFIRMED` / `REJECTED`; rejecting a receipt should normally come with `NEEDS_CORRECTION` and a note.
 
+## 18.1 Additional syndicate dues (مستحقات نقابية) — owner requirement of 2026-11-01
+
+Sometimes a member must settle separate syndicate dues (e.g. the syndicate subscription) before the treatment application can be approved. They are **not** part of the treatment fee.
+
+- Admin action `طلب سداد مستحقات نقابية`, directly after `طلب تصحيح`, opens a dialog: amount in EGP (> 0, at most two decimals, Arabic digits accepted) and a required reason shown to the member. Allowed while the application is `SUBMITTED`, `UNDER_REVIEW` or `NEEDS_CORRECTION`; creating a request changes neither the application status nor triggers a correction. Several requests over time are allowed.
+- Model `SyndicateDuesRequest(application, amount Decimal(10,2), reason, status, created_by, resolved_by/at, cancellation_reason)` with status `REQUESTED بانتظار السداد → PENDING_REVIEW الإيصال قيد المراجعة → CONFIRMED تم تأكيد السداد | REJECTED الإيصال مرفوض (→ new upload)`, or `CANCELLED ملغي` (admin, recorded reason) from any unresolved state. Each upload is a `DuesReceipt(request, document, status PENDING_REVIEW | CONFIRMED | REJECTED | CANCELLED, rejection_reason, reviewed_by/at)`; a receipt still waiting when its request is cancelled is closed as `CANCELLED`.
+- The member sees outstanding requests prominently on `/application/:id/status` (amount, the admin's explanation) and uploads `رفع إيصال السداد` for that request without editing or resubmitting; after upload `الإيصال قيد المراجعة` (uploading never marks the dues paid). A rejection shows its reason and allows another upload; every earlier submission stays listed.
+- Receipts are `Document` rows of type `SYNDICATE_DUES_RECEIPT` (same upload validation as the payment receipt, private Blob, authorized `/documents/{id}/content/`, audit); they are outside the one-document-per-slot rule, never replaced or deleted, and never appear among the form documents.
+- Separate from `fee_snapshot`, the fee engine, the application's `PAYMENT_RECEIPT` and `payment_status`. Approval is refused (`INVALID_STATUS_TRANSITION`, `لا يمكن قبول الطلب قبل تأكيد سداد جميع المستحقات النقابية المطلوبة`) while any request is not confirmed or cancelled; the admin UI explains the outstanding requirement. No online payment.
+
 ---
 
 # 19. Documents
@@ -1009,7 +1019,7 @@ created_at
 deleted_at         soft delete (drafts only)
 ```
 
-- One active document per `(application, beneficiary, document_type)`; uploading again replaces it (old one soft-deleted, blob deleted by a cleanup job or lifecycle policy).
+- One active document per `(application, beneficiary, document_type)`; uploading again replaces it (old one soft-deleted, blob deleted by a cleanup job or lifecycle policy). Exception: `SYNDICATE_DUES_RECEIPT` (§18.1) — every upload is kept.
 - Documents can only be added, replaced or deleted while the application is editable.
 - A periodic cleanup (management command, runnable as a Container Apps job) removes blobs whose metadata was soft-deleted or never committed.
 
@@ -1185,6 +1195,7 @@ GET    /api/v1/documents/{id}/                 metadata
 GET    /api/v1/documents/{id}/content/         authorized stream or redirect to ≤5-minute read-only SAS
 DELETE /api/v1/documents/{id}/                 only while editable
 POST   /api/v1/documents/{id}/extract/         OCR suggestions
+POST   /api/v1/applications/{id}/dues-requests/{dues_id}/receipts/   multipart: file (§18.1)
 
 Admin (role ADMIN)
 GET    /api/v1/admin/stats/                    counts per status / payment status
@@ -1195,6 +1206,9 @@ GET    /api/v1/admin/applications/             filters: status, payment_status, 
 GET    /api/v1/admin/applications/{id}/
 POST   /api/v1/admin/applications/{id}/transition/     {to_status, review_notes}
 POST   /api/v1/admin/applications/{id}/payment/        {payment_status, note}
+POST   /api/v1/admin/applications/{id}/dues-requests/                       {amount, reason} (§18.1)
+POST   /api/v1/admin/applications/{id}/dues-requests/{dues_id}/review/      {receipt_id, decision, reason}
+POST   /api/v1/admin/applications/{id}/dues-requests/{dues_id}/cancel/      {reason}
 GET    /api/v1/admin/applications/{id}/notes/
 POST   /api/v1/admin/applications/{id}/notes/          internal notes (not visible to doctor)
 GET    /api/v1/admin/applications/{id}/audit/
@@ -1429,6 +1443,8 @@ APPLICATION_STATUS_CHANGED PAYMENT_STATUS_CHANGED      FEE_SNAPSHOT_CREATED
 DOCUMENT_UPLOADED          DOCUMENT_REPLACED           DOCUMENT_DELETED
 DOCUMENT_VIEWED            OCR_REQUESTED               ADMIN_APPLICATION_VIEWED
 ADMIN_NOTE_ADDED           FEE_SCHEDULE_CHANGED        ADMIN_ROLE_GRANTED
+DUES_REQUEST_CREATED       DUES_RECEIPT_UPLOADED       DUES_RECEIPT_REVIEWED
+DUES_REQUEST_CANCELLED
 ```
 
 No passwords, tokens or unnecessary personal data in metadata (store IDs and changed field names, not values, for sensitive fields).
@@ -1542,7 +1558,7 @@ Applications table (server-side pagination, search, filters for status, payment 
 MED-2026-000123    أحمد علي          بشري      قيد المراجعة    بانتظار التأكيد   ٣ أكتوبر ٢٠٢٦    3٬025
 ```
 
-Application detail: member data, masked national ID with an audited "show full" action, beneficiaries with their documents, document viewer (images/PDF in a modal via short-lived URLs), fee snapshot, receipt with confirm/reject payment, duplicate warnings, transition buttons limited to allowed transitions, doctor-visible review notes, internal notes, audit history, print.
+Application detail: member data, masked national ID with an audited "show full" action, beneficiaries with their documents, document viewer (images/PDF in a modal via short-lived URLs), fee snapshot, receipt with confirm/reject payment, additional syndicate dues (`المستحقات النقابية`, §18.1), duplicate warnings, transition buttons limited to allowed transitions, doctor-visible review notes, internal notes, audit history, print.
 
 Fee schedules page: view the active schedule; create a new version for a fiscal year (with confirmation and audit).
 

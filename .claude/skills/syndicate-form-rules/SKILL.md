@@ -207,7 +207,7 @@ Editable by doctor: `DRAFT`, `NEEDS_CORRECTION`. Read-only: `SUBMITTED`, `UNDER_
 | DRAFT | SUBMITTED | doctor | full validation passes, receipt uploaded, declaration accepted → generates reference number |
 | SUBMITTED | UNDER_REVIEW | admin | — |
 | SUBMITTED / UNDER_REVIEW | NEEDS_CORRECTION | admin | `review_notes` required |
-| UNDER_REVIEW | APPROVED | admin | `payment_status == CONFIRMED` |
+| UNDER_REVIEW | APPROVED | admin | `payment_status == CONFIRMED` and no outstanding dues request (below) |
 | SUBMITTED / UNDER_REVIEW | REJECTED | admin | `review_notes` required |
 | NEEDS_CORRECTION | SUBMITTED | doctor | full validation passes again; keeps the same reference number |
 
@@ -225,6 +225,14 @@ kept on resubmission.
 
 Status labels: DRAFT مسودة · SUBMITTED مقدم · UNDER_REVIEW قيد المراجعة · NEEDS_CORRECTION يحتاج تصحيح ·
 APPROVED مقبول · REJECTED مرفوض (colours in PROMPT.md §7.3).
+
+**Additional syndicate dues** (`apps/dues`, owner 2026-11-01, PROMPT.md §18.1): admin-created
+`SyndicateDuesRequest` (amount `Decimal(10,2)` > 0, reason) while SUBMITTED / UNDER_REVIEW /
+NEEDS_CORRECTION; `REQUESTED → PENDING_REVIEW (member receipt) → CONFIRMED | REJECTED (reason, re-upload)`,
+`CANCELLED` (admin reason) from any unresolved state. Never part of the fee engine, `fee_snapshot`,
+`PAYMENT_RECEIPT` or `payment_status`. Approval refused while any non-cancelled request is unconfirmed
+(`لا يمكن قبول الطلب قبل تأكيد سداد جميع المستحقات النقابية المطلوبة`). Receipts are
+`SYNDICATE_DUES_RECEIPT` documents, excluded from the slot constraint, never replaced or deleted.
 
 ## 6. Submission validation messages (`applications/validation.py`; return ALL, grouped by step)
 

@@ -23,6 +23,11 @@ class AuditAction(models.TextChoices):
     ADMIN_ROLE_GRANTED = "ADMIN_ROLE_GRANTED"
     ADMIN_ROLE_REVOKED = "ADMIN_ROLE_REVOKED"
     NATIONAL_ID_REVEALED = "NATIONAL_ID_REVEALED"  # admin "show full" action (§44)
+    # Additional syndicate dues (apps.dues); object = the SyndicateDuesRequest.
+    DUES_REQUEST_CREATED = "DUES_REQUEST_CREATED"
+    DUES_RECEIPT_UPLOADED = "DUES_RECEIPT_UPLOADED"
+    DUES_RECEIPT_REVIEWED = "DUES_RECEIPT_REVIEWED"
+    DUES_REQUEST_CANCELLED = "DUES_REQUEST_CANCELLED"
 
 
 class AuditLog(models.Model):

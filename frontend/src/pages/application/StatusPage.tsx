@@ -6,13 +6,17 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { isAwaitingReview, useApplication } from "@/features/applications/useApplication";
 import { snapshotTotal } from "@/features/applications/useApplications";
 import { StatusTimeline } from "@/features/applications/StatusTimeline";
+import { OutstandingDues, SettledDues } from "@/features/dues/DuesSection";
 import { statusLabel, useReferenceData } from "@/features/reference/useReferenceData";
 import { ar, t } from "@/i18n/ar";
 import { formatDate, formatMoney, formatRelativeTime } from "@/utils/format";
 
 const S = ar.status;
 
-/** `/application/:id/status` — confirmation, reference number, timeline, notes (PROMPT.md §43). */
+/**
+ * `/application/:id/status` — confirmation, reference number, timeline, notes (PROMPT.md §43),
+ * and any additional syndicate dues the administration asked for (with their receipt upload).
+ */
 export function StatusPage() {
   const { id = "" } = useParams();
   const location = useLocation();
@@ -51,6 +55,8 @@ export function StatusPage() {
               </div>
             </div>
           ) : null}
+
+          <OutstandingDues applicationId={id} requests={app.duesRequests} />
 
           <section className="rounded-2xl border border-border bg-white p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -101,6 +107,8 @@ export function StatusPage() {
               </p>
             </section>
           ) : null}
+
+          <SettledDues requests={app.duesRequests} />
 
           <div className="flex flex-wrap gap-3">
             {needsCorrection ? (

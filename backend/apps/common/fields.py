@@ -5,7 +5,9 @@ job. Digits are never silently dropped.
 """
 
 import re
+from decimal import Decimal
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.reference.digits import normalize_digits
@@ -19,6 +21,9 @@ from apps.reference.national_id import (
 MSG_INVALID_YEAR = "السنة يجب أن تكون 4 أرقام"
 MSG_INVALID_PHONE = "رقم الهاتف يجب أن يحتوي على أرقام فقط"
 MSG_DIGITS_ONLY = "يجب أن يحتوي على أرقام فقط"
+MSG_INVALID_AMOUNT = "يرجى إدخال مبلغ صحيح بالأرقام، مثل 250 أو 250.50"
+_AMOUNT = re.compile(r"[0-9]{1,12}(\.[0-9]+)?")
+ARABIC_DECIMAL_SEPARATOR = "٫"  # ٫
 _PHONE_SEPARATORS = re.compile(r"[\s\-().]+")
 
 
@@ -107,3 +112,23 @@ class NationalIdField(serializers.CharField):
         if data == "":
             return None
         return super().run_validation(data)
+
+
+@extend_schema_field({"type": "string", "format": "decimal", "example": "250.00"})
+class MoneyField(serializers.Field):
+    """An EGP amount as a `Decimal`: a JSON number or a string of digits (Western or Arabic) with
+    an optional `.` / `٫` decimal separator. Never a float internally. Thousands separators,
+    exponents and signs are refused; the business range is the service's rule."""
+
+    default_error_messages = {"invalid": MSG_INVALID_AMOUNT}
+
+    def to_internal_value(self, data):
+        if isinstance(data, bool) or not isinstance(data, (str, int, float, Decimal)):
+            self.fail("invalid")
+        text = normalize_digits(str(data)).strip().replace(ARABIC_DECIMAL_SEPARATOR, ".")
+        if not _AMOUNT.fullmatch(text):
+            self.fail("invalid")
+        return Decimal(text)
+
+    def to_representation(self, value):
+        return f"{value:.2f}"

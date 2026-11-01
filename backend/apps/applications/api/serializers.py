@@ -5,6 +5,7 @@ from apps.applications.requirements import member_requirements
 from apps.beneficiaries.api.serializers import BeneficiarySerializer
 from apps.common.fields import CollapsedCharField
 from apps.documents.api.serializers import DocumentSummarySerializer
+from apps.dues.api.serializers import DuesRequestSerializer
 from apps.reference.constants import ApplicationType, WorkStatus
 
 
@@ -17,6 +18,8 @@ class ApplicationSerializer(serializers.ModelSerializer):
     beneficiaries = BeneficiarySerializer(many=True, read_only=True)
     documents = DocumentSummarySerializer(many=True, read_only=True)
     member_required_documents = serializers.SerializerMethodField()
+    # Additional syndicate dues, separate from the fee snapshot and `payment_status`.
+    dues_requests = DuesRequestSerializer(many=True, read_only=True)
 
     class Meta:
         model = InsuranceApplication
@@ -25,7 +28,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
             "reference_number", "declaration_name", "declaration_accepted",
             "declaration_accepted_at", "fee_snapshot", "fee_schedule", "review_notes",
             "reviewed_at", "submitted_at", "created_at", "updated_at", "is_editable",
-            "beneficiaries", "documents", "member_required_documents",
+            "beneficiaries", "documents", "member_required_documents", "dues_requests",
         ]  # fmt: skip
         read_only_fields = fields
 

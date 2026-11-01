@@ -10,6 +10,7 @@ from apps.beneficiaries.api.serializers import required_documents
 from apps.beneficiaries.models import Beneficiary
 from apps.doctors.models import Doctor
 from apps.documents.api.serializers import DocumentSummarySerializer
+from apps.dues.api.serializers import AdminDuesRequestSerializer
 from apps.reference.constants import ApplicationStatus, PaymentStatus
 
 
@@ -96,6 +97,9 @@ class AdminApplicationDetailSerializer(serializers.ModelSerializer):
     allowed_transitions = serializers.SerializerMethodField()
     beneficiary_warnings = serializers.SerializerMethodField()
     member_required_documents = serializers.SerializerMethodField()
+    dues_requests = AdminDuesRequestSerializer(many=True, read_only=True)
+    can_request_dues = serializers.SerializerMethodField()
+    outstanding_dues_count = serializers.SerializerMethodField()
 
     class Meta:
         model = InsuranceApplication
@@ -105,8 +109,18 @@ class AdminApplicationDetailSerializer(serializers.ModelSerializer):
             "fee_schedule", "review_notes", "reviewed_by_email", "reviewed_at", "submitted_at",
             "created_at", "updated_at", "doctor", "beneficiaries", "documents",
             "allowed_transitions", "beneficiary_warnings", "member_required_documents",
+            "dues_requests", "can_request_dues", "outstanding_dues_count",
         ]  # fmt: skip
         read_only_fields = fields
+
+    def get_can_request_dues(self, app) -> bool:
+        from apps.dues.services import can_request_dues
+
+        return can_request_dues(app)
+
+    def get_outstanding_dues_count(self, app) -> int:
+        """Requests still blocking approval (not confirmed, not cancelled)."""
+        return sum(1 for dues in app.dues_requests.all() if dues.is_unresolved)
 
     def get_member_required_documents(self, app) -> list[dict]:
         return [r.as_dict() for r in member_requirements(app)]

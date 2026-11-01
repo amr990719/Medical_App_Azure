@@ -15,6 +15,7 @@ from apps.applications import services
 from apps.applications.models import InsuranceApplication
 from apps.audit.models import AuditLog
 from apps.documents.models import Document
+from apps.dues.models import SyndicateDuesRequest
 from apps.reference.constants import ApplicationStatus, PaymentStatus
 
 from .admin_filters import AdminApplicationFilter
@@ -39,6 +40,13 @@ PENDING_RECEIPT_STATUSES = (
 
 def reviewable_applications():
     return InsuranceApplication.objects.exclude(status=ApplicationStatus.DRAFT)
+
+
+def admin_detail_response(app, *, reveal=False, status_code=status.HTTP_200_OK) -> Response:
+    """The fresh detail every review action answers with (masked unless `reveal`)."""
+    fresh = with_details(reviewable_applications().select_related("reviewed_by")).get(pk=app.pk)
+    serializer = AdminApplicationDetailSerializer(fresh, context={REVEAL_PARAM: reveal})
+    return Response(serializer.data, status=status_code)
 
 
 class AdminStatsView(APIView):
@@ -96,9 +104,7 @@ class AdminApplicationViewSet(
         )
 
     def _detail(self, app, *, reveal=False, status_code=status.HTTP_200_OK):
-        fresh = with_details(reviewable_applications().select_related("reviewed_by")).get(pk=app.pk)
-        serializer = AdminApplicationDetailSerializer(fresh, context={REVEAL_PARAM: reveal})
-        return Response(serializer.data, status=status_code)
+        return admin_detail_response(app, reveal=reveal, status_code=status_code)
 
     @extend_schema(parameters=[OpenApiParameter(REVEAL_PARAM, bool)])
     def retrieve(self, request, pk=None):
@@ -157,11 +163,15 @@ class AdminApplicationViewSet(
     @extend_schema(responses=AuditEntrySerializer(many=True))
     @action(detail=True, methods=["get"])
     def audit(self, request, pk=None):
-        """Audit history of the application and of its documents (incl. replaced ones)."""
+        """Audit history of the application, of its documents (incl. replaced ones) and of its
+        additional dues requests."""
         app = self.get_object()
         document_ids = Document.all_objects.filter(application=app).values("pk")
+        dues_ids = SyndicateDuesRequest.objects.filter(application=app).values("pk")
         entries = (
-            AuditLog.objects.filter(Q(object_id=app.pk) | Q(object_id__in=document_ids))
+            AuditLog.objects.filter(
+                Q(object_id=app.pk) | Q(object_id__in=document_ids) | Q(object_id__in=dues_ids)
+            )
             .select_related("user")
             .order_by("-timestamp")
         )

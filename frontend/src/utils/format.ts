@@ -19,6 +19,20 @@ export function formatMoney(value: number): string {
   return `${formatNumber(value)} ج.م`;
 }
 
+const DECIMAL_AMOUNT = /^(\d+)(?:\.(\d{1,2}))?$/;
+
+/**
+ * A server decimal string (`"1250.50"`) as `1٬250.50 ج.م`, without converting it to a float.
+ * A zero fraction is dropped (`"250.00"` → `250 ج.م`); anything unexpected is shown as is.
+ */
+export function formatAmount(amount: string): string {
+  const match = DECIMAL_AMOUNT.exec(amount);
+  if (!match) return `${amount} ج.م`;
+  const whole = (match[1] ?? "").replace(/\B(?=(\d{3})+(?!\d))/g, ARABIC_THOUSANDS_SEPARATOR);
+  const fraction = match[2] && /[1-9]/.test(match[2]) ? `.${match[2].padEnd(2, "0")}` : "";
+  return `${whole}${fraction} ج.م`;
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);

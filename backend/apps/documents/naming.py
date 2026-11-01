@@ -25,6 +25,7 @@ SLUGS: dict[T, str] = {
     T.INSURANCE_PRINT: "insurance-print",
     T.UNIVERSITY_ID: "university-id",
     T.OTHER: "other",
+    T.SYNDICATE_DUES_RECEIPT: "syndicate-dues-receipt",
 }
 
 

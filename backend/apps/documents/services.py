@@ -5,6 +5,7 @@ metadata in one transaction holding the application row lock. If the transaction
 is removed; anything left behind (crash between the two) is an orphan the cleanup job deletes.
 """
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from django.conf import settings
@@ -14,10 +15,10 @@ from django.utils import timezone
 from apps.applications.access import ensure_editable_by_owner, lock_application
 from apps.audit.models import AuditAction
 from apps.audit.services import record
-from apps.common.exceptions import ValidationFailed
+from apps.common.exceptions import PermissionDeniedError, ValidationFailed
 from apps.reference.constants import DocumentType, ScanStatus
 
-from .models import BENEFICIARY_DOCUMENT_TYPES, MEMBER_DOCUMENT_TYPES, Document
+from .models import BENEFICIARY_DOCUMENT_TYPES, DUES_RECEIPT_TYPE, MEMBER_DOCUMENT_TYPES, Document
 from .naming import build_blob_name
 from .storage import get_storage
 from .validators import validate_upload
@@ -25,6 +26,8 @@ from .validators import validate_upload
 MSG_BENEFICIARY_NOT_FOUND = "المستفيد غير موجود في هذا الطلب"
 MSG_MEMBER_DOCUMENT_ONLY = "هذا المستند خاص بالعضو ولا يرتبط بمستفيد"
 MSG_BENEFICIARY_REQUIRED = "يرجى تحديد المستفيد لهذا المستند"
+MSG_DUES_RECEIPT_ELSEWHERE = "يُرفع إيصال المستحقات النقابية من صفحة حالة الطلب"
+MSG_DUES_RECEIPT_NOT_DELETABLE = "لا يمكن حذف إيصال سداد المستحقات النقابية"
 
 
 def soft_delete_documents(documents, *, actor, reason: str, detach: bool = False) -> int:
@@ -66,70 +69,91 @@ def _resolve_beneficiary(application, document_type: str, beneficiary_id):
     return beneficiary
 
 
+@contextmanager
+def stored_blob(application_id, document_type: str, info, *, beneficiary_id=None):
+    """Write the validated bytes under a server-generated name; remove them again if the
+    metadata transaction inside the `with` block fails."""
+    storage = get_storage()
+    blob_name = build_blob_name(application_id, beneficiary_id, document_type, info.extension)
+    storage.upload(blob_name, info.data, content_type=info.content_type)
+    try:
+        yield blob_name
+    except BaseException:
+        storage.delete(blob_name)
+        raise
+
+
+def create_document_row(
+    app, *, beneficiary, document_type: str, blob_name: str, info, actor, request=None
+) -> Document:
+    """Insert the metadata row of a stored blob and audit the upload. Call under the lock."""
+    document = Document.objects.create(
+        application=app,
+        beneficiary=beneficiary,
+        document_type=document_type,
+        blob_name=blob_name,
+        original_filename=info.filename,
+        content_type=info.content_type,
+        file_size=info.size,
+        sha256=info.sha256,
+        scan_status=ScanStatus.PENDING if settings.MALWARE_SCAN_ENABLED else ScanStatus.SKIPPED,
+        uploaded_by=actor,
+    )
+    record(
+        actor=actor,
+        action=AuditAction.DOCUMENT_UPLOADED,
+        obj=document,
+        metadata={
+            "document_type": document_type,
+            "content_type": info.content_type,
+            "file_size": info.size,
+            "beneficiary_id": str(beneficiary.pk) if beneficiary else None,
+        },
+        request=request,
+    )
+    return document
+
+
 def store_document(
     application, *, document_type: str, upload, actor, beneficiary_id=None, request=None
 ) -> Document:
     from apps.applications.services import mark_receipt_uploaded
 
     document_type = DocumentType(document_type)
+    if document_type == DUES_RECEIPT_TYPE:  # its own endpoint and lifecycle (apps.dues)
+        raise ValidationFailed(fields={"document_type": [MSG_DUES_RECEIPT_ELSEWHERE]})
     ensure_editable_by_owner(application, actor)  # fail fast, before reading the file
     beneficiary = _resolve_beneficiary(application, document_type, beneficiary_id)
     info = validate_upload(upload, document_type=document_type)
 
-    storage = get_storage()
-    blob_name = build_blob_name(
-        application.pk, beneficiary.pk if beneficiary else None, document_type, info.extension
-    )
-    storage.upload(blob_name, info.data, content_type=info.content_type)
-    try:
-        with transaction.atomic():
-            app = lock_application(application.pk)
-            ensure_editable_by_owner(app, actor)  # re-check under the lock
-            previous = (
-                Document.objects.select_for_update()
-                .filter(application=app, beneficiary=beneficiary, document_type=document_type)
-                .first()
-            )
-            if previous is not None:
-                previous.deleted_at = timezone.now()
-                previous.save(update_fields=["deleted_at"])
-            document = Document.objects.create(
-                application=app,
-                beneficiary=beneficiary,
-                document_type=document_type,
-                blob_name=blob_name,
-                original_filename=info.filename,
-                content_type=info.content_type,
-                file_size=info.size,
-                sha256=info.sha256,
-                scan_status=(
-                    ScanStatus.PENDING if settings.MALWARE_SCAN_ENABLED else ScanStatus.SKIPPED
-                ),
-                uploaded_by=actor,
-            )
-            if previous is not None:
-                record(
-                    actor=actor, action=AuditAction.DOCUMENT_REPLACED, obj=previous,
-                    metadata={"document_type": document_type, "replaced_by": str(document.pk)},
-                    request=request,
-                )  # fmt: skip
+    with (
+        stored_blob(
+            application.pk, document_type, info, beneficiary_id=beneficiary and beneficiary.pk
+        ) as blob_name,
+        transaction.atomic(),
+    ):
+        app = lock_application(application.pk)
+        ensure_editable_by_owner(app, actor)  # re-check under the lock
+        previous = (
+            Document.objects.select_for_update()
+            .filter(application=app, beneficiary=beneficiary, document_type=document_type)
+            .first()
+        )
+        if previous is not None:
+            previous.deleted_at = timezone.now()
+            previous.save(update_fields=["deleted_at"])
+        document = create_document_row(
+            app, beneficiary=beneficiary, document_type=document_type, blob_name=blob_name,
+            info=info, actor=actor, request=request,
+        )  # fmt: skip
+        if previous is not None:
             record(
-                actor=actor,
-                action=AuditAction.DOCUMENT_UPLOADED,
-                obj=document,
-                metadata={
-                    "document_type": document_type,
-                    "content_type": info.content_type,
-                    "file_size": info.size,
-                    "beneficiary_id": str(beneficiary.pk) if beneficiary else None,
-                },
+                actor=actor, action=AuditAction.DOCUMENT_REPLACED, obj=previous,
+                metadata={"document_type": document_type, "replaced_by": str(document.pk)},
                 request=request,
-            )
-            if document_type == DocumentType.PAYMENT_RECEIPT:
-                mark_receipt_uploaded(app, actor=actor, request=request)
-    except BaseException:
-        storage.delete(blob_name)
-        raise
+            )  # fmt: skip
+        if document_type == DocumentType.PAYMENT_RECEIPT:
+            mark_receipt_uploaded(app, actor=actor, request=request)
     return document
 
 
@@ -139,6 +163,8 @@ def delete_document(document: Document, *, actor, request=None) -> None:
 
     app = lock_application(document.application_id)
     ensure_editable_by_owner(app, actor)
+    if document.document_type == DUES_RECEIPT_TYPE:  # submissions are history, never removed
+        raise PermissionDeniedError(MSG_DUES_RECEIPT_NOT_DELETABLE)
     soft_delete_documents(Document.objects.filter(pk=document.pk), actor=actor, reason="DELETED")
     if document.document_type == DocumentType.PAYMENT_RECEIPT:
         mark_receipt_removed(app, actor=actor, request=request)
@@ -182,8 +208,10 @@ def document_content(document: Document, *, actor, request=None) -> DocumentCont
 
 __all__ = [
     "Document",
+    "create_document_row",
     "delete_document",
     "document_content",
     "soft_delete_documents",
     "store_document",
+    "stored_blob",
 ]

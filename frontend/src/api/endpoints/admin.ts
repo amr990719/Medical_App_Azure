@@ -90,6 +90,41 @@ export async function reviewPayment(
   );
 }
 
+/** Ask the member to settle additional syndicate dues (amount: normalized decimal string). */
+export async function createDuesRequest(id: string, amount: string, reason: string): Promise<AdminApplicationDetail> {
+  return toCamel(
+    await apiFetch<ApiAdminApplicationDetail>(`/admin/applications/${id}/dues-requests/`, {
+      method: "POST",
+      body: { amount, reason },
+    }),
+  );
+}
+
+/** Confirm or reject the receipt waiting for review; `receiptId` is the one the admin saw. */
+export async function reviewDuesReceipt(
+  id: string,
+  duesId: string,
+  receiptId: string,
+  decision: "CONFIRMED" | "REJECTED",
+  reason: string,
+): Promise<AdminApplicationDetail> {
+  return toCamel(
+    await apiFetch<ApiAdminApplicationDetail>(`/admin/applications/${id}/dues-requests/${duesId}/review/`, {
+      method: "POST",
+      body: { receipt_id: receiptId, decision, reason },
+    }),
+  );
+}
+
+export async function cancelDuesRequest(id: string, duesId: string, reason: string): Promise<AdminApplicationDetail> {
+  return toCamel(
+    await apiFetch<ApiAdminApplicationDetail>(`/admin/applications/${id}/dues-requests/${duesId}/cancel/`, {
+      method: "POST",
+      body: { reason },
+    }),
+  );
+}
+
 export async function fetchAdminNotes(id: string): Promise<AdminNote[]> {
   return toCamel(await apiFetch<Schemas["AdminNote"][]>(`/admin/applications/${id}/notes/`));
 }

@@ -1,7 +1,7 @@
 import { apiFetch, apiUpload } from "../client";
 import { toCamel } from "../case";
 import type { components } from "../schema";
-import type { DocumentSummary, DocumentType } from "../types";
+import type { DocumentSummary, DocumentType, DuesRequest } from "../types";
 
 export type UploadInput = {
   applicationId: string;
@@ -21,6 +21,21 @@ export async function uploadDocument(
   if (beneficiaryId) form.append("beneficiary_id", beneficiaryId);
   const result = await apiUpload<components["schemas"]["DocumentSummary"]>(
     `/applications/${applicationId}/documents/`,
+    form,
+    onProgress,
+  );
+  return toCamel(result);
+}
+
+/** The member's receipt for one additional dues request; returns the updated request. */
+export async function uploadDuesReceipt(
+  { applicationId, duesId, file }: { applicationId: string; duesId: string; file: File },
+  onProgress?: (percent: number) => void,
+): Promise<DuesRequest> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const result = await apiUpload<components["schemas"]["DuesRequest"]>(
+    `/applications/${applicationId}/dues-requests/${duesId}/receipts/`,
     form,
     onProgress,
   );

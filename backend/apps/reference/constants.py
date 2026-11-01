@@ -69,6 +69,9 @@ class DocumentType(models.TextChoices):
     INSURANCE_PRINT = "INSURANCE_PRINT", "برينت تأميني"
     UNIVERSITY_ID = "UNIVERSITY_ID", "كارنيه الجامعة"
     OTHER = "OTHER", "مستند آخر"
+    # Receipt for additional syndicate dues (apps.dues). Never a form slot: each upload is kept
+    # as its own row, so it is exempt from the one-active-document-per-slot rule.
+    SYNDICATE_DUES_RECEIPT = "SYNDICATE_DUES_RECEIPT", "إيصال سداد مستحقات نقابية"
 
 
 class ApplicationType(models.TextChoices):
@@ -90,6 +93,24 @@ class PaymentStatus(models.TextChoices):
     PENDING_REVIEW = "PENDING_REVIEW", "بانتظار التأكيد"
     CONFIRMED = "CONFIRMED", "مؤكد"
     REJECTED = "REJECTED", "مرفوض"
+
+
+class DuesRequestStatus(models.TextChoices):
+    """Additional syndicate dues requested by an admin (apps.dues); separate from the treatment
+    fee and `PaymentStatus`."""
+
+    REQUESTED = "REQUESTED", "بانتظار السداد"
+    PENDING_REVIEW = "PENDING_REVIEW", "الإيصال قيد المراجعة"
+    REJECTED = "REJECTED", "الإيصال مرفوض"
+    CONFIRMED = "CONFIRMED", "تم تأكيد السداد"
+    CANCELLED = "CANCELLED", "ملغي"
+
+
+class DuesReceiptStatus(models.TextChoices):
+    PENDING_REVIEW = "PENDING_REVIEW", "قيد المراجعة"
+    CONFIRMED = "CONFIRMED", "مقبول"
+    REJECTED = "REJECTED", "مرفوض"
+    CANCELLED = "CANCELLED", "لم يُراجع (أُلغي الطلب)"
 
 
 class ScanStatus(models.TextChoices):

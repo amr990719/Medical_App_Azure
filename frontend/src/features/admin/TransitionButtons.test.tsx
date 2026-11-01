@@ -41,4 +41,49 @@ describe("TransitionButtons", () => {
     renderButtons(["NEEDS_CORRECTION", "REJECTED"], "UNDER_REVIEW", "PENDING_REVIEW");
     expect(screen.getByText("يجب تأكيد الدفع قبل قبول الطلب.")).toBeInTheDocument();
   });
+
+  it("places the dues request right after طلب تصحيح when the server allows it", async () => {
+    const onRequestDues = vi.fn();
+    const { user } = renderWithProviders(
+      <TransitionButtons
+        allowed={["REJECTED", "NEEDS_CORRECTION", "APPROVED"]}
+        status="UNDER_REVIEW"
+        paymentStatus="CONFIRMED"
+        onSelect={vi.fn()}
+        canRequestDues
+        onRequestDues={onRequestDues}
+      />,
+    );
+    expect(buttonLabels()).toEqual(["قبول الطلب", "طلب تصحيح", "طلب سداد مستحقات نقابية", "رفض الطلب"]);
+    await user.click(screen.getByRole("button", { name: "طلب سداد مستحقات نقابية" }));
+    expect(onRequestDues).toHaveBeenCalledOnce();
+  });
+
+  it("hides the dues request when the server does not allow it", () => {
+    renderWithProviders(
+      <TransitionButtons
+        allowed={[]}
+        status="APPROVED"
+        paymentStatus="CONFIRMED"
+        onSelect={vi.fn()}
+        canRequestDues={false}
+        onRequestDues={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "طلب سداد مستحقات نقابية" })).not.toBeInTheDocument();
+  });
+
+  it("explains that outstanding dues block the approval", () => {
+    renderWithProviders(
+      <TransitionButtons
+        allowed={["NEEDS_CORRECTION", "REJECTED"]}
+        status="UNDER_REVIEW"
+        paymentStatus="CONFIRMED"
+        onSelect={vi.fn()}
+        outstandingDues={2}
+      />,
+    );
+    expect(screen.getByText("لا يمكن قبول الطلب قبل تأكيد سداد المستحقات النقابية المطلوبة (2).")).toBeInTheDocument();
+    expect(screen.queryByText("يجب تأكيد الدفع قبل قبول الطلب.")).not.toBeInTheDocument();
+  });
 });

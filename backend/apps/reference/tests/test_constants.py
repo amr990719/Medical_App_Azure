@@ -64,7 +64,8 @@ def test_enum_labels():
 
 
 def test_document_types_and_labels():
-    assert len(DocumentType.values) == 14
+    assert len(DocumentType.values) == 15
+    assert DocumentType.SYNDICATE_DUES_RECEIPT.label == "إيصال سداد مستحقات نقابية"
     # BENEFICIARY_NATIONAL_ID keeps its value (existing uploads) and is now the FRONT side.
     assert DocumentType.BENEFICIARY_NATIONAL_ID.label == "بطاقة الرقم القومي للمستفيد (وجه)"
     assert DocumentType.BENEFICIARY_NATIONAL_ID_BACK.label == "بطاقة الرقم القومي للمستفيد (ظهر)"
