@@ -46,6 +46,9 @@ EXECUTABLE_SIGNATURES = (
 # Scripted / launching / embedding PDFs. (/OpenAction alone is common in scanner output.)
 PDF_ACTIVE_CONTENT = re.compile(rb"/(JavaScript|JS|Launch|EmbeddedFiles?|RichMedia|XFA)\b")
 
+# Receipts are checked against the minimum receipt size (400×300 px).
+RECEIPT_TYPES = frozenset({DocumentType.PAYMENT_RECEIPT, DocumentType.SYNDICATE_DUES_RECEIPT})
+
 MAX_FILENAME_LENGTH = 100
 _UNSAFE_FILENAME_CHARS = re.compile(r"[^\w.-]")
 
@@ -166,7 +169,7 @@ def validate_upload(upload, *, document_type) -> UploadInfo:
         _check_pdf(data)
     else:
         width, height = _decode_image(data, content_type)
-        if document_type == DocumentType.PAYMENT_RECEIPT and (
+        if document_type in RECEIPT_TYPES and (
             width < settings.RECEIPT_MIN_WIDTH or height < settings.RECEIPT_MIN_HEIGHT
         ):
             raise ImageTooSmall()

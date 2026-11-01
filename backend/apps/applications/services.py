@@ -17,9 +17,15 @@ from apps.common.exceptions import (
     PermissionDeniedError,
     ValidationFailed,
 )
+from apps.dues.services import MSG_DUES_OUTSTANDING, outstanding_dues
 from apps.fees.models import FeeSchedule
 from apps.fees.services import NoActiveFeeSchedule, active_schedule, quote_for_application
-from apps.reference.constants import ApplicationStatus, ApplicationType, PaymentStatus
+from apps.reference.constants import (
+    ApplicationStatus,
+    ApplicationType,
+    DocumentType,
+    PaymentStatus,
+)
 
 from .access import ensure_editable_by_owner, ensure_owner, lock_application
 from .models import InsuranceApplication, ReferenceCounter
@@ -164,6 +170,9 @@ def transition(
             raise ValidationFailed(fields={"review_notes": [MSG_NOTES_REQUIRED]})
         if rule.requires_payment_confirmed and app.payment_status != PaymentStatus.CONFIRMED:
             raise InvalidStatusTransition(MSG_PAYMENT_NOT_CONFIRMED)
+        # Checked under the application lock, which every dues mutation also takes first.
+        if rule.requires_dues_settled and outstanding_dues(app).exists():
+            raise InvalidStatusTransition(MSG_DUES_OUTSTANDING)
 
         if to_status == ApplicationStatus.SUBMITTED:
             _submit_locked(app, actor, request)
@@ -272,7 +281,7 @@ def _submitted_snapshot(app: InsuranceApplication) -> dict:
                 "document_type": d.document_type,
                 "beneficiary_id": str(d.beneficiary_id) if d.beneficiary_id else None,
             }
-            for d in app.documents.all()
+            for d in app.documents.exclude(document_type=DocumentType.SYNDICATE_DUES_RECEIPT)
         ],
     }
 
@@ -388,6 +397,9 @@ def admin_allowed_transitions(application: InsuranceApplication) -> list[str]:
     from .transitions import allowed_targets
 
     targets = allowed_targets(application.status, role=Role.ADMIN)
-    if application.payment_status != PaymentStatus.CONFIRMED:
+    if (
+        application.payment_status != PaymentStatus.CONFIRMED
+        or outstanding_dues(application).exists()
+    ):
         targets = [t for t in targets if t != ApplicationStatus.APPROVED]
     return targets

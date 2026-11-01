@@ -87,6 +87,19 @@ def full_lifecycle(settings):
     admin.post(f"{admin_base}transition/", {"to_status": "NEEDS_CORRECTION",
                                             "review_notes": "يرجى التوضيح"})  # fmt: skip
     assert doctor.post(f"{base}submit/").status_code == 200  # APPLICATION_RESUBMITTED
+    dues_url = f"{admin_base}dues-requests/"
+    paid = admin.post(dues_url, {"amount": "250", "reason": "سبب المستحقات الخاص"})
+    dues_id = paid.json()["dues_requests"][0]["id"]  # DUES_REQUEST_CREATED
+    dues_receipt = doctor.post(
+        f"{base}dues-requests/{dues_id}/receipts/",
+        {"file": png_upload(name="مستند خاص.png")},
+        format="multipart",
+    )  # DUES_RECEIPT_UPLOADED
+    admin.post(f"{dues_url}{dues_id}/review/", {
+        "receipt_id": dues_receipt.json()["receipts"][0]["id"], "decision": "REJECTED",
+        "reason": "سبب الرفض الخاص"})  # DUES_RECEIPT_REVIEWED  # fmt: skip
+    admin.post(f"{dues_url}{dues_id}/cancel/", {"reason": "سبب الإلغاء الخاص"})
+    # ^ DUES_REQUEST_CANCELLED
     schedule = FeeSchedule.objects.get(fiscal_year=2026, is_active=True)
     admin.post("/api/v1/admin/fee-schedules/", {
         "fiscal_year": 2026, "tier_fees": schedule.tier_fees, "admin_fee_base": 200,
@@ -113,6 +126,7 @@ def test_audit_metadata_never_contains_personal_values(full_lifecycle):
         assert "مستند خاص" not in blob  # uploaded filename
         assert PROFILE["full_name"] not in blob
         assert "مراجعة أولية" not in blob and "يرجى التوضيح" not in blob  # note texts
+        assert "الخاص" not in blob  # dues reason, rejection and cancellation texts
 
 
 def test_audit_entries_carry_actor_and_hashed_ip(full_lifecycle):

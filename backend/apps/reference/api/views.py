@@ -14,6 +14,8 @@ from apps.reference.constants import (
     ApplicationStatus,
     ApplicationType,
     DocumentType,
+    DuesReceiptStatus,
+    DuesRequestStatus,
     Gender,
     Kinship,
     PaymentStatus,
@@ -43,6 +45,8 @@ def reference_data() -> dict:
         "application_types": _choices(ApplicationType),
         "statuses": _choices(ApplicationStatus),
         "payment_statuses": _choices(PaymentStatus),
+        "dues_request_statuses": _choices(DuesRequestStatus),
+        "dues_receipt_statuses": _choices(DuesReceiptStatus),
         "document_rules": rules_as_reference_data(
             child_id_age=settings.CHILD_NATIONAL_ID_AGE,
             photo_exempt_child_age=settings.PHOTO_EXEMPT_CHILD_AGE,

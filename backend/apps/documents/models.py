@@ -16,6 +16,8 @@ BENEFICIARY_DOCUMENT_TYPES = (
     DocumentType.UNIVERSITY_ID,
     DocumentType.BENEFICIARY_PERSONAL_PHOTO,
 )
+# Member-owned, never a slot: every upload is kept (apps.dues links each one to its request).
+DUES_RECEIPT_TYPE = DocumentType.SYNDICATE_DUES_RECEIPT
 
 
 class ActiveDocumentManager(models.Manager):
@@ -28,6 +30,8 @@ class Document(models.Model):
 
     One active document per (application, beneficiary, document_type); re-upload soft-deletes
     the previous one. Soft-deleted rows are kept for the blob cleanup job and audit.
+    Syndicate dues receipts are the exception: each is its own submission (apps.dues), never
+    replaced, so they are outside the slot constraint.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -78,7 +82,7 @@ class Document(models.Model):
             # limited to one active row per type.
             models.UniqueConstraint(
                 fields=["application", "beneficiary", "document_type"],
-                condition=Q(deleted_at__isnull=True),
+                condition=Q(deleted_at__isnull=True) & ~Q(document_type=DUES_RECEIPT_TYPE),
                 nulls_distinct=False,
                 name="uniq_active_document_per_slot",
             ),
@@ -89,6 +93,7 @@ class Document(models.Model):
                     Q(deleted_at__isnull=False)
                     | Q(beneficiary__isnull=True, document_type__in=MEMBER_DOCUMENT_TYPES)
                     | Q(beneficiary__isnull=False, document_type__in=BENEFICIARY_DOCUMENT_TYPES)
+                    | Q(beneficiary__isnull=True, document_type=DUES_RECEIPT_TYPE)
                     | Q(document_type=DocumentType.OTHER)
                 ),
                 name="document_type_matches_owner",
