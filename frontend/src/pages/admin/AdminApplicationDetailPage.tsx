@@ -9,11 +9,13 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ActionDialog } from "@/features/admin/ActionDialog";
 import { AuditList } from "@/features/admin/AuditList";
 import { DocumentViewer } from "@/features/admin/DocumentViewer";
+import { DuesPanel } from "@/features/admin/DuesPanel";
 import { choiceLabel, documentTypeLabel } from "@/features/admin/labels";
 import { NotesPanel } from "@/features/admin/NotesPanel";
 import { PaymentBadge } from "@/features/admin/PaymentBadge";
 import { PaymentPanel } from "@/features/admin/PaymentPanel";
 import { useAdminApplication, useTransition } from "@/features/admin/queries";
+import { RequestDuesDialog } from "@/features/admin/RequestDuesDialog";
 import { TransitionButtons } from "@/features/admin/TransitionButtons";
 import { NOTES_REQUIRED, type AdminTarget } from "@/features/admin/transitions";
 import { FeeSummaryPanel } from "@/features/fees/FeeSummaryPanel";
@@ -220,7 +222,8 @@ function BeneficiariesPanel({
 /**
  * `/admin/applications/:id` (PROMPT.md §44): member data with an audited "show full national
  * ID", beneficiaries and documents in a viewer, the fee SNAPSHOT, receipt confirm/reject,
- * duplicate warnings, the server's allowed transitions, review and internal notes, audit.
+ * additional syndicate dues (request, receipts, confirm/reject/cancel), duplicate warnings, the
+ * server's allowed transitions, review and internal notes, audit.
  */
 export function AdminApplicationDetailPage() {
   const { id = "" } = useParams();
@@ -230,6 +233,7 @@ export function AdminApplicationDetailPage() {
   const transition = useTransition(id);
   const [viewing, setViewing] = useState<{ document: DocumentSummary; label: string } | null>(null);
   const [target, setTarget] = useState<AdminTarget | null>(null);
+  const [requestingDues, setRequestingDues] = useState(false);
   const [flash, setFlash] = useState("");
 
   if (query.error) {
@@ -324,6 +328,13 @@ export function AdminApplicationDetailPage() {
               <p className="text-sm text-slate">{D.noSnapshot}</p>
             </Panel>
           )}
+          <DuesPanel
+            applicationId={id}
+            requests={app.duesRequests}
+            reference={reference.data}
+            onView={view}
+            onDone={setFlash}
+          />
         </div>
 
         <aside className="min-w-0 space-y-5">
@@ -334,6 +345,9 @@ export function AdminApplicationDetailPage() {
               paymentStatus={app.paymentStatus}
               onSelect={setTarget}
               disabled={transition.isPending}
+              canRequestDues={app.canRequestDues}
+              onRequestDues={() => setRequestingDues(true)}
+              outstandingDues={app.outstandingDuesCount}
             />
           </Panel>
           <PaymentPanel application={app} reference={reference.data} onView={(doc) => view(doc)} onDone={setFlash} />
@@ -355,6 +369,15 @@ export function AdminApplicationDetailPage() {
       </div>
 
       <DocumentViewer document={viewing?.document ?? null} label={viewing?.label ?? ""} onClose={() => setViewing(null)} />
+
+      {requestingDues ? (
+        <RequestDuesDialog
+          applicationId={id}
+          reference={app.referenceNumber ?? ""}
+          onClose={() => setRequestingDues(false)}
+          onDone={setFlash}
+        />
+      ) : null}
 
       {target ? (
         <ActionDialog

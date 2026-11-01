@@ -374,5 +374,8 @@
       "images_only": false,
       "hints": []
     }
-  ]
+  ],
+  "dues_requests": [],
+  "can_request_dues": true,
+  "outstanding_dues_count": 0
 }

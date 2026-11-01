@@ -258,6 +258,12 @@
         "label": "مستند آخر",
         "ocr_capable": false,
         "images_only": false
+      },
+      {
+        "type": "SYNDICATE_DUES_RECEIPT",
+        "label": "إيصال سداد مستحقات نقابية",
+        "ocr_capable": false,
+        "images_only": false
       }
     ],
     "member": [
@@ -417,5 +423,45 @@
       "image/png",
       "image/webp"
     ]
-  }
+  },
+  "dues_request_statuses": [
+    {
+      "value": "REQUESTED",
+      "label": "بانتظار السداد"
+    },
+    {
+      "value": "PENDING_REVIEW",
+      "label": "الإيصال قيد المراجعة"
+    },
+    {
+      "value": "REJECTED",
+      "label": "الإيصال مرفوض"
+    },
+    {
+      "value": "CONFIRMED",
+      "label": "تم تأكيد السداد"
+    },
+    {
+      "value": "CANCELLED",
+      "label": "ملغي"
+    }
+  ],
+  "dues_receipt_statuses": [
+    {
+      "value": "PENDING_REVIEW",
+      "label": "قيد المراجعة"
+    },
+    {
+      "value": "CONFIRMED",
+      "label": "مقبول"
+    },
+    {
+      "value": "REJECTED",
+      "label": "مرفوض"
+    },
+    {
+      "value": "CANCELLED",
+      "label": "لم يُراجع (أُلغي الطلب)"
+    }
+  ]
 }

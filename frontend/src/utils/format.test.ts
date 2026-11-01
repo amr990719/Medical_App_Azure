@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatFileSize, formatMoney, formatNumber, formatRelativeTime } from "./format";
+import { formatAmount, formatDate, formatFileSize, formatMoney, formatNumber, formatRelativeTime } from "./format";
 
 describe("formatMoney", () => {
   it("formats with the Arabic thousands separator, Western digits and the pound sign", () => {
@@ -9,6 +9,18 @@ describe("formatMoney", () => {
   it("formats zero and small amounts", () => {
     expect(formatMoney(0)).toBe("0 ج.م");
     expect(formatMoney(750)).toBe("750 ج.م");
+  });
+});
+
+describe("formatAmount (server decimal strings, never floats)", () => {
+  it("drops a zero fraction and groups thousands", () => {
+    expect(formatAmount("250.00")).toBe("250 ج.م");
+    expect(formatAmount("1250.50")).toBe("1٬250.50 ج.م");
+    expect(formatAmount("99999999.99")).toBe("99٬999٬999.99 ج.م");
+  });
+
+  it("keeps an unexpected value visible instead of hiding it", () => {
+    expect(formatAmount("abc")).toBe("abc ج.م");
   });
 });
 

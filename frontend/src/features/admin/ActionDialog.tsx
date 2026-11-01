@@ -6,7 +6,8 @@ import { cx } from "@/utils/cx";
 
 /**
  * Confirmation dialog for a review action with an optional or required text (review notes,
- * internal payment note). The server's answer decides; its Arabic error is shown in place.
+ * internal payment note, dues reasons). Without `notesLabel` it is a plain confirmation. The
+ * server's answer decides; its Arabic error is shown in place.
  */
 export function ActionDialog({
   title,
@@ -14,6 +15,7 @@ export function ActionDialog({
   notesLabel,
   notesHint,
   notesRequired = false,
+  missingMessage = ar.admin.actions.notesMissing,
   confirmLabel = ar.admin.actions.confirm,
   confirmVariant = "primary",
   busy,
@@ -23,9 +25,10 @@ export function ActionDialog({
 }: {
   title: string;
   body?: ReactNode;
-  notesLabel: string;
+  notesLabel?: string;
   notesHint?: string;
   notesRequired?: boolean;
+  missingMessage?: string;
   confirmLabel?: string;
   confirmVariant?: "primary" | "danger";
   busy: boolean;
@@ -66,6 +69,7 @@ export function ActionDialog({
     >
       <div className="space-y-3">
         {body ? <div className="text-charcoal">{body}</div> : null}
+        {notesLabel ? (
         <div className="flex flex-col gap-1.5">
           <label htmlFor={id} className="text-sm font-bold text-charcoal">
             {notesLabel}
@@ -91,9 +95,10 @@ export function ActionDialog({
             </p>
           ) : null}
         </div>
+        ) : null}
         {missing || error ? (
           <p id={errorId} role="alert" className="rounded-lg bg-danger-light p-2.5 text-sm font-semibold text-danger">
-            {missing ? ar.admin.actions.notesMissing : error}
+            {missing ? missingMessage : error}
           </p>
         ) : null}
       </div>

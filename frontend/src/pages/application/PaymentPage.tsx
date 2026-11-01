@@ -10,8 +10,7 @@ import { FullPageStatus } from "@/components/ui/FullPageStatus";
 import { Icon } from "@/components/ui/Icon";
 import { useApplication } from "@/features/applications/useApplication";
 import { completedSteps, useValidation } from "@/features/applications/useValidation";
-import { readImageSize } from "@/features/documents/imageSize";
-import { preCheckFile } from "@/features/documents/preCheck";
+import { preCheckReceipt } from "@/features/documents/preCheck";
 import { FeeSummaryPanel } from "@/features/fees/FeeSummaryPanel";
 import { useFeeQuote } from "@/features/fees/useFeeQuote";
 import { useReferenceData } from "@/features/reference/useReferenceData";
@@ -57,14 +56,7 @@ function ReceiptUpload({
     if (!file || !limits) return;
     upload.reset();
     // UX pre-check (type, size, 400×300); the server sniffs, decodes and checks again.
-    let problem = preCheckFile(file, limits);
-    if (!problem) {
-      const size = await readImageSize(file);
-      if (!size) problem = P.unreadable;
-      else if (size.width < limits.receiptMinWidth || size.height < limits.receiptMinHeight) {
-        problem = t(P.tooSmall, { width: limits.receiptMinWidth, height: limits.receiptMinHeight });
-      }
-    }
+    const problem = await preCheckReceipt(file, limits);
     setLocalError(problem);
     if (problem) return;
     setProgress(0);
