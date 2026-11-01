@@ -1374,6 +1374,21 @@ Scope set by the user: serve the existing dev app at `https://neqabacare.com` (c
 - **NOT VERIFIED:** a full sign-in and a CSRF-protected POST on `neqabacare.com` (needs an Entra
   user); on the owner smoke list.
 
+### Session 22 (cont.) — 2026-11-01 — Deployed to dev
+
+- **Deploy (user instruction "deploy", merge explicitly allowed):** PR #14 (CI green: backend,
+  frontend, Playwright, image build, CodeQL) merged as `c056f3f`; it also carried the Session 20/21
+  deploy notes (`f2082fc`, `186df5c`). `backend` run `41323599736` and `frontend` run `41323599812`
+  succeeded (deploy-dev; staging/prod skipped). Migrate job execution
+  `caj-medsyn-dev-migrate-hfepjba` Succeeded and its log shows `audit.0004_dues_actions`,
+  `documents.0004_syndicate_dues_receipt` and `dues.0001_initial` applied (OK). Revision
+  `ca-medsyn-dev-api--gc056f3f2eded-1` (image `c056f3f…`) Healthy, Running, 100 % traffic.
+- **Post-check:** on `https://neqabacare.com` the SPA, `/api/health/`, `/api/ready/` and
+  `/admin/applications` answer 200, reference data 401 without a session (as designed); the served
+  bundle (`index-BP1KvumA.js`) contains the dues endpoint and «طلب سداد مستحقات نقابية».
+- **NOT VERIFIED on dev:** the signed-in flows (reference data's dues statuses, request / upload /
+  review / approval blocking on screen) — need an Entra sign-in; on the owner smoke list.
+
 ### Session 22 — 2026-11-01 — Additional syndicate dues (مستحقات نقابية)
 
 Owner requirement of 2026-11-01 (PROMPT.md §18.1 added; §16.2, §19, §24, §39, §44,
@@ -2259,17 +2274,13 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
-**Session 22 (D186–D192, additional syndicate dues) is committed locally** on
-`feat/syndicate-dues-2026-11-01` (from `docs/dev-deploy-2026-10-30-align`, which still holds the
-unpushed Session 20/21 deploy notes). Not pushed, no PR, not deployed. Next:
-1. **Owner review** of the dues workflow and answers to Q-B33–Q-B35; then, on confirmation, push
-   the branch and open the PR (CI: backend, frontend, Playwright, image).
-2. **Deploy to dev** (needs the backend image + migrate job: `audit.0004`, `documents.0004`,
-   `dues.0001`, all expand-only; `documents.0004` briefly locks `documents_document` while the
-   slot index is rebuilt, 2s `lock_timeout`). Post-check: `/api/ready/`, reference data has
-   `dues_request_statuses`, then the owner smoke test: request dues on a submitted application,
-   upload as the member, reject → re-upload → confirm, approval appears only afterwards.
-3. Carry-over: the open items of the previous handoff below (owner answers Q-B30–Q-B32 and Q-T22,
+**Session 22 (D186–D192, additional syndicate dues) is merged (PR #14, `c056f3f`) and deployed to
+dev** (see "Session 22 (cont.)"); this deploy note is on the local branch
+`docs/dev-deploy-2026-11-01-dues`, not pushed. Next:
+1. **Owner smoke test on dev** (Entra sign-in): request dues on a submitted application, upload as
+   the member, reject → re-upload → confirm; approval appears only afterwards; the original
+   receipt and payment status stay as they were. Answers to Q-B33–Q-B35.
+2. Carry-over: the open items of the previous handoff below (owner answers Q-B30–Q-B32 and Q-T22,
    the owner smoke list on dev, Q-T24 SWA default domain, `docs/final-report.md` §16, staging
    checklist, Q-B23–Q-B25, Q-B28, Q-T21, legal L1–L8, required status checks D143).
 
