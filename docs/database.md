@@ -178,9 +178,14 @@ Rules are enforced by the database first and handled as `IntegrityError` in the 
 | `beneficiaries_beneficiary` | `uniq_beneficiary_row` | `UNIQUE (application_id, row_number)` | paper-form rows |
 | `beneficiaries_beneficiary` | `beneficiary_row_number_range` | `row_number BETWEEN 1 AND 20` | hard ceiling; the business limit is `MAX_BENEFICIARIES` (10) in the service |
 | `beneficiaries_beneficiary` | `beneficiary_national_id_format`, `beneficiary_kinship_valid` | `CHECK` | format, enum |
-| `documents_document` | `uniq_active_document_per_slot` | `UNIQUE (application_id, beneficiary_id, document_type) NULLS NOT DISTINCT WHERE deleted_at IS NULL` | one live document per slot; re-upload replaces |
+| `documents_document` | `uniq_active_document_per_slot` | `UNIQUE (application_id, beneficiary_id, document_type) NULLS NOT DISTINCT WHERE deleted_at IS NULL AND document_type <> 'SYNDICATE_DUES_RECEIPT'` | one live document per slot; re-upload replaces. Dues receipts are excluded: every one is kept |
 | `documents_document` | `uniq_document_blob_name` | `UNIQUE (blob_name)` | one row per blob |
-| `documents_document` | `document_type_matches_owner` | member types only without beneficiary, beneficiary types only with one (`OTHER` either), unless deleted | document rules table cannot be bypassed |
+| `documents_document` | `document_type_matches_owner` | member types only without beneficiary, beneficiary types only with one (`OTHER` either, `SYNDICATE_DUES_RECEIPT` without), unless deleted | document rules table cannot be bypassed |
+| `dues_syndicateduesrequest` | `dues_request_amount_positive`, `dues_request_reason_present`, `dues_request_status_valid` | `amount > 0`, `reason <> ''`, enum | additional dues: positive EGP amount (`numeric(10,2)`), explained |
+| `dues_syndicateduesrequest` | `dues_request_cancellation_reason_iff_cancelled`, `dues_request_resolved_iff_final` | reason ⇔ CANCELLED; `resolved_by/at` ⇔ CONFIRMED or CANCELLED | cancellation is recorded; who resolved it is known |
+| `dues_duesreceipt` | `uniq_pending_receipt_per_dues_request`, `uniq_confirmed_receipt_per_dues_request` | `UNIQUE (request_id) WHERE status = 'PENDING_REVIEW'` / `'CONFIRMED'` | one receipt waits for review at a time; one accepted |
+| `dues_duesreceipt` | `dues_receipt_rejection_reason_iff_rejected`, `dues_receipt_reviewed_iff_decided`, `dues_receipt_status_valid` | `CHECK` | a rejection carries the member-visible reason; decisions carry the reviewer |
+| `dues_duesreceipt` | `dues_duesreceipt_document_id_key` | `UNIQUE (document_id)` | one document per receipt, never shared |
 | `documents_document` | `document_scan_status_valid` | `CHECK` | enum |
 | `fees_feeschedule` | `uniq_fee_schedule_version` | `UNIQUE (fiscal_year, version)` | versioned schedules |
 | `fees_feeschedule` | `uniq_active_fee_schedule_per_year` | `UNIQUE (fiscal_year) WHERE is_active` | exactly one active version per year |
@@ -228,7 +233,7 @@ one (audited `NATIONAL_ID_REVEALED`). Logs never contain them (masking filter).
 
 ## 6. Migrations
 
-38 migrations on a clean database: 23 project migrations plus Django's `contenttypes`, `auth` and
+41 migrations on a clean database: 26 project migrations plus Django's `contenttypes`, `auth` and
 `sessions`.
 
 | App | Migrations |
@@ -238,8 +243,9 @@ one (audited `NATIONAL_ID_REVEALED`). Logs never contain them (masking filter).
 | fees | `0001_initial`, `0002_seed_fy2026` (FY 2026 v1 — history only, row removed by 0005), `0003_admin_fee_formula`, `0004_fy2026_v2_schedule` (FY 2026 v2 — removed by 0008), `0005_remove_fy2026_v1` (clears v1 references, keeps snapshots, deletes v1), `0006_remove_legacy_admin_fee` (drops the flat-fee columns), `0007_feeschedule_service_fee` (`service_fee`, DB default 800), `0008_fy2026_v3_schedule` (FY 2026 v3, active; re-prices every FY 2026 fee snapshot on it from the submitted data, refusing and rolling back on incomplete submitted data or an invalid quote; deletes the other FY 2026 versions) |
 | applications | `0001_initial` |
 | beneficiaries | `0001_initial`, `0002_beneficiary_is_first_time`, `0003_remove_daughter_kinship`, `0004_validate_kinship_constraint` |
-| documents | `0001_initial`, `0002_document_blob_purged_at`, `0003_document_types_id_back_photo_member_certificate` |
-| audit | `0001_initial`, `0002_append_only_trigger`, `0003_admin_role_revoked_action` |
+| documents | `0001_initial`, `0002_document_blob_purged_at`, `0003_document_types_id_back_photo_member_certificate`, `0004_syndicate_dues_receipt` (type; slot index excludes it; 2s `lock_timeout`) |
+| dues | `0001_initial` (`SyndicateDuesRequest`, `DuesReceipt`) |
+| audit | `0001_initial`, `0002_append_only_trigger`, `0003_admin_role_revoked_action`, `0004_dues_actions` (choices only) |
 
 Commands:
 

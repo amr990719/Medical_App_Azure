@@ -67,6 +67,11 @@ absolute timeout 12 h (`SESSION_*_TIMEOUT_SECONDS`).
 | GET | `/documents/{id}/content/` | authorized stream (`DOCUMENT_CONTENT_DELIVERY=stream`, default) or 302 to a read-only SAS valid ≤ 5 minutes (`sas`); audited |
 | DELETE | `/documents/{id}/` | owner, only while editable |
 | POST | `/documents/{id}/extract/` | OCR suggestions `{document_id, document_type, fields}`; nothing is saved. 503 `OCR_UNAVAILABLE` when disabled/PDF; 30/hour per user |
+| POST | `/applications/{id}/dues-requests/{dues_id}/receipts/` | multipart `file`: the member's receipt for one additional dues request (own requests only, REQUESTED or REJECTED, application SUBMITTED / UNDER_REVIEW / NEEDS_CORRECTION). Same validation as the payment receipt; stored as a `SYNDICATE_DUES_RECEIPT` document, never replaced. 201 with the request (`status`, `receipts`, `can_upload_receipt`). The generic upload refuses this type; DELETE refuses it (403) |
+
+`GET /applications/{id}/` also returns `dues_requests` (amount as a decimal string, reason, status,
+receipts with their document and rejection reason, `can_upload_receipt`); `documents` lists the
+form documents only.
 
 ## Admin (role ADMIN)
 
@@ -77,11 +82,14 @@ application detail requested with `?reveal_national_id=1` (audited `NATIONAL_ID_
 |---|---|---|
 | GET | `/admin/stats/?fiscal_year=` | counts per status and payment status, `receipts_pending` |
 | GET | `/admin/applications/` | filters `status`, `payment_status`, `fiscal_year`, `governorate`, `syndicate_type`, `sub_syndicate`, `submitted_from`, `submitted_to`; `search` (name, reference, phone, full or masked national ID, Arabic digits OK); `ordering` (`submitted_at`, `reference_number`, `status`, `total`, prefix `-`); `page`, `page_size` ≤ 100 |
-| GET | `/admin/applications/{id}/` | full detail, `allowed_transitions`, `beneficiary_warnings`; audited |
+| GET | `/admin/applications/{id}/` | full detail, `allowed_transitions`, `beneficiary_warnings`, `dues_requests` (with `allowed_actions`, receipts and reviewers), `can_request_dues`, `outstanding_dues_count`; audited |
 | POST | `/admin/applications/{id}/transition/` | `{to_status, review_notes}` through the single transition service |
 | POST | `/admin/applications/{id}/payment/` | `{payment_status: CONFIRMED|REJECTED, note?}` |
+| POST | `/admin/applications/{id}/dues-requests/` | `{amount, reason}` — additional syndicate dues; amount as a string or number, Arabic digits and `٫` accepted, > 0, ≤ 2 decimals. 201 with the detail. 409 unless SUBMITTED / UNDER_REVIEW / NEEDS_CORRECTION |
+| POST | `/admin/applications/{id}/dues-requests/{dues_id}/review/` | `{receipt_id, decision: CONFIRMED|REJECTED, reason}` — the receipt waiting for review; `reason` required to reject (shown to the member) |
+| POST | `/admin/applications/{id}/dues-requests/{dues_id}/cancel/` | `{reason}` (required, admin-only) — any unresolved request |
 | GET/POST | `/admin/applications/{id}/notes/` | internal notes, never on doctor endpoints |
-| GET | `/admin/applications/{id}/audit/` | audit history of the application and its documents |
+| GET | `/admin/applications/{id}/audit/` | audit history of the application, its documents and its dues requests |
 | GET | `/admin/doctors/`, `/admin/doctors/{id}/` | members (masked IDs), search, filters |
 | GET/POST | `/admin/fee-schedules/` | POST creates the next version for a fiscal year and deactivates the previous one |
 | GET | `/admin/fee-schedules/{id}/` | |

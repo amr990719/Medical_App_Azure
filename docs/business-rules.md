@@ -63,7 +63,7 @@ Allowed transitions (anything else is rejected with `INVALID_STATUS_TRANSITION`)
 | DRAFT | SUBMITTED | doctor | full validation passes, receipt uploaded, declaration accepted |
 | SUBMITTED | UNDER_REVIEW | admin | — |
 | SUBMITTED, UNDER_REVIEW | NEEDS_CORRECTION | admin | review note required (visible to doctor) |
-| UNDER_REVIEW | APPROVED | admin | payment status is CONFIRMED |
+| UNDER_REVIEW | APPROVED | admin | payment status is CONFIRMED **and** no additional dues outstanding (§4a) |
 | SUBMITTED, UNDER_REVIEW | REJECTED | admin | review note required |
 | NEEDS_CORRECTION | SUBMITTED | doctor | full validation passes again |
 
@@ -77,6 +77,33 @@ Allowed transitions (anything else is rejected with `INVALID_STATUS_TRANSITION`)
 - Payment status: `NOT_UPLOADED` → `PENDING_REVIEW` (automatically when a receipt is uploaded) →
   `CONFIRMED` or `REJECTED` (admin only). A rejected receipt normally comes with `NEEDS_CORRECTION`.
 - Doctors can never set status, payment status, reference number, fee snapshot or reviewer fields.
+
+## 4a. Additional syndicate dues [`apps/dues`] (owner, 2026-11-01)
+
+Dues an admin asks the member to settle before approval (e.g. the syndicate subscription). Not part
+of the fee engine, `fee_snapshot`, the `PAYMENT_RECEIPT` or `payment_status`; no online payment.
+
+| Request status | Arabic | Next |
+|---|---|---|
+| REQUESTED | بانتظار السداد | member uploads a receipt → PENDING_REVIEW; admin cancels → CANCELLED |
+| PENDING_REVIEW | الإيصال قيد المراجعة | admin confirms → CONFIRMED, rejects (reason required, shown to the member) → REJECTED; cancels → CANCELLED |
+| REJECTED | الإيصال مرفوض | member uploads another receipt → PENDING_REVIEW; admin cancels → CANCELLED |
+| CONFIRMED | تم تأكيد السداد | final |
+| CANCELLED | ملغي | final (reason recorded, admin-only) |
+
+- Created by an admin only, with amount (EGP, > 0, at most two decimals — more is refused, never
+  rounded) and a reason, while the application is SUBMITTED, UNDER_REVIEW or NEEDS_CORRECTION.
+  Creating one changes nothing on the application. Any number of requests over time.
+- The member uploads only for their own requests, only while the request is REQUESTED or
+  REJECTED and the application is in one of those three statuses — no edit or resubmission.
+  One receipt waits for review at a time (database partial unique constraint).
+- Every receipt is kept: its own `DuesReceipt` and `Document` (`SYNDICATE_DUES_RECEIPT`), never
+  replaced or deleted, with its review (status, rejection reason, reviewer, time).
+- **Approval** requires every non-cancelled request to be CONFIRMED (checked in
+  `transition` under the application lock; `allowed_transitions` hides approval). Correction and
+  rejection are not blocked. APPROVED / REJECTED applications freeze their requests.
+- Action availability comes from the server: `can_request_dues`, per request
+  `allowed_actions` (admin) and `can_upload_receipt` (member); `outstanding_dues_count`.
 
 ## 5. Beneficiaries [`apps/beneficiaries`]
 
@@ -266,3 +293,6 @@ with the codes listed in SKILL.md §7. The UI never shows stack traces.
 | 23 | Should the under-3 note also appear on other child rows? | Shown for `SON_MINOR` only (as specified); the exemption itself applies to every child kinship | `document_rules.py` |
 | 24 | Drop the unused `Beneficiary.is_first_time` column (answers collected until 2026-10-29)? | Kept, nullable and unread; dropping it is a one-line migration once the owner confirms the old answers are not needed | `beneficiaries/models.py` |
 | 25 | Under-16 birth certificate for a male member's university / graduate child (practically never under 16)? | Only `SON_MINOR`, as specified | `document_rules.py::BIRTH_CERTIFICATE_BELOW_AGE_KINSHIPS` |
+| 26 | Should the member see why an admin cancelled a dues request? (Q-B33) | No — the reason is recorded for admins; the member sees «ملغي» | `dues/api/serializers.py` |
+| 27 | When an application with outstanding dues is rejected, should its requests be cancelled automatically? (Q-B34) | No — they stay as they were, frozen with the application | `dues/services.py::DUES_ACTIVE_STATUSES` |
+| 28 | Can an admin change a dues decision (e.g. a confirmed receipt) afterwards? (Q-B35) | No — confirmation and cancellation are final; a new request can be created | `dues/services.py` |
