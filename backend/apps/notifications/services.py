@@ -385,3 +385,61 @@ def record_permanent(claim: Claim, *, error_code: str) -> None:
             recipient_masked=claim.recipient_masked,
         ),
     )
+
+
+# ---- Sweeps and the job's view of the queue (spec section 6) ----
+
+SWEEP_LIMIT = 500
+STUCK_AFTER = timedelta(minutes=10)
+SEND_INTERRUPTED = "SEND_INTERRUPTED"
+NO_DELIVERY_RECEIPT = "NO_DELIVERY_RECEIPT"
+
+
+def _sweep(queryset, *, to_status: str, limit: int, now: datetime, error_code: str = "") -> int:
+    """Move up to `limit` rows, one transaction each. A row that changed meanwhile is skipped."""
+    changed = 0
+    for pk, status, attempts in list(queryset.values_list("pk", "status", "attempts")[:limit]):
+        row = apply_transition(
+            pk,
+            to_status=to_status,
+            expected_status=status,
+            expected_attempts=attempts,
+            error_code=error_code,
+            now=now,
+        )
+        changed += row is not None
+    return changed
+
+
+def expire_overdue(*, now: datetime, limit: int = SWEEP_LIMIT) -> int:
+    """PENDING rows past `expires_at` become EXPIRED, oldest first."""
+    rows = Notification.objects.filter(status=S.PENDING, expires_at__lte=now).order_by("expires_at")
+    return _sweep(rows, to_status=S.EXPIRED, limit=limit, now=now)
+
+
+def recover_stuck(*, now: datetime, limit: int = SWEEP_LIMIT) -> int:
+    """Rows in SENDING for 10 minutes or more mean the sender died: FAILED (WhatsApp gets email)."""
+    rows = Notification.objects.filter(
+        status=S.SENDING, sending_started_at__lte=now - STUCK_AFTER
+    ).order_by("sending_started_at")
+    return _sweep(rows, to_status=S.FAILED, limit=limit, now=now, error_code=SEND_INTERRUPTED)
+
+
+def apply_delivery_timeout(*, now: datetime, limit: int = SWEEP_LIMIT) -> int:
+    """WhatsApp rows still SENT after the delivery timeout fail; the email fallback follows."""
+    cutoff = now - timedelta(minutes=settings.WHATSAPP_DELIVERY_TIMEOUT_MINUTES)
+    rows = Notification.objects.filter(
+        status=S.SENT, channel=NotificationChannel.WHATSAPP, sent_at__lte=cutoff
+    ).order_by("sent_at")
+    return _sweep(rows, to_status=S.FAILED, limit=limit, now=now, error_code=NO_DELIVERY_RECEIPT)
+
+
+def oldest_due_age_seconds(*, now: datetime) -> int | None:
+    """Age of the oldest PENDING row that is due, or None when nothing is waiting."""
+    oldest = (
+        Notification.objects.filter(status=S.PENDING, next_attempt_at__lte=now)
+        .order_by("next_attempt_at")
+        .values_list("next_attempt_at", flat=True)
+        .first()
+    )
+    return None if oldest is None else max(0, int((now - oldest).total_seconds()))

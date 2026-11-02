@@ -6,6 +6,8 @@
 #             Apps job, run before traffic shifts to the new revision).
 #   cleanup   `manage.py clearsessions` + `cleanup_blobs` (scheduled Container Apps job); extra
 #             args go to cleanup_blobs, and `--dry-run` also skips clearsessions.
+#   notify    `manage.py send_notifications` (scheduled Container Apps job): expires, recovers and
+#             sends due doctor notifications, then flushes telemetry.
 #   anything else is executed as given (docker compose dev: runserver). In that case only:
 #     RUN_MIGRATIONS_ON_START=true  apply migrations first (local development only)
 #     SEED_ON_START=true            run `seed_dev_data` (refused unless DEV_AUTH_ENABLED)
@@ -49,6 +51,9 @@ case "$mode" in
             *) python manage.py clearsessions ;;
         esac
         exec python manage.py cleanup_blobs "$@"
+        ;;
+    notify)
+        exec python manage.py send_notifications
         ;;
 esac
 
