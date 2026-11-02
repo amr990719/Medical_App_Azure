@@ -207,7 +207,7 @@ def test_permanent_email_errors_stop_the_channel_after_five_in_a_row():
 
 
 def test_bad_recipient_errors_do_not_stop_the_email_channel():
-    """BadRequestException is about one address: the row fails, the streak neither moves nor resets."""
+    """BadRequestException is about one address: the row fails, the streak does not move."""
     get_email_client().errors = [PermanentProviderError("BadRequestException")] * 5
     rows = [email_row() for _ in range(6)]
     run()

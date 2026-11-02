@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 
 from apps.notifications import services
 from apps.notifications.factories import NotificationFactory
+from apps.notifications.formatting import hash_provider_id
 from apps.notifications.models import Notification
 from apps.notifications.webhook import verify_signature, verify_subscription
 from apps.reference.constants import NotificationChannel
@@ -52,8 +53,11 @@ def post(body: bytes, signature="auto", client=None):
 
 
 def wa_row(wamid, status="SENT"):
+    """A WhatsApp row as the sender leaves it: the column holds the digest, never the raw ID."""
     return NotificationFactory(
-        channel=NotificationChannel.WHATSAPP, status=status, provider_message_id=wamid
+        channel=NotificationChannel.WHATSAPP,
+        status=status,
+        provider_message_id=hash_provider_id(wamid),
     )
 
 
@@ -96,7 +100,11 @@ def test_a_rejected_handshake_does_not_log_the_presented_token(caplog):
         with caplog.at_level(logging.DEBUG):
             response = APIClient().get(
                 url(),
-                {"hub.mode": "subscribe", "hub.verify_token": "presented-secret", "hub.challenge": "1"},
+                {
+                    "hub.mode": "subscribe",
+                    "hub.verify_token": "presented-secret",
+                    "hub.challenge": "1",
+                },
             )
     finally:
         root.removeHandler(handler)
@@ -212,7 +220,9 @@ def test_repeating_a_failed_status_creates_one_email():
 
 def test_webhook_only_finds_whatsapp_rows():
     email = NotificationFactory(
-        channel=NotificationChannel.EMAIL, status="SENT", provider_message_id="same-id"
+        channel=NotificationChannel.EMAIL,
+        status="SENT",
+        provider_message_id=hash_provider_id("same-id"),
     )
     wa = wa_row("same-id")
     post(payload([status_entry("same-id", "delivered")]))

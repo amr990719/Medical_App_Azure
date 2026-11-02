@@ -87,7 +87,7 @@ New app: `apps/notifications`. All PKs are UUIDs and foreign keys use `PROTECT`,
 | `event` | choices | section 2 |
 | `channel` | choices | `WHATSAPP`, `EMAIL` |
 | `status` | choices | section 4 |
-| `provider_message_id` | char, nullable | Meta `wamid` or SES `MessageId` |
+| `provider_message_id` | char, nullable | SES `MessageId`; for WhatsApp the SHA-256 hex digest of Meta's `wamid` (see the note below) |
 | `attempts` | small int | default 0; also identifies the current claim (section 4) |
 | `next_attempt_at` | datetime | when the row becomes due |
 | `sending_started_at` | datetime, nullable | set only while `SENDING`; detects interrupted sends |
@@ -102,6 +102,7 @@ New app: `apps/notifications`. All PKs are UUIDs and foreign keys use `PROTECT`,
 - `CHECK` on `event`, `channel` and `status` values.
 - `CHECK`: `dues_request` is set exactly when the event is 7–10.
 - `CHECK`: a row with `fallback_of` is `EMAIL`.
+- **WhatsApp IDs are stored hashed.** Meta's `wamid` is believed to decode to contain the recipient's number (NOT VERIFIED on real traffic), which would put a full phone number on the row. `formatting.hash_provider_id` (SHA-256, 64 hex characters, fits the column) is applied by `record_accepted` and by the webhook before its lookup. Email keeps the SES `MessageId`.
 - Unique `(channel, provider_message_id)` where the ID is not null. The webhook finds a row by it,
   filtered to `WHATSAPP`.
 - `fallback_of` is one-to-one, as a second line of defence behind the shared service in section 4.

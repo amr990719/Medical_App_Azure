@@ -44,7 +44,7 @@ class Notification(models.Model):
     status = models.CharField(
         max_length=16, choices=NotificationStatus.choices, default=NotificationStatus.PENDING
     )
-    # Meta `wamid` or SES `MessageId`.
+    # SES `MessageId`, or for WhatsApp the SHA-256 hex digest of Meta's `wamid` (never the raw ID).
     provider_message_id = models.CharField(max_length=255, null=True, blank=True)  # noqa: DJ001
     # Also identifies the current claim.
     attempts = models.PositiveSmallIntegerField(default=0)

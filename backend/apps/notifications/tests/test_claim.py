@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from apps.applications.tests.test_reference_numbers import run_concurrently
 from apps.notifications.factories import NotificationFactory
+from apps.notifications.formatting import hash_provider_id
 from apps.notifications.models import Notification
 from apps.notifications.services import (
     Claim,
@@ -225,7 +226,7 @@ def test_accepted_sets_sent_with_provider_id_and_masked_recipient():
     row, c = claimed()
     record_accepted(c, provider_message_id="wamid.1")
     row.refresh_from_db()
-    assert (row.status, row.provider_message_id) == ("SENT", "wamid.1")
+    assert (row.status, row.provider_message_id) == ("SENT", hash_provider_id("wamid.1"))
     assert row.recipient_masked == "010•••••678" and row.sent_at is not None
     assert row.sending_started_at is None
 
@@ -339,6 +340,23 @@ def test_a_very_long_email_address_still_records_acceptance():
     record_accepted(c, provider_message_id="ses-1")
     row.refresh_from_db()
     assert row.status == "SENT" and row.recipient_masked == c.recipient_masked
+
+
+def test_the_raw_whatsapp_id_appears_on_no_column():
+    raw = "wamid.HBgMMjAxMDEyMzQ1Njc4"
+    row, c = claimed()
+    record_accepted(c, provider_message_id=raw)
+    stored = Notification.objects.filter(pk=row.pk).values().get()
+    assert not any(raw in str(value) for value in stored.values())
+    assert stored["provider_message_id"] == hash_provider_id(raw)
+    assert len(stored["provider_message_id"]) == 64
+
+
+def test_the_ses_message_id_is_kept_as_is():
+    row, c = claimed("EMAIL")
+    record_accepted(c, provider_message_id="ses-1")
+    row.refresh_from_db()
+    assert row.provider_message_id == "ses-1"
 
 
 def test_a_result_from_an_older_claim_is_dropped():

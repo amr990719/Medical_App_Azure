@@ -39,8 +39,9 @@ RECIPIENT_ONLY_CODES = frozenset({"BadRequestException"})  # SES: this one addre
 SENDING_MODES = frozenset({"allowlist", "live"})
 
 # What an attempt says about the provider: OK (it answered: success, or a permanent WhatsApp
-# rejection) resets the outage streak, ERROR (temporary, unknown or an unexpected fault) adds one, and KEEP
-# (the row never reached a provider, or only its own address was bad) leaves it alone.
+# rejection) resets the outage streak, ERROR (temporary, unknown, an unexpected fault or a
+# permanent email rejection) adds one, and KEEP (the row never reached a provider, or only its
+# own address was bad) leaves it alone.
 OK, ERROR, KEEP = "ok", "error", "keep"
 
 

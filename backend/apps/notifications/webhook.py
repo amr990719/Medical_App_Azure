@@ -1,7 +1,9 @@
 """WhatsApp webhook (spec section 7). The signature check is the endpoint's only protection.
 
-Nothing from a payload is logged or stored: it holds phone numbers and message text. Only a
-status's provider ID, the status word and an error code (made safe) are read from it.
+Nothing from a payload is logged or stored: it holds phone numbers and message text. Statuses
+read only the provider ID (hashed before the lookup), the status word and an error code (made
+safe). Inbound messages go to `inbound.handle_message`, which reads the sender's number and
+the text to recognise a stop word and to match the doctor; neither is logged or stored.
 """
 
 import hashlib
@@ -19,7 +21,7 @@ from apps.common.arabic import normalize_mobile
 from apps.reference.constants import NotificationChannel, NotificationStatus
 
 from . import services
-from .formatting import SEND_ERROR, safe_code
+from .formatting import SEND_ERROR, hash_provider_id, safe_code
 from .inbound import Reply, handle_message
 from .models import Notification
 from .providers import ProviderError, get_whatsapp_client
@@ -61,7 +63,12 @@ def verify_subscription(params: Mapping[str, str]) -> str | None:
 
 
 def process_webhook(raw_body: bytes, signature_header: str | None) -> None:
-    """Verify, then apply every status in the payload. Database errors propagate (Meta retries)."""
+    """Verify, then apply every status and inbound message in the payload.
+
+    Statuses update rows by the hashed provider ID; a message whose whole text is a stop word opts
+    the sender out (see `inbound`), and at most one free-text reply goes out after everything is
+    committed. Database errors propagate (Meta retries).
+    """
     if not verify_signature(raw_body, signature_header):
         raise InvalidSignature
     try:
@@ -104,7 +111,8 @@ def _apply_statuses(value: dict) -> None:
             continue
         row_id = (
             Notification.objects.filter(
-                channel=NotificationChannel.WHATSAPP, provider_message_id=message_id
+                channel=NotificationChannel.WHATSAPP,
+                provider_message_id=hash_provider_id(message_id),
             )
             .values_list("pk", flat=True)
             .first()

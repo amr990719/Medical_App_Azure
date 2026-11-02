@@ -27,7 +27,7 @@ from apps.reference.constants import (
     PaymentStatus,
 )
 
-from .formatting import mask_email, mask_phone
+from .formatting import hash_provider_id, mask_email, mask_phone
 from .models import Notification
 
 logger = logging.getLogger("apps.notifications")
@@ -379,6 +379,9 @@ def _recorded(claim: Claim, row: Notification | None) -> None:
 
 
 def record_accepted(claim: Claim, *, provider_message_id: str) -> None:
+    """Email keeps the SES `MessageId`; WhatsApp stores only the digest of Meta's ID."""
+    if claim.channel == NotificationChannel.WHATSAPP:
+        provider_message_id = hash_provider_id(provider_message_id)
     _recorded(
         claim,
         apply_transition(

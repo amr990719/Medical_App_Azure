@@ -1,5 +1,6 @@
 """Display and masking helpers for notifications. No provider or database access here."""
 
+import hashlib
 import re
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -12,6 +13,12 @@ CURRENCY = "ج.م"
 MASKED_MAX_LENGTH = 64
 SEND_ERROR = "SEND_ERROR"
 _SAFE_CODE = re.compile(r"[A-Za-z0-9_.-]{1,40}")
+
+
+def hash_provider_id(provider_id: str) -> str:
+    """SHA-256 hex of a WhatsApp message ID. Meta's `wamid` is believed to embed the recipient's
+    number (NOT VERIFIED on real traffic), so only this digest is stored and looked up."""
+    return hashlib.sha256(provider_id.encode()).hexdigest()
 
 
 def safe_code(code: str, fallback: str = SEND_ERROR) -> str:
