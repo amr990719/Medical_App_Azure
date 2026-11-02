@@ -20,10 +20,12 @@ from apps.common.exceptions import (
 from apps.dues.services import MSG_DUES_OUTSTANDING, outstanding_dues
 from apps.fees.models import FeeSchedule
 from apps.fees.services import NoActiveFeeSchedule, active_schedule, quote_for_application
+from apps.notifications.services import enqueue
 from apps.reference.constants import (
     ApplicationStatus,
     ApplicationType,
     DocumentType,
+    NotificationEvent,
     PaymentStatus,
 )
 
@@ -143,6 +145,18 @@ def generate_reference_number(fiscal_year: int) -> str:
 # --- transitions ------------------------------------------------------------------------------
 
 
+STATUS_EVENTS = {
+    ApplicationStatus.SUBMITTED: NotificationEvent.APPLICATION_RECEIVED,
+    ApplicationStatus.NEEDS_CORRECTION: NotificationEvent.CORRECTION_NEEDED,
+    ApplicationStatus.APPROVED: NotificationEvent.APPROVED,
+    ApplicationStatus.REJECTED: NotificationEvent.REJECTED,
+}
+PAYMENT_EVENTS = {
+    PaymentStatus.CONFIRMED: NotificationEvent.PAYMENT_CONFIRMED,
+    PaymentStatus.REJECTED: NotificationEvent.PAYMENT_RECEIPT_REJECTED,
+}
+
+
 def _authorize(application: InsuranceApplication, rule, actor) -> None:
     if rule.actor_role == "DOCTOR":
         ensure_owner(application, actor)
@@ -191,6 +205,9 @@ def transition(
                 metadata={"from": from_status, "to": to_status, "notes": bool(notes)},
                 request=request,
             )
+        event = STATUS_EVENTS.get(to_status)
+        if event:
+            enqueue(app, event)
     return app
 
 
@@ -342,6 +359,7 @@ def set_payment_status(
         raise InvalidStatusTransition(MSG_PAYMENT_CHANGE_NOT_ALLOWED)
     if app.payment_status != status:
         _change_payment_status(app, status, actor, request)
+        enqueue(app, PAYMENT_EVENTS[status])
     return app
 
 

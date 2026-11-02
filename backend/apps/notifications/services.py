@@ -1,12 +1,23 @@
 """Notification status changes (spec section 4). Every change goes through `apply_transition`."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.reference.constants import NotificationChannel, NotificationStatus
+from apps.applications.models import InsuranceApplication
+from apps.common.arabic import is_valid_mobile
+from apps.dues.models import SyndicateDuesRequest
+from apps.reference.constants import (
+    ApplicationStatus,
+    DuesRequestStatus,
+    NotificationChannel,
+    NotificationEvent,
+    NotificationStatus,
+    PaymentStatus,
+)
 
 from .models import Notification
 
@@ -39,6 +50,68 @@ WHATSAPP_ONLY_TRANSITIONS = frozenset(
     }
 )
 _LOGGED = {S.FAILED: "notification_failed", S.EXPIRED: "notification_expired"}
+
+E = NotificationEvent
+
+
+def first_channel(doctor) -> str:
+    """WhatsApp when the doctor opted in and the phone is a valid mobile, otherwise email."""
+    if doctor.whatsapp_opt_in and is_valid_mobile(doctor.phone_number):
+        return NotificationChannel.WHATSAPP
+    return NotificationChannel.EMAIL
+
+
+def enqueue(
+    application: InsuranceApplication,
+    event: str,
+    *,
+    dues_request: SyndicateDuesRequest | None = None,
+    created_by=None,
+) -> Notification:
+    """Write the notification row inside the transaction that made the change.
+
+    Must run inside `transaction.atomic()`: the row commits or rolls back with the change.
+    """
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError("enqueue() must run inside the transaction that changes the source")
+    if dues_request is not None and dues_request.application_id != application.pk:
+        raise ValueError("dues request does not belong to this application")
+    now = timezone.now()
+    return Notification.objects.create(
+        application=application,
+        dues_request=dues_request,
+        event=event,
+        channel=first_channel(application.doctor),
+        status=NotificationStatus.PENDING,
+        next_attempt_at=now,
+        expires_at=now + timedelta(hours=settings.NOTIFICATION_MAX_AGE_HOURS),
+        created_by=created_by,
+    )
+
+
+def still_relevant(row: Notification) -> bool:
+    """Re-read the source of the news: False when it no longer holds (spec section 2)."""
+    event = row.event
+    if event == E.CORRECTION_NEEDED:
+        return _app_value(row, "status") == ApplicationStatus.NEEDS_CORRECTION
+    if event == E.PAYMENT_CONFIRMED:
+        return _app_value(row, "payment_status") == PaymentStatus.CONFIRMED
+    if event == E.PAYMENT_RECEIPT_REJECTED:
+        return _app_value(row, "payment_status") == PaymentStatus.REJECTED
+    if event in (E.DUES_REQUESTED, E.DUES_RECEIPT_REJECTED):
+        wanted = (
+            DuesRequestStatus.REQUESTED if event == E.DUES_REQUESTED else DuesRequestStatus.REJECTED
+        )
+        return SyndicateDuesRequest.objects.filter(pk=row.dues_request_id, status=wanted).exists()
+    return True
+
+
+def _app_value(row: Notification, field: str):
+    return (
+        InsuranceApplication.objects.filter(pk=row.application_id)
+        .values_list(field, flat=True)
+        .first()
+    )
 
 
 def _create_fallback(parent: Notification, *, now: datetime) -> Notification:
