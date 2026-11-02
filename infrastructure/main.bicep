@@ -88,6 +88,12 @@ param notificationBaseUrl string = ''
 @description('IAM role the identity assumes through OIDC federation to call SES.')
 param awsRoleArn string = ''
 param awsWebIdentityAudience string = ''
+@description('Blank = the app default applies (the setting is left out).')
+param notificationMaxAgeHours string = ''
+@description('Blank = the app default applies (the setting is left out).')
+param whatsappDeliveryTimeoutMinutes string = ''
+@description('Blank = the app default applies (the setting is left out).')
+param notificationResendRateLimit string = ''
 
 // --- Container Apps sizes (§35) ------------------------------------------------------------------
 
@@ -417,18 +423,32 @@ var ocrSettings = enableOcr
 
 // Plain settings for notifications. On whenever enableNotifications is true, in every mode
 // including 'off', so the app still honours a WhatsApp stop reply.
+// Optional values are left out when blank rather than set to an empty string.
+var optionalNotificationSettings = {
+  WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId
+  WHATSAPP_API_VERSION: whatsappApiVersion
+  SES_REGION: sesRegion
+  SES_FROM_ADDRESS: sesFromAddress
+  AWS_ROLE_ARN: awsRoleArn
+  AWS_WEB_IDENTITY_AUDIENCE: awsWebIdentityAudience
+  NOTIFICATION_MAX_AGE_HOURS: notificationMaxAgeHours
+  WHATSAPP_DELIVERY_TIMEOUT_MINUTES: whatsappDeliveryTimeoutMinutes
+  NOTIFICATION_RESEND_RATE_LIMIT: notificationResendRateLimit
+}
+
 var notificationSettings = enableNotifications
-  ? {
-      NOTIFICATIONS_MODE: notificationsMode
-      NOTIFICATION_PROVIDERS: 'real'
-      WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId
-      WHATSAPP_API_VERSION: whatsappApiVersion
-      SES_REGION: sesRegion
-      SES_FROM_ADDRESS: sesFromAddress
-      NOTIFICATION_BASE_URL: empty(notificationBaseUrl) ? 'https://${publicHost}' : notificationBaseUrl
-      AWS_ROLE_ARN: awsRoleArn
-      AWS_WEB_IDENTITY_AUDIENCE: awsWebIdentityAudience
-    }
+  ? union(
+      {
+        NOTIFICATIONS_MODE: notificationsMode
+        NOTIFICATION_PROVIDERS: 'real'
+        NOTIFICATION_BASE_URL: empty(notificationBaseUrl) ? 'https://${publicHost}' : notificationBaseUrl
+      },
+      toObject(
+        filter(items(optionalNotificationSettings), item => !empty(item.value)),
+        item => item.key,
+        item => item.value
+      )
+    )
   : {}
 
 module app 'modules/container-app.bicep' = if (deployApplication) {
