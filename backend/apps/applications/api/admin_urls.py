@@ -6,6 +6,7 @@ from rest_framework.routers import SimpleRouter
 from apps.doctors.api.admin_views import AdminDoctorViewSet
 from apps.dues.api.urls import admin_urlpatterns as dues_admin_urlpatterns
 from apps.fees.api.admin_views import AdminFeeScheduleViewSet
+from apps.notifications.api.urls import admin_urlpatterns as notifications_admin_urlpatterns
 
 from .admin_views import AdminApplicationViewSet, AdminStatsView
 
@@ -17,5 +18,6 @@ router.register("fee-schedules", AdminFeeScheduleViewSet, basename="admin-fee-sc
 urlpatterns = [
     path("stats/", AdminStatsView.as_view(), name="admin-stats"),
     *dues_admin_urlpatterns,
+    *notifications_admin_urlpatterns,
     *router.urls,
 ]

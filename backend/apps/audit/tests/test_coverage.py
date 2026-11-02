@@ -12,6 +12,7 @@ from apps.accounts.factories import AdminUserFactory, UserFactory
 from apps.audit.models import AuditAction, AuditLog
 from apps.beneficiaries.models import Beneficiary
 from apps.fees.models import FeeSchedule
+from apps.notifications.models import Notification
 from apps.reference.constants import DocumentType as T
 from tests.files import png_upload
 
@@ -107,18 +108,22 @@ def full_lifecycle(settings):
         "fiscal_year": 2026, "tier_fees": schedule.tier_fees, "admin_fee_base": 200,
         "admin_fee_per_beneficiary": 175, "service_fee": 800}, format="json")  # fmt: skip
 
+    queued = Notification.objects.filter(
+        application_id=app_id, event="APPLICATION_RECEIVED"
+    ).first()
+    assert queued is not None  # the first submission queued it
+    # Settle every queued row so the resend is not blocked by an active one.
+    Notification.objects.filter(application_id=app_id).update(status="FAILED", channel="EMAIL")
+    resend = admin.post(f"{admin_base}notifications/{queued.pk}/resend/")  # NOTIFICATION_RESENT
+    assert resend.status_code == 201, resend.json()
+
     promoted = UserFactory(email="new-admin@example.test")
     call_command("grant_admin", promoted.email, stdout=StringIO())  # ADMIN_ROLE_GRANTED
     call_command("revoke_admin", promoted.email, stdout=StringIO())  # ADMIN_ROLE_REVOKED
     return app_id
 
 
-# Defined by the data-model task; the producer (admin resend) arrives in a later notification
-# task, which must delete this exclusion.
-NOT_YET_PRODUCED = {AuditAction.NOTIFICATION_RESENT}
-
-
-@pytest.mark.parametrize("action", [a.value for a in AuditAction if a not in NOT_YET_PRODUCED])
+@pytest.mark.parametrize("action", [a.value for a in AuditAction])
 def test_every_audit_action_is_produced(full_lifecycle, action):
     assert AuditLog.objects.filter(action=action).exists(), action
 

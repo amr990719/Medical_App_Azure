@@ -126,3 +126,15 @@ class OcrUnavailable(DomainError):
     code = "OCR_UNAVAILABLE"
     default_message = "المسح التلقائي غير متاح حالياً، يرجى إدخال البيانات يدوياً"
     status_code = 503
+
+
+class NotificationConflict(DomainError):
+    code = "NOTIFICATION_CONFLICT"
+    default_message = "يوجد إرسال قيد التنفيذ لهذا الإشعار"
+    status_code = 409
+
+
+class NotificationNotRelevant(DomainError):
+    code = "NOTIFICATION_NOT_RELEVANT"
+    default_message = "لم يعد هذا الإشعار مطلوبًا"
+    status_code = 409

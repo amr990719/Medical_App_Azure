@@ -8,10 +8,15 @@ from uuid import UUID
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
+from apps.applications.access import lock_application
 from apps.applications.models import InsuranceApplication
+from apps.audit.models import AuditAction
+from apps.audit.services import record
 from apps.common.arabic import is_valid_mobile, normalize_mobile
+from apps.common.exceptions import NotificationConflict, NotificationNotRelevant
 from apps.dues.models import SyndicateDuesRequest
 from apps.reference.constants import (
     ApplicationStatus,
@@ -108,6 +113,45 @@ def still_relevant(row: Notification) -> bool:
         )
         return SyndicateDuesRequest.objects.filter(pk=row.dues_request_id, status=wanted).exists()
     return True
+
+
+@transaction.atomic
+def resend(notification: Notification, *, actor, request=None) -> Notification:
+    """An admin's deliberate resend: a new row with the same event, routed afresh (section 5).
+
+    Under the application lock it refuses (409) when the action is no longer needed, or when
+    a row for the same application, event and dues request is still active: PENDING, SENDING,
+    or a WhatsApp SENT row inside the delivery timeout (its email fallback could still follow).
+    """
+    application = lock_application(notification.application_id)
+    if not still_relevant(notification):
+        raise NotificationNotRelevant()
+    now = timezone.now()
+    timeout = timedelta(minutes=settings.WHATSAPP_DELIVERY_TIMEOUT_MINUTES)
+    active = Q(status__in=[S.PENDING, S.SENDING]) | Q(
+        channel=NotificationChannel.WHATSAPP, status=S.SENT, sent_at__gt=now - timeout
+    )
+    if Notification.objects.filter(
+        active,
+        application_id=application.pk,
+        event=notification.event,
+        dues_request_id=notification.dues_request_id,
+    ).exists():
+        raise NotificationConflict()
+    new = enqueue(
+        application, notification.event, dues_request=notification.dues_request, created_by=actor
+    )
+    record(
+        actor=actor,
+        action=AuditAction.NOTIFICATION_RESENT,
+        obj=new,
+        metadata={
+            "application_id": str(application.pk),
+            "source_notification_id": str(notification.pk),
+        },
+        request=request,
+    )
+    return new
 
 
 def _app_value(row: Notification, field: str):
