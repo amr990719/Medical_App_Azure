@@ -36,6 +36,7 @@ SES_TEMPORARY_CODES = frozenset(
         "LimitExceededException",
         "SendingPausedException",
         "AccountSuspendedException",
+        "MailFromDomainNotVerifiedException",
         "ThrottlingException",
         # A credential or identity fault hits every message, so it is an outage, not a bad row.
         "AccessDeniedException",

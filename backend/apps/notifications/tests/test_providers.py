@@ -286,6 +286,7 @@ def test_ses_account_level_errors_are_temporary(ses, code):
         "UnrecognizedClientException",
         "InvalidClientTokenId",
         "ThrottlingException",
+        "MailFromDomainNotVerifiedException",
     ],
 )
 def test_ses_credential_and_throttle_errors_are_temporary(ses, code):
@@ -294,6 +295,14 @@ def test_ses_credential_and_throttle_errors_are_temporary(ses, code):
         with pytest.raises(TemporaryProviderError) as ei:
             _send_email()
     assert ei.value.code == code
+
+
+def test_ses_bad_request_is_permanent(ses):
+    with Stubber(ses) as stub:
+        stub.add_client_error("send_email", "BadRequestException", http_status_code=400)
+        with pytest.raises(PermanentProviderError) as ei:
+            _send_email()
+    assert ei.value.code == "BadRequestException"
 
 
 def test_ses_429_with_an_unlisted_code_is_temporary(ses):

@@ -198,12 +198,34 @@ def test_five_consecutive_errors_skip_that_provider_only():
 
 
 def test_permanent_email_errors_stop_the_channel_after_five_in_a_row():
-    get_email_client().errors = [PermanentProviderError("AccessDeniedException")] * 12
+    get_email_client().errors = [PermanentProviderError("MessageRejected")] * 12
     rows = [email_row() for _ in range(12)]
     run()
     states = [(reload(r).status, r.attempts) for r in rows]
     assert sum(1 for s in states if s == ("FAILED", 1)) == 5
     assert sum(1 for s in states if s == ("PENDING", 0)) == 7
+
+
+def test_bad_recipient_errors_do_not_stop_the_email_channel():
+    """BadRequestException is about one address: the row fails, the streak neither moves nor resets."""
+    get_email_client().errors = [PermanentProviderError("BadRequestException")] * 5
+    rows = [email_row() for _ in range(6)]
+    run()
+    states = [reload(r).status for r in rows]
+    assert states.count("FAILED") == 5 and states.count("SENT") == 1
+    assert len(get_email_client().sent) == 1
+
+
+def test_bad_recipient_errors_leave_the_streak_where_it_was():
+    """Four outage errors, a bad address, then one more outage error: five, so the channel stops."""
+    errors = [TemporaryProviderError("HTTP_500")] * 4 + [
+        PermanentProviderError("BadRequestException"),
+        TemporaryProviderError("HTTP_500"),
+    ]
+    get_email_client().errors = errors
+    rows = [email_row() for _ in range(8)]
+    run()
+    assert sorted(reload(r).attempts for r in rows) == [0, 0, 1, 1, 1, 1, 1, 1]
 
 
 def test_permanent_whatsapp_errors_keep_resetting_the_streak():
