@@ -13,5 +13,6 @@ urlpatterns = [
     path("", include("apps.documents.api.urls")),
     path("", include("apps.dues.api.urls")),
     path("", include("apps.ocr.api.urls")),
+    path("", include("apps.notifications.api.urls")),
     path("admin/", include("apps.applications.api.admin_urls")),
 ]

@@ -1,14 +1,25 @@
 """Display and masking helpers for notifications. No provider or database access here."""
 
+import re
 from decimal import ROUND_HALF_UP, Decimal
 
 from apps.common.arabic import normalize_mobile
-from config.logging import MASK_CHAR
+from config.logging import MASK_CHAR, mask_digit_runs
 
 # Same character as `ARABIC_THOUSANDS_SEPARATOR` in frontend/src/utils/format.ts.
 ARABIC_THOUSANDS_SEPARATOR = "٬"
 CURRENCY = "ج.م"
 MASKED_MAX_LENGTH = 64
+SEND_ERROR = "SEND_ERROR"
+_SAFE_CODE = re.compile(r"[A-Za-z0-9_.-]{1,40}")
+
+
+def safe_code(code: str, fallback: str = SEND_ERROR) -> str:
+    """A code is stored and logged, so anything that is not a plain identifier (an address or
+    message text built into an exception or a payload) becomes the fixed `fallback`."""
+    if _SAFE_CODE.fullmatch(code) and mask_digit_runs(code) == code:
+        return code
+    return fallback
 
 
 def format_amount(amount: Decimal) -> str:
