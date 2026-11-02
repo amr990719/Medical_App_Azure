@@ -3,9 +3,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsDoctor
-from apps.doctors.services import get_or_create_doctor, update_profile
+from apps.doctors.services import get_or_create_doctor, set_whatsapp_opt_in, update_profile
 
-from .serializers import DoctorProfileSerializer
+from .serializers import (
+    DoctorProfileSerializer,
+    NotificationPreferenceInputSerializer,
+    NotificationPreferenceSerializer,
+)
 
 
 class ProfileView(APIView):
@@ -28,3 +32,32 @@ class ProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         doctor = update_profile(doctor, actor=request.user, changes=serializer.validated_data)
         return Response(DoctorProfileSerializer(doctor).data)
+
+
+class NotificationPreferenceView(APIView):
+    """`GET/PUT /api/v1/profile/notifications/` — the doctor's own WhatsApp consent."""
+
+    permission_classes = [IsDoctor]
+
+    @extend_schema(
+        responses=NotificationPreferenceSerializer, operation_id="profile_notifications_retrieve"
+    )
+    def get(self, request):
+        doctor = get_or_create_doctor(request.user)
+        return Response(NotificationPreferenceSerializer(doctor).data)
+
+    @extend_schema(
+        request=NotificationPreferenceInputSerializer,
+        responses=NotificationPreferenceSerializer,
+        operation_id="profile_notifications_update",
+    )
+    def put(self, request):
+        serializer = NotificationPreferenceInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        doctor = set_whatsapp_opt_in(
+            get_or_create_doctor(request.user),
+            enabled=serializer.validated_data["whatsapp_opt_in"],
+            actor=request.user,
+            request=request,
+        )
+        return Response(NotificationPreferenceSerializer(doctor).data)

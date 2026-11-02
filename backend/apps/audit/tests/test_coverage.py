@@ -55,6 +55,8 @@ def full_lifecycle(settings):
     doctor, admin = client_for(doctor_user), client_for(admin_user)
 
     assert doctor.patch("/api/v1/profile/", PROFILE, format="json").status_code == 200
+    optin = doctor.put("/api/v1/profile/notifications/", {"whatsapp_opt_in": True}, format="json")
+    assert optin.status_code == 200  # WHATSAPP_OPT_IN_CHANGED
     app_id = doctor.post("/api/v1/applications/", {}).json()["id"]  # APPLICATION_CREATED
     base = f"/api/v1/applications/{app_id}/"
     doctor.patch(base, {"work_status": "WORKING", "declaration_name": PROFILE["full_name"],
@@ -111,9 +113,9 @@ def full_lifecycle(settings):
     return app_id
 
 
-# Notification actions are defined by the data-model task; their producers (services, API)
-# arrive in later notification tasks, which must delete this exclusion.
-NOT_YET_PRODUCED = {AuditAction.WHATSAPP_OPT_IN_CHANGED, AuditAction.NOTIFICATION_RESENT}
+# Defined by the data-model task; the producer (admin resend) arrives in a later notification
+# task, which must delete this exclusion.
+NOT_YET_PRODUCED = {AuditAction.NOTIFICATION_RESENT}
 
 
 @pytest.mark.parametrize("action", [a.value for a in AuditAction if a not in NOT_YET_PRODUCED])
