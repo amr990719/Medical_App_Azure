@@ -36,6 +36,13 @@ SES_TEMPORARY_CODES = frozenset(
         "LimitExceededException",
         "SendingPausedException",
         "AccountSuspendedException",
+        "ThrottlingException",
+        # A credential or identity fault hits every message, so it is an outage, not a bad row.
+        "AccessDeniedException",
+        "AccessDenied",
+        "ExpiredToken",
+        "UnrecognizedClientException",
+        "InvalidClientTokenId",
     }
 )
 
@@ -188,7 +195,7 @@ class EmailClient:
         except bexc.ClientError as exc:
             code = str(exc.response.get("Error", {}).get("Code") or "UNKNOWN_ERROR")
             http_status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0)
-            if code in SES_TEMPORARY_CODES or http_status >= 500:
+            if code in SES_TEMPORARY_CODES or http_status == 429 or http_status >= 500:
                 raise TemporaryProviderError(code) from None
             raise PermanentProviderError(code) from None
         except bexc.BotoCoreError:

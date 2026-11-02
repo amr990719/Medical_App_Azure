@@ -197,6 +197,22 @@ def test_five_consecutive_errors_skip_that_provider_only():
     assert len(get_email_client().sent) == 2
 
 
+def test_permanent_email_errors_stop_the_channel_after_five_in_a_row():
+    get_email_client().errors = [PermanentProviderError("AccessDeniedException")] * 12
+    rows = [email_row() for _ in range(12)]
+    run()
+    states = [(reload(r).status, r.attempts) for r in rows]
+    assert sum(1 for s in states if s == ("FAILED", 1)) == 5
+    assert sum(1 for s in states if s == ("PENDING", 0)) == 7
+
+
+def test_permanent_whatsapp_errors_keep_resetting_the_streak():
+    get_whatsapp_client().errors = [PermanentProviderError("131026")] * 7
+    rows = [make_row() for _ in range(7)]
+    run()
+    assert all(reload(r).attempts == 1 for r in rows)
+
+
 def test_unknown_results_count_towards_the_streak():
     get_email_client().errors = [UnknownResultError("UNKNOWN_RESULT")] * 5
     rows = [email_row() for _ in range(7)]

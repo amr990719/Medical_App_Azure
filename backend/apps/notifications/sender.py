@@ -37,8 +37,8 @@ OUTAGE_STREAK = 5
 NO_ADDRESS = "NO_ADDRESS"
 SENDING_MODES = frozenset({"allowlist", "live"})
 
-# What an attempt says about the provider: OK (it answered: success or a permanent rejection)
-# resets the outage streak, ERROR (temporary, unknown or an unexpected fault) adds one, and KEEP
+# What an attempt says about the provider: OK (it answered: success, or a permanent WhatsApp
+# rejection) resets the outage streak, ERROR (temporary, unknown or an unexpected fault) adds one, and KEEP
 # (the row never reached a provider) leaves it alone.
 OK, ERROR, KEEP = "ok", "error", "keep"
 
@@ -96,7 +96,9 @@ def _attempt(claim: Claim, *, now: datetime, summary: RunSummary) -> str:
     except PermanentProviderError as exc:
         services.record_permanent(claim, error_code=safe_code(exc.code))
         summary.failed += 1
-        return OK
+        # WhatsApp rejections still fall back to email, so the provider is fine. Email is the last
+        # channel: five rejections in a row look like a systematic fault, so they stop the run.
+        return ERROR if claim.channel == NotificationChannel.EMAIL else OK
     except Exception:
         # Notification ID only, no traceback and no message: either could hold the recipient.
         logger.error(
