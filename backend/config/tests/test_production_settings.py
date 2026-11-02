@@ -401,3 +401,11 @@ def test_notification_checks_never_call_a_provider(monkeypatch):
         )
     whatsapp.assert_not_called()
     email.assert_not_called()
+
+
+def test_a_migrate_or_cleanup_job_environment_loads_with_notifications_enabled_elsewhere(
+    monkeypatch,
+):
+    """Those jobs get no notification env and no notification secrets, so they stay off/fake."""
+    prod = load_production(monkeypatch)  # VALID_ENV only: what the migrate job is given
+    assert (prod.NOTIFICATIONS_MODE, prod.NOTIFICATION_PROVIDERS) == ("off", "fake")

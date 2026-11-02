@@ -30,8 +30,11 @@ param keyVaultUri string
 @secure()
 param appInsightsConnectionString string
 
-@description('Non-secret settings (name -> value) shared by the app and both jobs.')
+@description('Non-secret settings (name -> value) shared by the app and every job.')
 param settings object
+
+@description('Notification settings (name -> value) for the app and the notify job ONLY. The migrate and cleanup jobs lack the notification secrets, so with these set production settings would refuse to import there.')
+param notificationEnv object = {}
 
 @description('vCPU per replica, as a string (e.g. "0.5").')
 param cpu string = '0.5'
@@ -140,6 +143,7 @@ var notificationSecretEnv = enableNotifications
   : []
 
 var plainEnv = [for item in items(settings): { name: item.key, value: string(item.value) }]
+var notificationPlainEnv = [for item in items(notificationEnv): { name: item.key, value: string(item.value) }]
 
 var registries = [
   {
@@ -185,7 +189,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
           name: 'django'
           image: image
           resources: resources
-          env: concat(plainEnv, secretEnv, notificationSecretEnv, [
+          env: concat(plainEnv, notificationPlainEnv, secretEnv, notificationSecretEnv, [
             {
               name: 'OTEL_SERVICE_NAME'
               value: 'medical-backend'
@@ -371,7 +375,7 @@ resource notifyJob 'Microsoft.App/jobs@2025-01-01' = if (enableNotifications) {
             'notify'
           ]
           resources: resources
-          env: concat(plainEnv, secretEnv, notificationSecretEnv, [
+          env: concat(plainEnv, notificationPlainEnv, secretEnv, notificationSecretEnv, [
             {
               name: 'OTEL_SERVICE_NAME'
               value: 'medical-notify'

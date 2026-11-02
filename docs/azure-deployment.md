@@ -290,7 +290,7 @@ add them to the environment's file; non-secret values only):
 | Parameter | Meaning |
 |---|---|
 | `enableNotifications` | default `false`; creates the `notify` job and the settings and secret references on the app and the job |
-| `notificationsMode` | `off` (default), `allowlist` or `live`; shared by the app and the job |
+| `notificationsMode` | `off` (default), `allowlist` or `live`; set on the app and the `notify` job only. The `migrate` and `cleanup` jobs get none of the notification settings or secrets and stay at `off`/`fake`, because production settings refuse to import with a sending mode and no secrets |
 | `notifyCron` | UTC cron of the job, default `*/5 * * * *` |
 | `alertEmail` | when set, deploys the four alert rules (failed or expired notification, oldest due row over 30 minutes, no `notify_run` in 15 minutes, job failed). Pass at deploy time; not committed |
 | `whatsappPhoneNumberId`, `whatsappApiVersion` | Meta sender and pinned Graph API version |

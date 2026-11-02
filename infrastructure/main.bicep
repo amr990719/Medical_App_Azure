@@ -466,7 +466,8 @@ module app 'modules/container-app.bicep' = if (deployApplication) {
     registryServer: registry.outputs.loginServer
     keyVaultUri: keyVault.outputs.uri
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
-    settings: union(baseSettings, telemetrySettings, ocrSettings, notificationSettings)
+    settings: union(baseSettings, telemetrySettings, ocrSettings)
+    notificationEnv: notificationSettings
     cpu: containerCpu
     memory: containerMemory
     minReplicas: minReplicas
