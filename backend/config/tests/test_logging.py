@@ -45,6 +45,37 @@ def test_dates_and_uuids_are_untouched():
 
 
 @pytest.mark.parametrize(
+    "uuid_text",
+    [
+        "8f14e45f-ceea-467f-a0f2-123456789012",  # all-digit last group
+        "00000000-0000-4000-8000-000000000000",
+        "8F14E45F-CEEA-467F-A0F2-123456789012",
+    ],
+)
+def test_canonical_uuids_are_never_masked(uuid_text):
+    assert mask_digit_runs(f"notification_id={uuid_text} ok") == f"notification_id={uuid_text} ok"
+
+
+def test_a_national_id_next_to_a_uuid_is_still_masked():
+    text = f"{NID} 8f14e45f-ceea-467f-a0f2-123456789012"
+    assert NID not in mask_digit_runs(text)
+    assert NID not in mask_digit_runs(f"{NID}8f14e45f-ceea-467f-a0f2-123456789012")
+
+
+def test_django_request_object_is_not_in_the_json_payload(capture):
+    logger, stream = capture
+
+    class FakeRequest:
+        def __str__(self):
+            return "<WSGIRequest: GET '/hook/?hub.verify_token=s3cret'>"
+
+    logger.warning("Forbidden: /hook/", extra={"request": FakeRequest(), "status_code": 403})
+    assert "s3cret" not in stream.getvalue()
+    assert "request" not in output(stream)
+    assert output(stream)["status_code"] == 403
+
+
+@pytest.mark.parametrize(
     "phone",
     [
         "01012345678",
@@ -53,6 +84,11 @@ def test_dates_and_uuids_are_untouched():
         "010 1234 5678",
         "010-1234-5678",
         "٠١٠١٢٣٤٥٦٧٨",
+        "+20 10 1234 5678",
+        "+20 1012345678",
+        "20-10-1234-5678",
+        "+20-101-234-5678",
+        "+٢٠ ١٠ ١٢٣٤ ٥٦٧٨",
     ],
 )
 def test_phones_are_masked(phone):

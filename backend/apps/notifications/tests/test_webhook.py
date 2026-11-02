@@ -80,6 +80,30 @@ def test_handshake_wrong_token_is_403():
     assert b"42" not in response.content
 
 
+def test_a_rejected_handshake_does_not_log_the_presented_token(caplog):
+    import io
+    import logging
+
+    from config.logging import JsonFormatter, NationalIdMaskingFilter
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(NationalIdMaskingFilter())
+    handler.setFormatter(JsonFormatter())
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        with caplog.at_level(logging.DEBUG):
+            response = APIClient().get(
+                url(),
+                {"hub.mode": "subscribe", "hub.verify_token": "presented-secret", "hub.challenge": "1"},
+            )
+    finally:
+        root.removeHandler(handler)
+    assert response.status_code == 403
+    assert "presented-secret" not in stream.getvalue()
+
+
 def test_handshake_wrong_mode_is_403():
     response = APIClient().get(
         url(),

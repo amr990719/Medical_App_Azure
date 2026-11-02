@@ -57,7 +57,7 @@ and birth years, identity-document images, personal photos and payment receipts.
 | Application Insights / Log Analytics | requests, dependencies, exceptions, logs | national IDs masked before export (§4 below) |
 | Azure OpenAI (only if OCR is enabled) | one identity-document image per OCR request | see §5 and `docs/ocr.md` |
 | Meta WhatsApp Cloud API (notifications) | the doctor's mobile number, the Meta template name, the reference number and, for dues events, the amount | only in `NOTIFICATIONS_MODE` `allowlist` or `live`; opt-in required; **L3/L4 sign-off pending** |
-| Amazon SES (notifications) | the doctor's email address, subject and body with the reference number and amount | only in `allowlist` or `live`; **L3/L4 sign-off pending**; the AWS credential comes from the job's identity, not a stored secret (`NOT VERIFIED`, see progress Task 14) |
+| Amazon SES (notifications) | the doctor's email address, subject and body with the reference number and amount | only in `allowlist` or `live`; **L3/L4 sign-off pending**; the AWS credential source is **undecided until phase 0b** (a job identity via Task 14, or a stored key secret); nothing is provisioned today (`NOT VERIFIED`, see progress Task 14) |
 | `notifications_notification` | event, channel, status, provider message ID, masked recipient (`010•••••678`, `a•••@example.com`), error code | no message text, full phone or full address; written only by `notifications/services.py` |
 
 ## 2. Identity, sessions and authorization
@@ -140,7 +140,8 @@ and birth years, identity-document images, personal photos and payment receipts.
   Provider clients raise errors with a code only (`raise … from None`), so provider text and request
   bodies cannot reach a traceback. The masking filter also covers 11+ digit runs, email addresses
   and Egyptian mobiles written with spaces or hyphens between digits; a separator right after the
-  country code (`+20 10 …`) is a known miss.
+  country code (`+20 10 …`) is masked too. Canonical UUIDs are left alone. The JSON formatter drops
+  Django's `request` extra, whose repr carries the query string.
 - **WhatsApp webhook:** the signature (`X-Hub-Signature-256`, HMAC-SHA256 of the raw body, constant-time
   compare) is checked before any parsing; payloads and inbound message text are never logged or
   stored. A reply whose whole text is a stop word (`إيقاف`, `ايقاف`, `stop`, after trimming
