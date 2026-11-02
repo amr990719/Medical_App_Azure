@@ -367,17 +367,21 @@ def test_no_phone_address_or_message_text_in_any_log(caplog, django_capture_on_c
     assert "تم استلام" not in text
 
 
-def test_command_logs_notify_run_failed_and_reraises(monkeypatch, caplog):
+def test_command_logs_notify_run_failed_and_exits_1_without_a_traceback(monkeypatch, caplog):
     def boom(**kwargs):
         raise RuntimeError("db gone")
 
     monkeypatch.setattr(command, "run_once", boom)
-    monkeypatch.setattr(command, "_flush_telemetry", lambda: None)
+    flushed = []
+    monkeypatch.setattr(command, "_flush_telemetry", lambda: flushed.append(True))
     with (
         caplog.at_level(logging.INFO, logger="apps.notifications"),
-        pytest.raises(RuntimeError),
+        pytest.raises(SystemExit) as ei,
     ):
         call_command("send_notifications")
+    assert ei.value.code == 1
+    assert ei.value.__suppress_context__ and ei.value.__cause__ is None
+    assert flushed == [True]
     (record,) = [r for r in caplog.records if r.getMessage() == "notify_run_failed"]
     assert record.levelno == logging.ERROR
 

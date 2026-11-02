@@ -29,6 +29,7 @@ class Command(BaseCommand):
         except Exception as exc:
             # Class name only: the message or a traceback could hold a recipient.
             logger.error("notify_run_failed", extra={"error_type": type(exc).__name__})
-            raise
+            # Exit 1 so the job shows as failed, without a traceback that could hold a recipient.
+            raise SystemExit(1) from None
         finally:
             _flush_telemetry()
