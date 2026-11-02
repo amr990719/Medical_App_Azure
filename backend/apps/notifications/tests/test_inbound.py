@@ -33,12 +33,16 @@ SENDER = "201012345678"
 pytestmark = pytest.mark.django_db
 
 
-@pytest.mark.parametrize("text", ["إيقاف", "ايقاف", " إيقاف. ", "stop", "STOP", "Stop!", "إيقاف،"])
+@pytest.mark.parametrize("text", ["إيقاف", "ايقاف", " إيقاف. ", "stop", "STOP", "Stop!", "إيقاف،",
+     "stop. ", "إيقاف‏", "‏إيقاف", "﻿stop", "«إيقاف»",
+     "إيقاف۔"])  # fmt: skip
 def test_stop_words(text):
     assert is_stop_word(text)
 
 
-@pytest.mark.parametrize("text", ["please stop texting me", "لا تقم بإيقاف الطلب", "", "stopp"])
+@pytest.mark.parametrize(
+    "text", ["please stop texting me", "لا تقم بإيقاف الطلب", "", "stopp", "stop stop", "sto p"]
+)
 def test_not_stop_words(text):
     assert not is_stop_word(text)
 

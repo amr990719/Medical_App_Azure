@@ -3,7 +3,7 @@
 The text and the sender are used here and nowhere else: neither is logged or stored.
 """
 
-import string
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -15,7 +15,11 @@ from .formatting import from_whatsapp_sender, to_e164
 from .templates import HELP_REPLY, STOP_CONFIRMATION
 
 STOP_WORDS = frozenset({"ايقاف", "stop"})
-_TRIM = string.punctuation + string.whitespace + "،؛؟…"
+_TRIMMED_CATEGORIES = ("P", "Z", "Cf", "Cc")  # punctuation, spaces, invisible format, control
+
+
+def _trimmable(char: str) -> bool:
+    return unicodedata.category(char).startswith(_TRIMMED_CATEGORIES)
 
 
 @dataclass(frozen=True)
@@ -26,7 +30,13 @@ class Reply:
 
 def is_stop_word(text: str) -> bool:
     """The whole text, trimmed of spaces and punctuation and ignoring case, is a stop word."""
-    return normalize_arabic_name(text.strip(_TRIM)).casefold() in STOP_WORDS
+    normalized = normalize_arabic_name(text)  # also collapses Unicode spaces
+    start, end = 0, len(normalized)
+    while start < end and _trimmable(normalized[start]):
+        start += 1
+    while end > start and _trimmable(normalized[end - 1]):
+        end -= 1
+    return normalized[start:end].casefold() in STOP_WORDS
 
 
 def _message_time(message: dict, now: datetime) -> datetime:
