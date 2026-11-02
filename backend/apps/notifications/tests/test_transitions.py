@@ -7,6 +7,7 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
+from django.db import transaction
 from django.utils import timezone
 
 from apps.applications.tests.test_reference_numbers import run_concurrently
@@ -196,41 +197,80 @@ def test_missing_row_is_refused():
     assert apply_transition(uuid.uuid4(), to_status="SENDING") is None
 
 
+STANDARD_ATTRS = set(logging.makeLogRecord({}).__dict__) | {"message", "asctime"}
+LOG_EXTRAS = {"notification_id", "event", "channel", "status", "error_code"}
+
+
+def notification_records(caplog):
+    return [r for r in caplog.records if r.name == "apps.notifications"]
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "start,target,message",
     [("SENT", "FAILED", "notification_failed"), ("PENDING", "EXPIRED", "notification_expired")],
 )
 def test_failed_and_expired_log_a_warning_with_allowlisted_fields_only(
-    caplog, start, target, message
+    caplog, django_capture_on_commit_callbacks, start, target, message
 ):
-    row = NotificationFactory(status=start, channel="WHATSAPP")
-    with caplog.at_level(logging.WARNING, logger="apps.notifications"):
+    row = NotificationFactory(status=start, channel="WHATSAPP", recipient_masked="010•••••678")
+    with (
+        caplog.at_level(logging.WARNING, logger="apps.notifications"),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
         apply_transition(row.pk, to_status=target, error_code="131026")
-    records = [r for r in caplog.records if r.name == "apps.notifications"]
+    records = notification_records(caplog)
     assert [r.getMessage() for r in records] == [message]
     record = records[0]
     assert record.levelno == logging.WARNING
+    assert set(record.__dict__) - STANDARD_ATTRS == LOG_EXTRAS
     assert record.notification_id == str(row.pk)
     assert record.event == row.event and record.channel == "WHATSAPP"
     assert record.status == target and record.error_code == "131026"
 
 
 @pytest.mark.django_db
-def test_a_refused_change_logs_nothing(caplog):
+def test_a_refused_change_logs_nothing(caplog, django_capture_on_commit_callbacks):
     row = NotificationFactory(status="DELIVERED")
-    with caplog.at_level(logging.DEBUG, logger="apps.notifications"):
+    with (
+        caplog.at_level(logging.DEBUG, logger="apps.notifications"),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
         assert apply_transition(row.pk, to_status="FAILED") is None
-    assert not [r for r in caplog.records if r.name == "apps.notifications"]
+    assert not notification_records(caplog)
 
 
 @pytest.mark.django_db
-def test_a_rolled_back_failure_logs_nothing(caplog, monkeypatch):
+def test_a_rolled_back_failure_logs_nothing(
+    caplog, monkeypatch, django_capture_on_commit_callbacks
+):
     row = NotificationFactory(status="SENT", channel="WHATSAPP")
     monkeypatch.setattr(services, "_create_fallback", mock.Mock(side_effect=RuntimeError))
-    with caplog.at_level(logging.DEBUG, logger="apps.notifications"), pytest.raises(RuntimeError):
+    with (
+        caplog.at_level(logging.DEBUG, logger="apps.notifications"),
+        django_capture_on_commit_callbacks(execute=True),
+        pytest.raises(RuntimeError),
+    ):
         apply_transition(row.pk, to_status="FAILED", error_code="x")
-    assert not [r for r in caplog.records if r.name == "apps.notifications"]
+    assert not notification_records(caplog)
+
+
+@pytest.mark.django_db
+def test_an_outer_transaction_rollback_logs_nothing(caplog, django_capture_on_commit_callbacks):
+    row = NotificationFactory(status="SENT", channel="EMAIL")
+    row.status = "SENDING"
+    row.save()
+    with (
+        caplog.at_level(logging.DEBUG, logger="apps.notifications"),
+        django_capture_on_commit_callbacks(execute=True),
+        pytest.raises(RuntimeError),
+        transaction.atomic(),
+    ):
+        assert apply_transition(row.pk, to_status="FAILED", error_code="x") is not None
+        raise RuntimeError
+    row.refresh_from_db()
+    assert row.status == "SENDING"
+    assert not notification_records(caplog)
 
 
 @pytest.mark.django_db(transaction=True, serialized_rollback=True)

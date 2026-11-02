@@ -114,16 +114,14 @@ def apply_transition(
         row.save()
         if to_status == S.FAILED and row.channel == NotificationChannel.WHATSAPP:
             _create_fallback(row, now=now)
-
-    if to_status in _LOGGED:
-        logger.warning(
-            _LOGGED[to_status],
-            extra={
+        if to_status in _LOGGED:
+            # Runs only if the outermost transaction commits, so a rollback logs nothing.
+            extra = {
                 "notification_id": str(row.pk),
                 "event": row.event,
                 "channel": row.channel,
                 "status": row.status,
                 "error_code": row.error_code,
-            },
-        )
+            }
+            transaction.on_commit(lambda: logger.warning(_LOGGED[to_status], extra=extra))
     return row
