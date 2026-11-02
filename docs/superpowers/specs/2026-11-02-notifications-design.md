@@ -385,6 +385,7 @@ Every message ends with `يرجى تسجيل الدخول إلى حسابك لم
   application is in review, and a doctor must be able to change consent at any time. The service
   locks the `Doctor` row, as `update_profile` does, so a save in one cannot undo the other.
 - **Opting in requires a valid mobile**, otherwise the standard validation error.
+- **Consent is only asked where WhatsApp can send.** The GET returns `whatsapp_available`, true when `NOTIFICATIONS_MODE` is `allowlist` or `live` (`doctors.services.whatsapp_available`, over the `SENDING_MODES` in `notifications/modes.py` that the sender also uses). `set_whatsapp_opt_in(enabled=True)` raises a validation error on `whatsapp_opt_in` when it is false; opting out is always allowed. The status-page prompt is hidden when it is false, and the profile section is hidden unless the doctor is already opted in, so they can still opt out.
 - **Changing the phone clears the opt-in:** `update_profile` resets it when the normalized number
   changes, because consent was given for the old number.
 - **Resend** re-runs the routing in section 5 and records `created_by` and an audit entry. It returns

@@ -183,6 +183,7 @@ def test_get_returns_own_state_and_doctor_id():
         "whatsapp_opt_in_at",
         "phone_number",
         "phone_valid",
+        "whatsapp_available",
     }
     assert data["doctor_id"] == str(doctor.pk)
     assert data["whatsapp_opt_in"] is True and data["whatsapp_opt_in_at"]
@@ -226,3 +227,46 @@ def test_put_rejects_non_boolean(body):
     response = client_for(doctor.user).put(URL, body, format="json")
     assert response.status_code == 400
     assert "whatsapp_opt_in" in response.json()["error"]["fields"]
+
+
+# ---- availability gate ----
+
+
+@pytest.mark.parametrize("mode,available", [("off", False), ("allowlist", True), ("live", True)])
+def test_get_reports_whatsapp_availability(settings, mode, available):
+    settings.NOTIFICATIONS_MODE = mode
+    doctor = DoctorFactory()
+    body = client_for(doctor.user).get(URL).json()
+    assert body["whatsapp_available"] is available
+
+
+def test_opting_in_is_refused_while_whatsapp_is_unavailable(settings):
+    settings.NOTIFICATIONS_MODE = "off"
+    doctor = DoctorFactory()
+    with pytest.raises(ValidationFailed):
+        set_whatsapp_opt_in(doctor, enabled=True, actor=doctor.user)
+    doctor.refresh_from_db()
+    assert doctor.whatsapp_opt_in is False and audit_entries(doctor).count() == 0
+
+
+def test_the_endpoint_refuses_opt_in_with_a_field_error_while_unavailable(settings):
+    settings.NOTIFICATIONS_MODE = "off"
+    doctor = DoctorFactory()
+    response = client_for(doctor.user).put(URL, {"whatsapp_opt_in": True}, format="json")
+    assert response.status_code == 400
+    assert "whatsapp_opt_in" in response.json()["error"]["fields"]
+
+
+def test_opting_out_is_always_allowed(settings):
+    doctor = opted_in_doctor()
+    settings.NOTIFICATIONS_MODE = "off"
+    set_whatsapp_opt_in(doctor, enabled=False, actor=doctor.user)
+    doctor.refresh_from_db()
+    assert doctor.whatsapp_opt_in is False
+
+
+def test_sender_and_gate_share_one_definition_of_sending_modes():
+    from apps.notifications import sender
+    from apps.notifications.modes import SENDING_MODES
+
+    assert sender.SENDING_MODES is SENDING_MODES

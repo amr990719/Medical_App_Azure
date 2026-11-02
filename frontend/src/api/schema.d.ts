@@ -1307,6 +1307,7 @@ export interface components {
             readonly whatsapp_opt_in_at: string | null;
             readonly phone_number: string;
             readonly phone_valid: boolean;
+            readonly whatsapp_available: boolean;
         };
         NotificationPreferenceInputRequest: {
             whatsapp_opt_in: boolean;

@@ -91,6 +91,7 @@ export function apiNotificationPreference(
     whatsapp_opt_in_at: null,
     phone_number: "01012345678",
     phone_valid: true,
+    whatsapp_available: true,
     ...overrides,
   };
 }

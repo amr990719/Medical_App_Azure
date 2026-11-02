@@ -21,6 +21,7 @@ from apps.common.exceptions import (
     PermissionDeniedError,
     ValidationFailed,
 )
+from apps.notifications.modes import SENDING_MODES
 from apps.reference.constants import ApplicationStatus
 from apps.reference.national_id import parse_national_id
 
@@ -29,6 +30,7 @@ from .models import Doctor
 MSG_GENDER_MISMATCH = "يرجى تحديد النوع (ذكر/أنثى)"
 MSG_BIRTH_YEAR_MISMATCH = "سنة الميلاد لا تطابق الرقم القومي"
 MSG_INVALID_MOBILE = "رقم الهاتف المحمول غير صحيح"
+MSG_WHATSAPP_UNAVAILABLE = "خدمة واتساب غير متاحة حاليًا"
 
 PROFILE_FIELDS = (
     "full_name", "national_id", "birth_year", "gender", "religion", "phone_number",
@@ -94,13 +96,21 @@ def update_profile(doctor: Doctor, *, actor, changes: dict) -> Doctor:
     return doctor
 
 
+def whatsapp_available() -> bool:
+    """WhatsApp messages can only go out in a sending mode; consent is not collected before."""
+    return settings.NOTIFICATIONS_MODE in SENDING_MODES
+
+
 @transaction.atomic
 def set_whatsapp_opt_in(doctor: Doctor, *, enabled: bool, actor, request=None) -> Doctor:
     """Record the doctor's WhatsApp consent. Deliberately not gated by
-    `ensure_profile_editable`: consent can change while the profile is frozen."""
+    `ensure_profile_editable`: consent can change while the profile is frozen. Opting in needs
+    a sending mode; opting out is always allowed."""
     if actor is None or doctor.user_id != actor.pk:
         raise PermissionDeniedError()
     doctor = Doctor.objects.select_for_update().get(pk=doctor.pk)
+    if enabled and not whatsapp_available():
+        raise ValidationFailed(fields={"whatsapp_opt_in": [MSG_WHATSAPP_UNAVAILABLE]})
     if enabled and normalize_mobile(doctor.phone_number) is None:
         raise ValidationFailed(fields={"whatsapp_opt_in": [MSG_INVALID_MOBILE]})
     if doctor.whatsapp_opt_in == enabled:

@@ -24,12 +24,12 @@ function rememberDismissal(doctorId: string): void {
   }
 }
 
-/** Nudge on the status page to opt in to WhatsApp. Silent while loading, on error, or once opted in. */
+/** Nudge on the status page to opt in to WhatsApp. Silent while loading, on error, once opted in, or while WhatsApp is not available. */
 export function WhatsAppPrompt() {
   const preference = useWhatsAppOptIn();
   const [hidden, setHidden] = useState(false);
   const data = preference.data;
-  if (!data || data.whatsappOptIn || hidden || wasDismissed(data.doctorId)) return null;
+  if (!data || !data.whatsappAvailable || data.whatsappOptIn || hidden || wasDismissed(data.doctorId)) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-banana-deep bg-banana-light p-4">

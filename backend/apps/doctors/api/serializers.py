@@ -9,6 +9,7 @@ from apps.common.fields import (
     YearField,
 )
 from apps.doctors.models import Doctor
+from apps.doctors.services import whatsapp_available
 from apps.reference.constants import GOVERNORATES, Gender, Religion, SyndicateType
 
 
@@ -52,6 +53,7 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
 
     doctor_id = serializers.UUIDField(source="id", read_only=True)
     phone_valid = serializers.SerializerMethodField()
+    whatsapp_available = serializers.SerializerMethodField()
 
     class Meta:
         model = Doctor
@@ -61,11 +63,15 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             "whatsapp_opt_in_at",
             "phone_number",
             "phone_valid",
+            "whatsapp_available",
         ]
         read_only_fields = fields
 
     def get_phone_valid(self, obj: Doctor) -> bool:
         return is_valid_mobile(obj.phone_number)
+
+    def get_whatsapp_available(self, obj: Doctor) -> bool:
+        return whatsapp_available()
 
 
 class NotificationPreferenceInputSerializer(serializers.Serializer):

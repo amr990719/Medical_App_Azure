@@ -12,6 +12,8 @@ export function WhatsAppOptIn() {
   const checkboxId = useId();
   const data = preference.data;
   if (!data) return null;
+  // Before sign-off nothing is sent, so consent is not asked; a doctor already opted in can still opt out.
+  if (!data.whatsappAvailable && !data.whatsappOptIn) return null;
 
   // A doctor who is already opted in can always opt out, even if the phone later became invalid.
   const blocked = !data.phoneValid && !data.whatsappOptIn;

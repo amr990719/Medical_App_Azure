@@ -28,6 +28,13 @@ describe("WhatsAppPrompt", () => {
     expect(screen.queryByText(MESSAGE)).not.toBeInTheDocument();
   });
 
+  it("does not show while WhatsApp is unavailable", async () => {
+    server.use(handlers.whatsappOptIn(apiNotificationPreference({ whatsapp_available: false })));
+    const { queryClient } = renderWithProviders(<WhatsAppPrompt />);
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(screen.queryByText(MESSAGE)).not.toBeInTheDocument();
+  });
+
   it("does not flash while loading", () => {
     server.use(handlers.whatsappOptIn());
     renderWithProviders(<WhatsAppPrompt />);

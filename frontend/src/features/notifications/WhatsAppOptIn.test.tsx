@@ -55,6 +55,23 @@ describe("WhatsAppOptIn", () => {
     expect(screen.getByText("يرجى إدخال رقم هاتف محمول صحيح أولًا.")).toBeInTheDocument();
   });
 
+  it("renders nothing while WhatsApp is unavailable and the doctor is not opted in", async () => {
+    serve(apiNotificationPreference({ whatsapp_available: false }));
+    const { queryClient } = renderWithProviders(<WhatsAppOptIn />);
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("still lets an opted-in doctor opt out while WhatsApp is unavailable", async () => {
+    const puts = serve(apiNotificationPreference({ whatsapp_available: false, whatsapp_opt_in: true }));
+    const { user } = renderWithProviders(<WhatsAppOptIn />);
+    const box = await screen.findByRole("checkbox");
+    expect(box).toBeChecked();
+    expect(box).toBeEnabled();
+    await user.click(box);
+    await waitFor(() => expect(puts).toEqual([{ whatsapp_opt_in: false }]));
+  });
+
   it("shows the server error when saving fails", async () => {
     server.use(
       handlers.whatsappOptIn(),

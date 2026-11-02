@@ -18,6 +18,7 @@ from apps.reference.constants import NotificationChannel
 
 from . import services
 from .formatting import SEND_ERROR, safe_code, to_e164
+from .modes import SENDING_MODES
 from .providers import (
     PermanentProviderError,
     TemporaryProviderError,
@@ -36,7 +37,6 @@ MIN_REMAINING_SECONDS = 15
 OUTAGE_STREAK = 5
 NO_ADDRESS = "NO_ADDRESS"
 RECIPIENT_ONLY_CODES = frozenset({"BadRequestException"})  # SES: this one address is bad
-SENDING_MODES = frozenset({"allowlist", "live"})
 
 # What an attempt says about the provider: OK (it answered: success, or a permanent WhatsApp
 # rejection) resets the outage streak, ERROR (temporary, unknown, an unexpected fault or a
