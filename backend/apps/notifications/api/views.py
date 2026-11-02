@@ -1,5 +1,6 @@
 """Meta's webhook endpoint. Public by design: the signature check in `webhook.py` is the guard."""
 
+from django.core.exceptions import RequestDataTooBig
 from django.http import HttpResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework.views import APIView
@@ -20,7 +21,13 @@ class WhatsAppWebhookView(APIView):
         return HttpResponse(challenge, content_type="text/plain")
 
     def post(self, request):
-        raw_body = request.body  # before `request.data`, which would consume and parse it
+        try:
+            # Read before `request.data`, which would consume and parse it. Reading can raise
+            # before any signature check, so an oversized body is refused here, not as a 500
+            # (a 500 tells Meta to retry for days).
+            raw_body = request.body
+        except RequestDataTooBig:
+            return HttpResponse(status=413)
         try:
             webhook.process_webhook(raw_body, request.headers.get("X-Hub-Signature-256"))
         except webhook.InvalidSignature:

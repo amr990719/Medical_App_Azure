@@ -292,3 +292,16 @@ def test_webhook_needs_no_session_and_no_csrf():
     client = APIClient(enforce_csrf_checks=True)
     wa_row("wamid.1")
     assert post(payload([status_entry("wamid.1", "delivered")]), client=client).status_code == 200
+
+
+def test_oversized_body_is_413_without_an_error_log(settings, caplog):
+    settings.DATA_UPLOAD_MAX_MEMORY_SIZE = 100
+    row = wa_row("wamid.1")
+    body = payload([status_entry("wamid.1", "delivered")]) + b" " * 200
+    client = APIClient(raise_request_exception=False)
+    with caplog.at_level(logging.DEBUG):
+        response = post(body, client=client)
+    assert response.status_code == 413
+    assert response.content == b""
+    assert reload(row).status == "SENT"
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
