@@ -235,10 +235,16 @@ def _recipient(row: Notification) -> str:
     return (doctor.email or "").strip()
 
 
-def _allowlisted(row: Notification, recipient: str) -> bool:
+def whatsapp_allowlisted(local: str) -> bool:
+    """Is this local `01...` number on `NOTIFICATIONS_ALLOWLIST`?"""
     entries = [str(entry).strip() for entry in settings.NOTIFICATIONS_ALLOWLIST]
+    return bool(local) and local in {normalize_mobile(e) for e in entries}
+
+
+def _allowlisted(row: Notification, recipient: str) -> bool:
     if row.channel == NotificationChannel.WHATSAPP:
-        return bool(recipient) and recipient in {normalize_mobile(e) for e in entries}
+        return whatsapp_allowlisted(recipient)
+    entries = [str(entry).strip() for entry in settings.NOTIFICATIONS_ALLOWLIST]
     return bool(recipient) and recipient.lower() in {e.lower() for e in entries if "@" in e}
 
 

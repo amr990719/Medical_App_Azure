@@ -7,16 +7,24 @@ status's provider ID, the status word and an error code (made safe) are read fro
 import hashlib
 import hmac
 import json
+import logging
 from collections.abc import Iterator, Mapping
+from datetime import datetime
 from typing import Any
 
 from django.conf import settings
+from django.utils import timezone
 
+from apps.common.arabic import normalize_mobile
 from apps.reference.constants import NotificationChannel, NotificationStatus
 
 from . import services
-from .formatting import safe_code
+from .formatting import SEND_ERROR, safe_code
+from .inbound import Reply, handle_message
 from .models import Notification
+from .providers import ProviderError, get_whatsapp_client
+
+logger = logging.getLogger("apps.notifications")
 
 WEBHOOK_ERROR = "WHATSAPP_ERROR"
 SIGNATURE_PREFIX = "sha256="
@@ -60,9 +68,12 @@ def process_webhook(raw_body: bytes, signature_header: str | None) -> None:
         payload = json.loads(raw_body)
     except ValueError:
         return  # signed but not JSON: acknowledge so Meta does not retry it for days
+    now = timezone.now()
+    replies: list[Reply] = []
     for value in _values(payload):
         _apply_statuses(value)
-        # Task 11 adds `_apply_messages(value)` here.
+        replies.extend(_apply_messages(value, now))
+    _send_first_reply(replies)  # after every commit above: no transaction is open here
 
 
 def _dicts(items: Any) -> Iterator[dict]:
@@ -102,6 +113,37 @@ def _apply_statuses(value: dict) -> None:
             continue
         error_code = _error_code(item) if target == NotificationStatus.FAILED else ""
         services.apply_transition(row_id, to_status=target, error_code=error_code)
+
+
+def _apply_messages(value: dict, now: datetime) -> Iterator[Reply]:
+    for message in _dicts(value.get("messages")):
+        reply = handle_message(message, now=now)
+        if reply is not None:
+            yield reply
+
+
+def _may_reply(reply: Reply) -> bool:
+    mode = settings.NOTIFICATIONS_MODE
+    if mode == "allowlist":
+        return services.whatsapp_allowlisted(normalize_mobile(reply.to) or "")
+    return mode == "live"
+
+
+def _send_first_reply(replies: list[Reply]) -> None:
+    """At most one free-text reply per request. A failure is logged by code, never raised: the
+    stop is already committed and Meta must get its 200."""
+    reply = next((r for r in replies if _may_reply(r)), None)
+    if reply is None:
+        return
+    try:
+        get_whatsapp_client().send_text(to=reply.to, body=reply.body)
+    except ProviderError as exc:
+        code = safe_code(exc.code)
+    except Exception:  # the stop is committed: nothing from the client may turn it into a 500
+        code = SEND_ERROR
+    else:
+        return
+    logger.warning("whatsapp_reply_failed", extra={"error_code": code})
 
 
 def _error_code(item: dict) -> str:

@@ -5,6 +5,8 @@ source of truth for date of birth, birth year and gender; a conflicting typed va
 error. Uniqueness is decided by the database constraint (IntegrityError → DUPLICATE_NATIONAL_ID).
 """
 
+from datetime import datetime, timedelta
+
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -108,6 +110,49 @@ def set_whatsapp_opt_in(doctor: Doctor, *, enabled: bool, actor, request=None) -
     doctor.save(update_fields=["whatsapp_opt_in", "whatsapp_opt_in_at", "updated_at"])
     _audit_opt_in(doctor, actor, enabled=enabled, request=request)
     return doctor
+
+
+HELP_REPLY_INTERVAL = timedelta(hours=24)
+
+
+@transaction.atomic
+def stop_whatsapp_for_number(local: str, *, message_time: datetime) -> bool:
+    """A stop word came from this number (local `01...` form): clear the consent of every
+    doctor with it. Returns True if any consent changed. A stop sent before a doctor's latest
+    opt-in is ignored, so a retried old message cannot undo it."""
+    changed = False
+    for doctor in Doctor.objects.select_for_update().filter(phone_number=local).order_by("pk"):
+        if not doctor.whatsapp_opt_in:
+            continue
+        if doctor.whatsapp_opt_in_at is not None and doctor.whatsapp_opt_in_at > message_time:
+            continue
+        doctor.whatsapp_opt_in = False
+        doctor.whatsapp_opt_in_at = None
+        doctor.save(update_fields=["whatsapp_opt_in", "whatsapp_opt_in_at", "updated_at"])
+        record(
+            actor=None,
+            action=AuditAction.WHATSAPP_OPT_IN_CHANGED,
+            obj=doctor,
+            metadata={"enabled": False, "source": "whatsapp_reply"},
+        )
+        changed = True
+    return changed
+
+
+@transaction.atomic
+def claim_help_reply(local: str, *, now: datetime) -> bool:
+    """True if a help reply is due for this number: some matching doctor has had none in the
+    last 24 hours. Marks every matching doctor as answered."""
+    doctors = list(Doctor.objects.select_for_update().filter(phone_number=local).order_by("pk"))
+    cutoff = now - HELP_REPLY_INTERVAL
+    if not any(
+        d.whatsapp_help_sent_at is None or d.whatsapp_help_sent_at < cutoff for d in doctors
+    ):
+        return False
+    Doctor.objects.filter(pk__in=[d.pk for d in doctors]).update(
+        whatsapp_help_sent_at=now, updated_at=now
+    )
+    return True
 
 
 def _audit_opt_in(doctor: Doctor, actor, *, enabled: bool, request) -> None:
