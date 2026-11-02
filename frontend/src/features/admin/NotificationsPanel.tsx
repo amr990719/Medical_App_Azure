@@ -13,6 +13,10 @@ const N = ar.admin.notifications;
 type Tone = "alert" | "quiet" | "normal";
 
 const KNOWN_ERRORS = new Set(Object.keys(N.errors).filter((code) => code !== "generic"));
+const CHANNEL_ERRORS: Record<NotificationRow["channel"], Readonly<Record<string, string>>> = {
+  WHATSAPP: N.whatsappErrors,
+  EMAIL: N.emailErrors,
+};
 
 /** FAILED and EXPIRED stand out; SUPERSEDED (no longer needed) recedes. */
 function toneOf(status: NotificationRow["status"]): Tone {
@@ -33,6 +37,8 @@ const TONE_CLASSES: Record<Tone, string> = {
  */
 function errorLine(row: NotificationRow): string | null {
   if (toneOf(row.status) !== "alert" || !row.errorCode) return null;
+  const forChannel = CHANNEL_ERRORS[row.channel][row.errorCode];
+  if (forChannel) return forChannel;
   if (KNOWN_ERRORS.has(row.errorCode)) return N.errors[row.errorCode as keyof typeof N.errors];
   return t(N.errors.generic, { code: row.errorCode });
 }

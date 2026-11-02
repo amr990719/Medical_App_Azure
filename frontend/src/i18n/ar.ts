@@ -231,15 +231,22 @@ export const ar = {
       emailAccepted: "قبله مزوّد البريد، والتسليم غير مؤكد",
       whatsappSent: "أُرسل، بانتظار تأكيد التسليم",
       attempts: "عدد المحاولات: {n}",
+      // Lines that hold for either channel.
       errors: {
-        OPTED_OUT: "لم يفعّل العضو رسائل واتساب، فأُرسل بالبريد.",
-        NO_DELIVERY_RECEIPT: "لم يصل تأكيد التسليم خلال المهلة، فأُرسل بالبريد.",
-        UNKNOWN_RESULT: "نتيجة الإرسال غير معروفة، فأُرسل بالبريد.",
         SEND_INTERRUPTED: "توقف الإرسال قبل اكتماله.",
         CONNECT_FAILED: "تعذر الاتصال بمزود الخدمة.",
         NO_ADDRESS: "لا يوجد بريد إلكتروني مسجل للعضو.",
         SEND_ERROR: "حدث خطأ أثناء الإرسال.",
         generic: "رفض مزود الخدمة الرسالة (الرمز: {code}).",
+      },
+      // A WhatsApp row only hands over to email; whether the email went out is its own row.
+      whatsappErrors: {
+        OPTED_OUT: "لم يفعّل العضو رسائل واتساب، وحُوّل إلى البريد.",
+        NO_DELIVERY_RECEIPT: "لم يصل تأكيد التسليم خلال المهلة، وحُوّل إلى البريد.",
+        UNKNOWN_RESULT: "نتيجة الإرسال غير معروفة، وحُوّل إلى البريد.",
+      },
+      emailErrors: {
+        UNKNOWN_RESULT: "نتيجة الإرسال غير معروفة ولم يتأكد الإرسال.",
       },
     },
     dues: {

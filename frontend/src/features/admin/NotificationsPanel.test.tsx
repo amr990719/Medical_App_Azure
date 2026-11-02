@@ -91,8 +91,28 @@ describe("NotificationsPanel", () => {
       row({ id: "b", status: "FAILED", error_code: "131026" }),
     ]);
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
-    expect(within(item(0)).getByText("لم يصل تأكيد التسليم خلال المهلة، فأُرسل بالبريد.")).toBeInTheDocument();
+    expect(within(item(0)).getByText("لم يصل تأكيد التسليم خلال المهلة، وحُوّل إلى البريد.")).toBeInTheDocument();
     expect(within(item(1)).getByText("رفض مزود الخدمة الرسالة (الرمز: 131026).")).toBeInTheDocument();
+  });
+
+  it("words WhatsApp lines as moved to email, never as sent", async () => {
+    await show([
+      row({ id: "a", status: "FAILED", error_code: "OPTED_OUT" }),
+      row({ id: "b", status: "EXPIRED", error_code: "NO_DELIVERY_RECEIPT" }),
+      row({ id: "c", status: "FAILED", error_code: "UNKNOWN_RESULT" }),
+    ]);
+    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3));
+    expect(within(item(0)).getByText("لم يفعّل العضو رسائل واتساب، وحُوّل إلى البريد.")).toBeInTheDocument();
+    expect(within(item(1)).getByText("لم يصل تأكيد التسليم خلال المهلة، وحُوّل إلى البريد.")).toBeInTheDocument();
+    expect(within(item(2)).getByText("نتيجة الإرسال غير معروفة، وحُوّل إلى البريد.")).toBeInTheDocument();
+    expect(screen.queryByText(/فأُرسل/)).not.toBeInTheDocument();
+  });
+
+  it("never claims an email was sent when its result is unknown", async () => {
+    await show([row({ channel: "EMAIL", status: "FAILED", error_code: "UNKNOWN_RESULT" })]);
+    const li = await waitFor(() => item());
+    expect(within(li).getByText("نتيجة الإرسال غير معروفة ولم يتأكد الإرسال.")).toBeInTheDocument();
+    expect(within(li).queryByText(/حُوّل|فأُرسل/)).not.toBeInTheDocument();
   });
 
   it("never shows an error for a row that retried and then succeeded", async () => {
