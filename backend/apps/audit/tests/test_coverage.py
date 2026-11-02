@@ -111,7 +111,12 @@ def full_lifecycle(settings):
     return app_id
 
 
-@pytest.mark.parametrize("action", [a.value for a in AuditAction])
+# Notification actions are defined by the data-model task; their producers (services, API)
+# arrive in later notification tasks, which must delete this exclusion.
+NOT_YET_PRODUCED = {AuditAction.WHATSAPP_OPT_IN_CHANGED, AuditAction.NOTIFICATION_RESENT}
+
+
+@pytest.mark.parametrize("action", [a.value for a in AuditAction if a not in NOT_YET_PRODUCED])
 def test_every_audit_action_is_produced(full_lifecycle, action):
     assert AuditLog.objects.filter(action=action).exists(), action
 

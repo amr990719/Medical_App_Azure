@@ -156,3 +156,32 @@ CHILD_KINSHIPS = frozenset({Kinship.SON_MINOR, Kinship.SON_UNIVERSITY, Kinship.S
 
 BENEFICIARY_BIRTH_YEAR_MIN = 1920
 REGISTRATION_YEAR_MIN = 1950
+
+
+class NotificationEvent(models.TextChoices):
+    APPLICATION_RECEIVED = "APPLICATION_RECEIVED", "استلام الطلب"
+    CORRECTION_NEEDED = "CORRECTION_NEEDED", "طلب استكمال بيانات"
+    APPROVED = "APPROVED", "قبول الطلب"
+    REJECTED = "REJECTED", "رفض الطلب"
+    PAYMENT_CONFIRMED = "PAYMENT_CONFIRMED", "تأكيد السداد"
+    PAYMENT_RECEIPT_REJECTED = "PAYMENT_RECEIPT_REJECTED", "رفض إيصال السداد"
+    DUES_REQUESTED = "DUES_REQUESTED", "طلب مستحقات"
+    DUES_CONFIRMED = "DUES_CONFIRMED", "تأكيد سداد المستحقات"
+    DUES_RECEIPT_REJECTED = "DUES_RECEIPT_REJECTED", "رفض إيصال المستحقات"
+    DUES_CANCELLED = "DUES_CANCELLED", "إلغاء طلب المستحقات"
+
+
+class NotificationChannel(models.TextChoices):
+    WHATSAPP = "WHATSAPP", "واتساب"
+    EMAIL = "EMAIL", "البريد الإلكتروني"
+
+
+class NotificationStatus(models.TextChoices):
+    PENDING = "PENDING", "في الانتظار"
+    SENDING = "SENDING", "جارٍ الإرسال"
+    SENT = "SENT", "تم الإرسال"
+    DELIVERED = "DELIVERED", "تم التسليم"
+    FAILED = "FAILED", "فشل الإرسال"
+    EXPIRED = "EXPIRED", "انتهت صلاحيته"
+    SUPPRESSED = "SUPPRESSED", "لم يُرسل (وضع الاختبار)"
+    SUPERSEDED = "SUPERSEDED", "لم يعد مطلوبًا"

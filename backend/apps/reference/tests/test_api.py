@@ -83,3 +83,15 @@ def test_reference_data_follows_settings():
     assert "application/pdf" in data["upload"]["accepted_content_types"]
     # Photos stay image-only even when PDF documents are enabled.
     assert data["upload"]["image_content_types"] == ["image/jpeg", "image/png", "image/webp"]
+
+
+def test_reference_data_exposes_notification_enums():
+    data = get(UserFactory()).json()
+    assert len(data["notification_events"]) == 10
+    assert len(data["notification_channels"]) == 2
+    assert len(data["notification_statuses"]) == 8
+    assert {"value": "DUES_CANCELLED", "label": "إلغاء طلب المستحقات"} in data[
+        "notification_events"
+    ]
+    assert {"value": "WHATSAPP", "label": "واتساب"} in data["notification_channels"]
+    assert {"value": "SUPERSEDED", "label": "لم يعد مطلوبًا"} in data["notification_statuses"]

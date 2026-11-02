@@ -37,6 +37,11 @@ class Doctor(models.Model):
     governorate = models.CharField(max_length=32, blank=True)
     neighborhood = models.CharField(max_length=100, blank=True)
     address = models.CharField(max_length=300, blank=True)
+    # WhatsApp consent (apps.notifications). Existing doctors are not opted in: they get email.
+    whatsapp_opt_in = models.BooleanField(db_default=False, default=False)
+    whatsapp_opt_in_at = models.DateTimeField(null=True, blank=True)
+    # Limits the help reply to inbound WhatsApp messages.
+    whatsapp_help_sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
