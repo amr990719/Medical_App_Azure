@@ -22,7 +22,10 @@ pytestmark = pytest.mark.django_db
 
 
 def make_dues(application=None) -> SyndicateDuesRequest:
-    application = application or ApplicationFactory()
+    # Dues requests only live on an open (submitted, under review or needs-correction) application.
+    application = application or ApplicationFactory(
+        status="SUBMITTED", reference_number="MED-2026-000001"
+    )
     return SyndicateDuesRequest.objects.create(
         application=application,
         amount=Decimal("250.00"),

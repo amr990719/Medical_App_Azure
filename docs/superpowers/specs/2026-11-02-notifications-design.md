@@ -66,8 +66,8 @@ it becomes `SUPERSEDED` and sends nothing, with no fallback.
 | 2 | `CORRECTION_NEEDED` | application status is `NEEDS_CORRECTION` |
 | 5 | `PAYMENT_CONFIRMED` | `payment_status` is `CONFIRMED` |
 | 6 | `PAYMENT_RECEIPT_REJECTED` | `payment_status` is `REJECTED` |
-| 7 | `DUES_REQUESTED` | the dues request is `REQUESTED` |
-| 9 | `DUES_RECEIPT_REJECTED` | the dues request is `REJECTED` |
+| 7 | `DUES_REQUESTED` | the dues request is `REQUESTED` and the application is `SUBMITTED`, `UNDER_REVIEW` or `NEEDS_CORRECTION` (dues requests freeze on a final application, so a rejected or approved one has nothing left to pay) |
+| 9 | `DUES_RECEIPT_REJECTED` | the dues request is `REJECTED` and the application is `SUBMITTED`, `UNDER_REVIEW` or `NEEDS_CORRECTION` |
 
 The other events state something that stays true (`APPROVED` and `REJECTED` are final in
 `applications/transitions.py`; `CONFIRMED` and `CANCELLED` are final for a dues request), so they

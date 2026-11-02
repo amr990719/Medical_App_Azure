@@ -98,6 +98,16 @@ def enqueue(
     )
 
 
+# Mirrors `dues.services.DUES_ACTIVE_STATUSES` (this module must not import dues.services).
+DUES_OPEN_APPLICATION_STATUSES = frozenset(
+    {
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.UNDER_REVIEW,
+        ApplicationStatus.NEEDS_CORRECTION,
+    }
+)
+
+
 def still_relevant(row: Notification) -> bool:
     """Re-read the source of the news: False when it no longer holds (spec section 2)."""
     event = row.event
@@ -111,6 +121,9 @@ def still_relevant(row: Notification) -> bool:
         wanted = (
             DuesRequestStatus.REQUESTED if event == E.DUES_REQUESTED else DuesRequestStatus.REJECTED
         )
+        # Dues requests freeze on a final application, so there is nothing left to act on.
+        if _app_value(row, "status") not in DUES_OPEN_APPLICATION_STATUSES:
+            return False
         return SyndicateDuesRequest.objects.filter(pk=row.dues_request_id, status=wanted).exists()
     return True
 

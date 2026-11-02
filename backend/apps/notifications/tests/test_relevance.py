@@ -19,6 +19,8 @@ DUES_EVENTS = {E.DUES_REQUESTED, E.DUES_CONFIRMED, E.DUES_RECEIPT_REJECTED, E.DU
 def make_row(event, source_state):
     app = ApplicationFactory()
     dues = None
+    if event in DUES_EVENTS:
+        source_state = {"status": "SUBMITTED", **source_state}
     app_fields = {k: v for k, v in source_state.items() if k in ("status", "payment_status")}
     if app_fields.get("status", "DRAFT") != "DRAFT":
         app_fields.update(reference_number="MED-2026-000001", submitted_at=timezone.now())
@@ -59,6 +61,25 @@ def make_row(event, source_state):
 )
 def test_still_relevant(event, source_state, expected):
     assert still_relevant(make_row(event, source_state)) is expected
+
+
+@pytest.mark.parametrize(
+    "event,dues", [("DUES_REQUESTED", "REQUESTED"), ("DUES_RECEIPT_REJECTED", "REJECTED")]
+)
+@pytest.mark.parametrize(
+    "app_status,expected",
+    [
+        ("SUBMITTED", True),
+        ("UNDER_REVIEW", True),
+        ("NEEDS_CORRECTION", True),
+        ("REJECTED", False),
+        ("APPROVED", False),
+    ],
+)
+def test_dues_asks_need_an_open_application(event, dues, app_status, expected):
+    """Dues requests freeze on a final application, so there is nothing left to act on."""
+    row = make_row(event, {"dues_status": dues, "status": app_status})
+    assert still_relevant(row) is expected
 
 
 def test_relevance_reads_the_database_not_a_stale_row():

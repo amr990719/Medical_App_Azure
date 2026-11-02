@@ -197,6 +197,17 @@ def test_fallback_email_of_an_obsolete_message_is_superseded():
     assert (email.status, email.attempts) == ("SUPERSEDED", 0)
 
 
+def test_a_dues_request_of_a_rejected_application_is_superseded_at_claim():
+    dues = opted_in_dues()
+    row = make_row(
+        event=NotificationEvent.DUES_REQUESTED, dues_request=dues, application=dues.application
+    )
+    type(dues.application).objects.filter(pk=dues.application_id).update(status="REJECTED")
+    assert claim() is None
+    row.refresh_from_db()
+    assert (row.status, row.attempts) == ("SUPERSEDED", 0)
+
+
 def test_claim_repr_hides_the_recipient():
     make_row()
     assert PHONE not in repr(claim())

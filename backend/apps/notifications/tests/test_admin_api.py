@@ -238,6 +238,22 @@ def test_resend_of_obsolete_action_is_409_not_relevant(admin, app):
     assert Notification.objects.count() == 1
 
 
+@pytest.mark.parametrize("final", [AS.REJECTED, AS.APPROVED])
+def test_resend_of_a_dues_request_on_a_final_application_is_409(admin, app, final):
+    dues = SyndicateDuesRequest.objects.create(
+        application=app,
+        amount=Decimal("250"),
+        reason="سبب",
+        created_by=admin,
+        status=DuesRequestStatus.REQUESTED,
+    )
+    old = failed(app, event=E.DUES_REQUESTED, dues_request=dues)
+    type(app).objects.filter(pk=app.pk).update(status=final)
+    response = client_for(admin).post(resend_url(app, old))
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "NOTIFICATION_NOT_RELEVANT"
+
+
 def test_resend_is_throttled_per_admin(admin, app):
     cache.clear()
     old = failed(app)
