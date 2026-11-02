@@ -235,15 +235,15 @@ class FakeEmailClient(_FakeBase):
 # ---- Selection ----
 
 
-def _live() -> bool:
-    return settings.NOTIFICATION_PROVIDERS == "live"
+def _real() -> bool:
+    return settings.NOTIFICATION_PROVIDERS == "real"
 
 
 @lru_cache(maxsize=1)
 def get_whatsapp_client() -> WhatsAppClient | FakeWhatsAppClient:
-    return WhatsAppClient() if _live() else FakeWhatsAppClient()
+    return WhatsAppClient() if _real() else FakeWhatsAppClient()
 
 
 @lru_cache(maxsize=1)
 def get_email_client() -> EmailClient | FakeEmailClient:
-    return EmailClient() if _live() else FakeEmailClient()
+    return EmailClient() if _real() else FakeEmailClient()

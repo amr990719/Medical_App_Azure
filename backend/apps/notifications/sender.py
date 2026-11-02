@@ -35,6 +35,7 @@ BUDGET_SECONDS = 240
 MIN_REMAINING_SECONDS = 15
 OUTAGE_STREAK = 5
 NO_ADDRESS = "NO_ADDRESS"
+SENDING_MODES = frozenset({"allowlist", "live"})
 
 # What an attempt says about the provider: OK (it answered: success or a permanent rejection)
 # resets the outage streak, ERROR (temporary, unknown or an unexpected fault) adds one, and KEEP
@@ -140,13 +141,14 @@ def run_once(
 ) -> RunSummary:
     """Expire, recover, time out, send (email first, then WhatsApp), then log the summary.
 
-    In `off` mode only the expiry sweep and the summary run.
+    Only `allowlist` and `live` send; any other mode (`off`, or a value nobody recognises)
+    runs just the expiry sweep and the summary.
     """
     started = clock()
     now = now or timezone.now()
     summary = RunSummary()
     summary.expired = services.expire_overdue(now=now)
-    if settings.NOTIFICATIONS_MODE != "off":
+    if settings.NOTIFICATIONS_MODE in SENDING_MODES:
         summary.recovered = services.recover_stuck(now=now)
         summary.timed_out = services.apply_delivery_timeout(now=now)
         for channel in (NotificationChannel.EMAIL, NotificationChannel.WHATSAPP):

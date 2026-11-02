@@ -253,9 +253,10 @@ ENTRA_JWKS_URI: str = env("ENTRA_JWKS_URI", default="")
 DOCUMENT_MAX_PIXELS: int = env.int("DOCUMENT_MAX_PIXELS", default=40_000_000)
 
 # --- Notifications (apps.notifications; docs/superpowers/specs/2026-11-02-notifications-design.md)
-# off = nothing is enqueued; live = real sends through NOTIFICATION_PROVIDERS.
+# off = nothing is sent; allowlist = only NOTIFICATIONS_ALLOWLIST; live = everyone.
+# Production validates both values (settings/production.py).
 NOTIFICATIONS_MODE: str = env("NOTIFICATIONS_MODE", default="off")
-NOTIFICATION_PROVIDERS: str = env("NOTIFICATION_PROVIDERS", default="fake")  # fake | live
+NOTIFICATION_PROVIDERS: str = env("NOTIFICATION_PROVIDERS", default="fake")  # fake | real
 NOTIFICATION_MAX_AGE_HOURS: int = env.int("NOTIFICATION_MAX_AGE_HOURS", default=72)
 WHATSAPP_DELIVERY_TIMEOUT_MINUTES: int = env.int("WHATSAPP_DELIVERY_TIMEOUT_MINUTES", default=30)
 NOTIFICATIONS_ALLOWLIST: list[str] = env.list("NOTIFICATIONS_ALLOWLIST", default=[])

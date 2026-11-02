@@ -405,6 +405,17 @@ def test_cancelled_dues_never_send_the_payment_request():
     assert [s for s in sent if s.get("template") == "med_dues_cancelled"]
 
 
+@pytest.mark.parametrize("mode", ["on", "", "LIVE", "disabled"])
+def test_unknown_mode_does_only_what_off_does(settings, mode):
+    settings.NOTIFICATIONS_MODE = mode
+    stale = make_row(expires_at=timezone.now() - timedelta(minutes=1))
+    due = make_row(event=NotificationEvent.APPLICATION_RECEIVED)
+    run()
+    assert reload(stale).status == "EXPIRED"
+    assert (reload(due).status, reload(due).attempts) == ("PENDING", 0)
+    assert get_whatsapp_client().sent == [] and get_email_client().sent == []
+
+
 def test_rows_held_through_off_mode_pass_the_relevance_check_on_resuming(settings):
     row = make_row(event=NotificationEvent.APPLICATION_RECEIVED)
     settings.NOTIFICATIONS_MODE = "off"

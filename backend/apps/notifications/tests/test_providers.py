@@ -338,8 +338,8 @@ def test_settings_select_fakes_in_tests():
     assert providers.get_whatsapp_client() is providers.get_whatsapp_client()
 
 
-def test_settings_select_real_clients_when_live(settings):
-    settings.NOTIFICATION_PROVIDERS = "live"
+def test_settings_select_real_clients_when_real(settings):
+    settings.NOTIFICATION_PROVIDERS = "real"
     assert isinstance(providers.get_whatsapp_client(), WhatsAppClient)
     assert isinstance(providers.get_email_client(), EmailClient)
 
