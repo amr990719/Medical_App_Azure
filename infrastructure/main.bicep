@@ -61,6 +61,34 @@ param enablePrivateNetworking bool = false
 @description('Send Key Vault, Blob and PostgreSQL resource logs to Log Analytics.')
 param enableDiagnostics bool = true
 
+@description('Create the notify job, give the app and the job the WhatsApp settings and secrets, and (with alertEmail) deploy the alert rules. The Key Vault secrets whatsapp-access-token, whatsapp-app-secret, whatsapp-verify-token and notifications-allowlist must exist first.')
+param enableNotifications bool = false
+
+@description('off = rows accumulate and expire, nothing is sent; allowlist = only NOTIFICATIONS_ALLOWLIST; live = everyone. The app and the notify job always share it.')
+@allowed([
+  'off'
+  'allowlist'
+  'live'
+])
+param notificationsMode string = 'off'
+
+@description('Cron (UTC) for the notify job.')
+param notifyCron string = '*/5 * * * *'
+
+@description('Recipient of the notification alerts. Pass it at deploy time; never commit it.')
+param alertEmail string = ''
+
+param whatsappPhoneNumberId string = ''
+param whatsappApiVersion string = ''
+@description('AWS Region of the SES identity.')
+param sesRegion string = ''
+param sesFromAddress string = ''
+@description('Base URL used in message links. Empty = the public URL.')
+param notificationBaseUrl string = ''
+@description('IAM role the identity assumes through OIDC federation to call SES.')
+param awsRoleArn string = ''
+param awsWebIdentityAudience string = ''
+
 // --- Container Apps sizes (§35) ------------------------------------------------------------------
 
 param containerCpu string = '0.5'
@@ -157,6 +185,7 @@ var names = {
   app: 'ca-${prefix}-api'
   migrateJob: 'caj-${prefix}-migrate'
   cleanupJob: 'caj-${prefix}-cleanup'
+  notifyJob: 'caj-${prefix}-notify'
   staticWebApp: 'swa-${prefix}-${token}'
   openAi: 'oai-${prefix}-${token}'
   vnet: 'vnet-${prefix}'
@@ -386,12 +415,29 @@ var ocrSettings = enableOcr
     }
   : {}
 
+// Plain settings for notifications. On whenever enableNotifications is true, in every mode
+// including 'off', so the app still honours a WhatsApp stop reply.
+var notificationSettings = enableNotifications
+  ? {
+      NOTIFICATIONS_MODE: notificationsMode
+      NOTIFICATION_PROVIDERS: 'real'
+      WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId
+      WHATSAPP_API_VERSION: whatsappApiVersion
+      SES_REGION: sesRegion
+      SES_FROM_ADDRESS: sesFromAddress
+      NOTIFICATION_BASE_URL: empty(notificationBaseUrl) ? 'https://${publicHost}' : notificationBaseUrl
+      AWS_ROLE_ARN: awsRoleArn
+      AWS_WEB_IDENTITY_AUDIENCE: awsWebIdentityAudience
+    }
+  : {}
+
 module app 'modules/container-app.bicep' = if (deployApplication) {
   name: 'container-app'
   params: {
     appName: names.app
     migrateJobName: names.migrateJob
     cleanupJobName: names.cleanupJob
+    notifyJobName: names.notifyJob
     location: location
     tags: allTags
     environmentId: containerEnv.outputs.id
@@ -400,13 +446,15 @@ module app 'modules/container-app.bicep' = if (deployApplication) {
     registryServer: registry.outputs.loginServer
     keyVaultUri: keyVault.outputs.uri
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
-    settings: union(baseSettings, telemetrySettings, ocrSettings)
+    settings: union(baseSettings, telemetrySettings, ocrSettings, notificationSettings)
     cpu: containerCpu
     memory: containerMemory
     minReplicas: minReplicas
     maxReplicas: maxReplicas
     httpConcurrency: httpConcurrency
     cleanupCron: cleanupCron
+    enableNotifications: enableNotifications
+    notifyCron: notifyCron
   }
   dependsOn: [
     roleAssignments
@@ -419,6 +467,17 @@ module staticWebAppLink 'modules/static-web-app-link.bicep' = if (deployApplicat
     staticWebAppName: staticWebApp.outputs.name
     backendResourceId: app!.outputs.appId
     backendLocation: location
+  }
+}
+
+module notificationAlerts 'modules/notification-alerts.bicep' = if (enableNotifications && !empty(alertEmail)) {
+  name: 'notification-alerts'
+  params: {
+    location: location
+    tags: allTags
+    namePrefix: prefix
+    appInsightsId: monitoring.outputs.appInsightsId
+    alertEmail: alertEmail
   }
 }
 
@@ -438,6 +497,7 @@ output containerAppsEnvironmentName string = containerEnv.outputs.name
 output containerAppName string = names.app
 output migrateJobName string = names.migrateJob
 output cleanupJobName string = names.cleanupJob
+output notifyJobName string = enableNotifications ? names.notifyJob : ''
 output containerAppFqdn string = appFqdn
 output staticWebAppName string = staticWebApp.outputs.name
 output staticWebAppHostname string = staticWebApp.outputs.defaultHostname

@@ -4,6 +4,8 @@
 //   migrate  manual job, `migrate`: run exactly once per deployment by backend.yml BEFORE the
 //            app's image is updated (replicas never migrate).
 //   cleanup  scheduled job, `cleanup`: removes soft-deleted / orphaned blobs after the grace period.
+//   notify   scheduled job, `notify` (only with enableNotifications): sends doctor notifications.
+//            The WhatsApp secrets go to the app and this job only, never to migrate or cleanup.
 // Secrets are Key Vault references resolved with the user-assigned identity (versionless URLs,
 // refreshed by the platform); nothing secret is a template parameter except the App Insights
 // connection string, which is stored as a Container Apps secret rather than a plain variable.
@@ -11,6 +13,8 @@
 param appName string
 param migrateJobName string
 param cleanupJobName string
+@description('Name of the notify job. Used only when enableNotifications is true.')
+param notifyJobName string = ''
 param location string
 param tags object
 
@@ -43,6 +47,12 @@ param httpConcurrency int = 20
 
 @description('Cron (UTC) for the blob cleanup job.')
 param cleanupCron string = '30 1 * * *'
+
+@description('Create the notify job and give it, and the app, the WhatsApp Key Vault secrets (which must exist first).')
+param enableNotifications bool = false
+
+@description('Cron (UTC) for the notify job.')
+param notifyCron string = '*/5 * * * *'
 
 @description('Optional inbound allow-list for the app\'s public ingress (Container Apps ipSecurityRestrictions).')
 param ipSecurityRestrictions array = []
@@ -80,6 +90,54 @@ var secretEnv = [
     secretRef: 'appinsights-connection-string'
   }
 ]
+
+// Key Vault references for notifications. Only the app (webhook replies) and the notify job get
+// them; `secrets` and `secretEnv` stay as they are for migrate and cleanup.
+var notificationSecrets = enableNotifications
+  ? [
+      {
+        name: 'whatsapp-access-token'
+        keyVaultUrl: '${keyVaultUri}secrets/whatsapp-access-token'
+        identity: identityId
+      }
+      {
+        name: 'whatsapp-app-secret'
+        keyVaultUrl: '${keyVaultUri}secrets/whatsapp-app-secret'
+        identity: identityId
+      }
+      {
+        name: 'whatsapp-verify-token'
+        keyVaultUrl: '${keyVaultUri}secrets/whatsapp-verify-token'
+        identity: identityId
+      }
+      {
+        name: 'notifications-allowlist'
+        keyVaultUrl: '${keyVaultUri}secrets/notifications-allowlist'
+        identity: identityId
+      }
+    ]
+  : []
+
+var notificationSecretEnv = enableNotifications
+  ? [
+      {
+        name: 'WHATSAPP_ACCESS_TOKEN'
+        secretRef: 'whatsapp-access-token'
+      }
+      {
+        name: 'WHATSAPP_APP_SECRET'
+        secretRef: 'whatsapp-app-secret'
+      }
+      {
+        name: 'WHATSAPP_VERIFY_TOKEN'
+        secretRef: 'whatsapp-verify-token'
+      }
+      {
+        name: 'NOTIFICATIONS_ALLOWLIST'
+        secretRef: 'notifications-allowlist'
+      }
+    ]
+  : []
 
 var plainEnv = [for item in items(settings): { name: item.key, value: string(item.value) }]
 
@@ -119,7 +177,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
         ipSecurityRestrictions: ipSecurityRestrictions
       }
       registries: registries
-      secrets: secrets
+      secrets: concat(secrets, notificationSecrets)
     }
     template: {
       containers: [
@@ -127,7 +185,7 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = {
           name: 'django'
           image: image
           resources: resources
-          env: concat(plainEnv, secretEnv, [
+          env: concat(plainEnv, secretEnv, notificationSecretEnv, [
             {
               name: 'OTEL_SERVICE_NAME'
               value: 'medical-backend'
@@ -277,8 +335,57 @@ resource cleanupJob 'Microsoft.App/jobs@2025-01-01' = {
   }
 }
 
+resource notifyJob 'Microsoft.App/jobs@2025-01-01' = if (enableNotifications) {
+  name: notifyJobName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identityId}': {}
+    }
+  }
+  properties: {
+    environmentId: environmentId
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Schedule'
+      // Under the 5-minute cron so runs rarely overlap; correctness relies on the database.
+      replicaTimeout: 280
+      // The next scheduled run is the retry.
+      replicaRetryLimit: 0
+      scheduleTriggerConfig: {
+        cronExpression: notifyCron
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      registries: registries
+      secrets: concat(secrets, notificationSecrets)
+    }
+    template: {
+      containers: [
+        {
+          name: 'notify'
+          image: image
+          args: [
+            'notify'
+          ]
+          resources: resources
+          env: concat(plainEnv, secretEnv, notificationSecretEnv, [
+            {
+              name: 'OTEL_SERVICE_NAME'
+              value: 'medical-notify'
+            }
+          ])
+        }
+      ]
+    }
+  }
+}
+
 output appId string = app.id
 output appName string = app.name
 output appFqdn string = app.properties.configuration.ingress.fqdn
 output migrateJobName string = migrateJob.name
 output cleanupJobName string = cleanupJob.name
+output notifyJobName string = enableNotifications ? notifyJob.name : ''
