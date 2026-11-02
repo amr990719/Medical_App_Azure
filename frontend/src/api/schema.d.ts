@@ -74,6 +74,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/applications/{application_id}/notifications/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description `GET /admin/applications/{id}/notifications/` - newest first, safe fields only.
+         *     Not paginated: one application has few rows.
+         */
+        get: operations["admin_notifications_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/applications/{application_id}/notifications/{notification_id}/resend/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description `POST /admin/applications/{id}/notifications/{nid}/resend/` - a new row, 201. */
+        post: operations["admin_notifications_resend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/applications/{id}/": {
         parameters: {
             query?: never;
@@ -568,6 +605,24 @@ export interface paths {
         patch: operations["profile_partial_update"];
         trace?: never;
     };
+    "/api/v1/profile/notifications/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description `GET/PUT /api/v1/profile/notifications/` — the doctor's own WhatsApp consent. */
+        get: operations["profile_notifications_retrieve"];
+        /** @description `GET/PUT /api/v1/profile/notifications/` — the doctor's own WhatsApp consent. */
+        put: operations["profile_notifications_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reference-data/": {
         parameters: {
             query?: never;
@@ -610,9 +665,11 @@ export interface components {
          *     * `DUES_RECEIPT_UPLOADED` - Dues Receipt Uploaded
          *     * `DUES_RECEIPT_REVIEWED` - Dues Receipt Reviewed
          *     * `DUES_REQUEST_CANCELLED` - Dues Request Cancelled
+         *     * `WHATSAPP_OPT_IN_CHANGED` - Whatsapp Opt In Changed
+         *     * `NOTIFICATION_RESENT` - Notification Resent
          * @enum {string}
          */
-        ActionEnum: "APPLICATION_CREATED" | "APPLICATION_SUBMITTED" | "APPLICATION_RESUBMITTED" | "APPLICATION_STATUS_CHANGED" | "PAYMENT_STATUS_CHANGED" | "FEE_SNAPSHOT_CREATED" | "DOCUMENT_UPLOADED" | "DOCUMENT_REPLACED" | "DOCUMENT_DELETED" | "DOCUMENT_VIEWED" | "OCR_REQUESTED" | "ADMIN_APPLICATION_VIEWED" | "ADMIN_NOTE_ADDED" | "FEE_SCHEDULE_CHANGED" | "ADMIN_ROLE_GRANTED" | "ADMIN_ROLE_REVOKED" | "NATIONAL_ID_REVEALED" | "DUES_REQUEST_CREATED" | "DUES_RECEIPT_UPLOADED" | "DUES_RECEIPT_REVIEWED" | "DUES_REQUEST_CANCELLED";
+        ActionEnum: "APPLICATION_CREATED" | "APPLICATION_SUBMITTED" | "APPLICATION_RESUBMITTED" | "APPLICATION_STATUS_CHANGED" | "PAYMENT_STATUS_CHANGED" | "FEE_SNAPSHOT_CREATED" | "DOCUMENT_UPLOADED" | "DOCUMENT_REPLACED" | "DOCUMENT_DELETED" | "DOCUMENT_VIEWED" | "OCR_REQUESTED" | "ADMIN_APPLICATION_VIEWED" | "ADMIN_NOTE_ADDED" | "FEE_SCHEDULE_CHANGED" | "ADMIN_ROLE_GRANTED" | "ADMIN_ROLE_REVOKED" | "NATIONAL_ID_REVEALED" | "DUES_REQUEST_CREATED" | "DUES_RECEIPT_UPLOADED" | "DUES_RECEIPT_REVIEWED" | "DUES_REQUEST_CANCELLED" | "WHATSAPP_OPT_IN_CHANGED" | "NOTIFICATION_RESENT";
         AdminApplicationDetail: {
             /** Format: uuid */
             readonly id: string;
@@ -904,6 +961,12 @@ export interface components {
         };
         /** @enum {unknown} */
         BlankEnum: "";
+        /**
+         * @description * `WHATSAPP` - واتساب
+         *     * `EMAIL` - البريد الإلكتروني
+         * @enum {string}
+         */
+        ChannelEnum: "WHATSAPP" | "EMAIL";
         CurrentUser: {
             /** Format: uuid */
             readonly id: string;
@@ -1080,6 +1143,20 @@ export interface components {
             reason: string;
         };
         /**
+         * @description * `APPLICATION_RECEIVED` - استلام الطلب
+         *     * `CORRECTION_NEEDED` - طلب استكمال بيانات
+         *     * `APPROVED` - قبول الطلب
+         *     * `REJECTED` - رفض الطلب
+         *     * `PAYMENT_CONFIRMED` - تأكيد السداد
+         *     * `PAYMENT_RECEIPT_REJECTED` - رفض إيصال السداد
+         *     * `DUES_REQUESTED` - طلب مستحقات
+         *     * `DUES_CONFIRMED` - تأكيد سداد المستحقات
+         *     * `DUES_RECEIPT_REJECTED` - رفض إيصال المستحقات
+         *     * `DUES_CANCELLED` - إلغاء طلب المستحقات
+         * @enum {string}
+         */
+        EventEnum: "APPLICATION_RECEIVED" | "CORRECTION_NEEDED" | "APPROVED" | "REJECTED" | "PAYMENT_CONFIRMED" | "PAYMENT_RECEIPT_REJECTED" | "DUES_REQUESTED" | "DUES_CONFIRMED" | "DUES_RECEIPT_REJECTED" | "DUES_CANCELLED";
+        /**
          * @description Tiers 0-4, the administrative fee `base + per_beneficiary × (active beneficiaries + 1)`
          *     and the service fee (once per application).
          */
@@ -1185,6 +1262,54 @@ export interface components {
         Me: {
             user: components["schemas"]["CurrentUser"];
             csrf_token: string;
+        };
+        NotificationHistory: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly event: components["schemas"]["EventEnum"];
+            readonly channel: components["schemas"]["ChannelEnum"];
+            readonly status: components["schemas"]["NotificationHistoryStatusEnum"];
+            readonly recipient_masked: string;
+            readonly error_code: string;
+            readonly attempts: number;
+            /** Format: uuid */
+            readonly fallback_of: string;
+            /** Format: email */
+            readonly created_by_email: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly sent_at: string | null;
+            /** Format: date-time */
+            readonly delivered_at: string | null;
+        };
+        /**
+         * @description * `PENDING` - في الانتظار
+         *     * `SENDING` - جارٍ الإرسال
+         *     * `SENT` - تم الإرسال
+         *     * `DELIVERED` - تم التسليم
+         *     * `FAILED` - فشل الإرسال
+         *     * `EXPIRED` - انتهت صلاحيته
+         *     * `SUPPRESSED` - لم يُرسل (وضع الاختبار)
+         *     * `SUPERSEDED` - لم يعد مطلوبًا
+         * @enum {string}
+         */
+        NotificationHistoryStatusEnum: "PENDING" | "SENDING" | "SENT" | "DELIVERED" | "FAILED" | "EXPIRED" | "SUPPRESSED" | "SUPERSEDED";
+        /**
+         * @description Read side of the WhatsApp consent; `phone_valid` tells the SPA whether opting in is
+         *     possible. Consent is written only through `set_whatsapp_opt_in`.
+         */
+        NotificationPreference: {
+            /** Format: uuid */
+            readonly doctor_id: string;
+            readonly whatsapp_opt_in: boolean;
+            /** Format: date-time */
+            readonly whatsapp_opt_in_at: string | null;
+            readonly phone_number: string;
+            readonly phone_valid: boolean;
+        };
+        NotificationPreferenceInputRequest: {
+            whatsapp_opt_in: boolean;
         };
         OcrSuggestion: {
             /** Format: uuid */
@@ -1536,6 +1661,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminApplicationDetail"];
+                };
+            };
+        };
+    };
+    admin_notifications_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationHistory"][];
+                };
+            };
+        };
+    };
+    admin_notifications_resend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationHistory"];
                 };
             };
         };
@@ -2563,6 +2731,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DoctorProfile"];
+                };
+            };
+        };
+    };
+    profile_notifications_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreference"];
+                };
+            };
+        };
+    };
+    profile_notifications_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationPreferenceInputRequest"];
+                "multipart/form-data": components["schemas"]["NotificationPreferenceInputRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreference"];
                 };
             };
         };

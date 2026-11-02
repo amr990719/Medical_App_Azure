@@ -11,6 +11,7 @@ import { AuditList } from "@/features/admin/AuditList";
 import { DocumentViewer } from "@/features/admin/DocumentViewer";
 import { DuesPanel } from "@/features/admin/DuesPanel";
 import { choiceLabel, documentTypeLabel } from "@/features/admin/labels";
+import { NotificationsPanel } from "@/features/admin/NotificationsPanel";
 import { NotesPanel } from "@/features/admin/NotesPanel";
 import { PaymentBadge } from "@/features/admin/PaymentBadge";
 import { PaymentPanel } from "@/features/admin/PaymentPanel";
@@ -335,6 +336,7 @@ export function AdminApplicationDetailPage() {
             onView={view}
             onDone={setFlash}
           />
+          <NotificationsPanel applicationId={id} reference={reference.data} />
         </div>
 
         <aside className="min-w-0 space-y-5">

@@ -30,6 +30,9 @@ export type DuesReceipt = Camelize<Schemas["DuesReceipt"]>;
 export type DuesRequestStatus = Schemas["DuesRequestStatusEnum"];
 export type DuesReceiptStatus = Schemas["DuesReceiptStatusEnum"];
 export type DuesAdminAction = Schemas["DuesAdminActionEnum"];
+export type NotificationRow = Camelize<Schemas["NotificationHistory"]>;
+export type NotificationStatus = Schemas["NotificationHistoryStatusEnum"];
+export type NotificationChannel = Schemas["ChannelEnum"];
 
 export type ApiPage<T> = { count: number; next?: string | null; previous?: string | null; results: T[] };
 export type Page<T> = Camelize<ApiPage<T>>;
@@ -64,6 +67,9 @@ export type ApiReferenceData = {
   payment_statuses: Choice<PaymentStatus>[];
   dues_request_statuses: Choice<Schemas["DuesRequestStatusEnum"]>[];
   dues_receipt_statuses: Choice<Schemas["DuesReceiptStatusEnum"]>[];
+  notification_events: Choice<Schemas["EventEnum"]>[];
+  notification_channels: Choice<Schemas["ChannelEnum"]>[];
+  notification_statuses: Choice<Schemas["NotificationHistoryStatusEnum"]>[];
   document_rules: {
     document_types: { type: DocumentType; label: string; ocr_capable: boolean; images_only: boolean }[];
     /** Global member slots; the application's own list is `member_required_documents`. */

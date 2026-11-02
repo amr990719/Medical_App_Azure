@@ -20,6 +20,7 @@ export const queryKeys = {
     application: (id: string, reveal: boolean) =>
       ["admin", "applications", "detail", id, reveal ? "revealed" : "masked"] as const,
     notes: (id: string) => ["admin", "applications", "notes", id] as const,
+    notifications: (id: string) => ["admin", "applications", "notifications", id] as const,
     audit: (id: string) => ["admin", "applications", "audit", id] as const,
     doctors: (query: object) => ["admin", "doctors", "list", query] as const,
     doctor: (id: string) => ["admin", "doctors", "detail", id] as const,

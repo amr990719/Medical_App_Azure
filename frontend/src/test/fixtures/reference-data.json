@@ -463,5 +463,91 @@
       "value": "CANCELLED",
       "label": "لم يُراجع (أُلغي الطلب)"
     }
+  ],
+  "notification_events": [
+    {
+      "value": "APPLICATION_RECEIVED",
+      "label": "استلام الطلب"
+    },
+    {
+      "value": "CORRECTION_NEEDED",
+      "label": "طلب استكمال بيانات"
+    },
+    {
+      "value": "APPROVED",
+      "label": "قبول الطلب"
+    },
+    {
+      "value": "REJECTED",
+      "label": "رفض الطلب"
+    },
+    {
+      "value": "PAYMENT_CONFIRMED",
+      "label": "تأكيد السداد"
+    },
+    {
+      "value": "PAYMENT_RECEIPT_REJECTED",
+      "label": "رفض إيصال السداد"
+    },
+    {
+      "value": "DUES_REQUESTED",
+      "label": "طلب مستحقات"
+    },
+    {
+      "value": "DUES_CONFIRMED",
+      "label": "تأكيد سداد المستحقات"
+    },
+    {
+      "value": "DUES_RECEIPT_REJECTED",
+      "label": "رفض إيصال المستحقات"
+    },
+    {
+      "value": "DUES_CANCELLED",
+      "label": "إلغاء طلب المستحقات"
+    }
+  ],
+  "notification_channels": [
+    {
+      "value": "WHATSAPP",
+      "label": "واتساب"
+    },
+    {
+      "value": "EMAIL",
+      "label": "البريد الإلكتروني"
+    }
+  ],
+  "notification_statuses": [
+    {
+      "value": "PENDING",
+      "label": "في الانتظار"
+    },
+    {
+      "value": "SENDING",
+      "label": "جارٍ الإرسال"
+    },
+    {
+      "value": "SENT",
+      "label": "تم الإرسال"
+    },
+    {
+      "value": "DELIVERED",
+      "label": "تم التسليم"
+    },
+    {
+      "value": "FAILED",
+      "label": "فشل الإرسال"
+    },
+    {
+      "value": "EXPIRED",
+      "label": "انتهت صلاحيته"
+    },
+    {
+      "value": "SUPPRESSED",
+      "label": "لم يُرسل (وضع الاختبار)"
+    },
+    {
+      "value": "SUPERSEDED",
+      "label": "لم يعد مطلوبًا"
+    }
   ]
 }
