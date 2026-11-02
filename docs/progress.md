@@ -2151,6 +2151,24 @@ created, no real message sent.**
   committed (R13); tests ran on a throwaway PostgreSQL 18 on port 55432 (R2); work happened on a
   local branch in the main checkout, no worktree (R3); commit trailers name the model that wrote
   each commit (R4).
+- **D206 — Final review fixes (Session 23):** (a) notification settings go to the app and the notify
+  job only (`notificationEnv`); migrate and cleanup stay `off`/`fake`, because production settings
+  refuse to import a sending mode without the secrets. (b) SES credential, identity and throttling
+  errors (`AccessDenied*`, `ExpiredToken`, `UnrecognizedClientException`, `InvalidClientTokenId`,
+  `ThrottlingException`, `MailFromDomainNotVerifiedException`, any 429) are temporary. On the email
+  channel a permanent error adds 1 to the outage streak (so five stop a run), except
+  `BadRequestException`, which is about one address and leaves the streak alone; WhatsApp permanent
+  errors still reset it because they reach email (amends D202). (c) `DUES_REQUESTED` and
+  `DUES_RECEIPT_REJECTED` are only relevant while the application is submitted, under review or
+  needs-correction. (d) Canonical UUIDs are never masked by the log filter; Egyptian mobiles with a
+  separator after the country code are masked; Django's `request` extra is dropped from the JSON.
+  (e) The GET of `/profile/notifications/` returns `whatsapp_available` (mode is `allowlist` or
+  `live`); opting in is refused otherwise, opting out is always allowed, and the UI hides the prompt
+  and (unless already opted in) the profile section. (f) WhatsApp `provider_message_id` is stored as
+  its SHA-256 hex digest because the `wamid` is believed to embed the number (NOT VERIFIED). (g) The
+  admin panel words each channel's errors on their own: WhatsApp rows say the message was moved to
+  email, an unknown email result says the send is unconfirmed. (h) A failed notify job exits 1 with
+  no traceback.
 
 ## Deviations from PROMPT.md
 
@@ -2398,6 +2416,15 @@ confirmed by the organization). Technical/environment questions for the user:
   for Egypt and the price of the 5-minute job; SES production access in the selected Region (the
   sandbox was still on 2026-11-02); the `.bicepparam` files do not set the notification parameters,
   so each environment's file needs them added (`docs/azure-deployment.md` section 11).
+- **Q-N10 — No specific alert for webhook signature failures:** a wrong app secret or a probe shows
+  only as 403s on the endpoint; none of the four alert rules covers it.
+- **Q-N11 — Dues rows look alike in the panel:** when an application has two dues requests, their
+  rows show the same event and cannot be told apart without the amount.
+- **Q-N12 — NOT VERIFIED against Meta:** the dues bodies place `{{2}}` before `{{1}}`; Meta may
+  reject that order. Check before the templates are submitted.
+- **Q-N13 — `allowlist` with blank providers uses fakes:** `NOTIFICATIONS_MODE=allowlist` with
+  `NOTIFICATION_PROVIDERS` blank or `fake` sends nothing real, though the doctor UI treats WhatsApp
+  as available.
 
 ## Next session starts with
 

@@ -269,7 +269,7 @@ Phases:
 | 0 | Spikes on dev: (a) a signed webhook POST through the Static Web App `/api` proxy keeps the header and raw body (if not, Meta calls the Container App address directly); (b) credentials from the job's managed identity to AWS | both answered and written down |
 | 1 | Provider setup: SES domain identity (DKIM, custom MAIL FROM, DMARC; Cloudflare records DNS only), a monitored `notifications@` mailbox, SES production access in the selected Region, Meta business and number, webhook subscription to `statuses` and `messages`, the 10 templates approved | domain verified, production access approved, templates approved |
 | 2 | Deploy the code (this repository) with `enableNotifications=false` | migrate job succeeded |
-| 3 | Dev trial: `enableNotifications=true`, `notificationsMode=allowlist` with the owner's numbers | each event seen on a device or inbox, a real stop and help reply work, a provider failure reaches each alert, a paused job raises the missed-run alert |
+| 3 | Dev trial (entry: Task 14 done, or an AWS access-key secret provisioned; the Bicep cannot inject AWS keys today, so without one of those every email ends `FAILED`): `enableNotifications=true`, `notificationsMode=allowlist` with the owner's numbers | each event seen on a device or inbox, a real stop and help reply work, a provider failure reaches each alert, a paused job raises the missed-run alert |
 | 4 | Production: L3 and L4 signed off, phase 1 confirmed for production, then `notificationsMode=live` | owner decision |
 
 **The four Key Vault secrets must exist before `enableNotifications=true`.** The Container Apps
@@ -298,6 +298,15 @@ add them to the environment's file; non-secret values only):
 | `awsRoleArn`, `awsWebIdentityAudience` | IAM role and audience for the federation, **NOT VERIFIED** (Task 14 is deferred; until it is done, email needs the access-key fallback described in the spec §10) |
 | `notificationBaseUrl` | link base in messages; empty uses the public host |
 | `notificationMaxAgeHours`, `whatsappDeliveryTimeoutMinutes`, `notificationResendRateLimit` | optional; left blank the application defaults (72 h, 30 min, 30/hour) apply |
+
+Notes before enabling:
+
+- A blank `alertEmail` deploys **no alert rules**; set it for any trial that matters.
+- While `enableNotifications=false` no job runs, but rows keep building up from status changes. The
+  first enable can therefore produce a burst of `EXPIRED` warnings for old rows.
+- The doctor-facing consent (status-page prompt and profile section) only appears when
+  `whatsapp_available` is true, that is in `allowlist` or `live`. With `notificationsMode=off`
+  nobody is asked to consent, and opting in is refused by the API.
 
 After a deploy with the flag on, set `NOTIFY_JOB_NAME` (output `notifyJobName`) as the GitHub
 variable so `backend.yml` updates the job's image (`docs/github-setup.md`).
