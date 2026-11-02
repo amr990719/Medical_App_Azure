@@ -2274,6 +2274,12 @@ confirmed by the organization). Technical/environment questions for the user:
 
 ## Next session starts with
 
+**Doctor notifications (WhatsApp first, email fallback) are designed and planned, not built.** Spec:
+`docs/superpowers/specs/2026-11-02-notifications-design.md` (revised after a third-party audit,
+section 13). Plan: `docs/superpowers/plans/2026-11-02-notifications.md`, on the local branch
+`docs/notifications-design`, not pushed. Waiting for the owner to review the plan and choose how to
+run it. AWS, Azure and Meta setup in the plan's owner gates needs explicit confirmation.
+
 **Session 22 (D186–D192, additional syndicate dues) is merged (PR #14, `c056f3f`) and deployed to
 dev** (see "Session 22 (cont.)"); this deploy note is on the local branch
 `docs/dev-deploy-2026-11-01-dues`, not pushed. Next:
