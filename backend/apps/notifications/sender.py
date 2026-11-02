@@ -6,6 +6,7 @@ message or a traceback (a traceback could hold a recipient).
 """
 
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -15,6 +16,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.reference.constants import NotificationChannel
+from config.logging import mask_digit_runs
 
 from . import services
 from .formatting import to_e164
@@ -36,6 +38,8 @@ MIN_REMAINING_SECONDS = 15
 OUTAGE_STREAK = 5
 NO_ADDRESS = "NO_ADDRESS"
 SEND_ERROR = "SEND_ERROR"
+
+_SAFE_CODE = re.compile(r"[A-Za-z0-9_.-]{1,40}")
 
 # What an attempt says about the provider: OK (it answered: success or a permanent rejection)
 # resets the outage streak, ERROR (temporary, unknown or an unexpected fault) adds one, and KEEP
@@ -74,6 +78,14 @@ def _send_email(claim: Claim) -> str:
     )
 
 
+def _safe_code(code: str) -> str:
+    """Clients raise codes only, but a code is stored and logged, so anything that is not a plain
+    identifier (an address or message text built into an exception) becomes SEND_ERROR."""
+    if _SAFE_CODE.fullmatch(code) and mask_digit_runs(code) == code:
+        return code
+    return SEND_ERROR
+
+
 def _attempt(claim: Claim, *, now: datetime, summary: RunSummary) -> str:
     """Send one claimed row and record the outcome; OK, ERROR or KEEP says how the streak moves."""
     if not claim.recipient:
@@ -86,7 +98,7 @@ def _attempt(claim: Claim, *, now: datetime, summary: RunSummary) -> str:
         else:
             message_id = _send_email(claim)
     except TemporaryProviderError as exc:
-        services.record_temporary(claim, error_code=exc.code, now=now)
+        services.record_temporary(claim, error_code=_safe_code(exc.code), now=now)
         summary.retried += 1
         return ERROR
     except UnknownResultError:
@@ -94,7 +106,7 @@ def _attempt(claim: Claim, *, now: datetime, summary: RunSummary) -> str:
         summary.unknown += 1
         return ERROR
     except PermanentProviderError as exc:
-        services.record_permanent(claim, error_code=exc.code)
+        services.record_permanent(claim, error_code=_safe_code(exc.code))
         summary.failed += 1
         return OK
     except Exception:

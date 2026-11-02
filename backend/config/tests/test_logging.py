@@ -35,10 +35,32 @@ def test_filter_masks_eastern_arabic_digit_runs():
     assert "٢٩٥٠١٢٣٠١٠١٢٣٤" not in mask_digit_runs("رقم ٢٩٥٠١٢٣٠١٠١٢٣٤")
 
 
-def test_shorter_numbers_are_untouched():
-    assert mask_digit_runs("year 2026, total 3025, phone 01012345678") == (
-        "year 2026, total 3025, phone 01012345678"
-    )
+def test_ordinary_numbers_are_untouched():
+    assert mask_digit_runs("year 2026, total 3025") == "year 2026, total 3025"
+
+
+def test_dates_and_uuids_are_untouched():
+    text = "2026-11-02 10:30:15 8f14e45f-ceea-467f-a0f2-1a2b3c4d5e6f"
+    assert mask_digit_runs(text) == text
+
+
+@pytest.mark.parametrize(
+    "phone",
+    [
+        "01012345678",
+        "201012345678",
+        "+201012345678",
+        "010 1234 5678",
+        "010-1234-5678",
+        "٠١٠١٢٣٤٥٦٧٨",
+    ],
+)
+def test_phones_are_masked(phone):
+    assert phone not in mask_digit_runs(f"to {phone}")
+
+
+def test_emails_are_masked():
+    assert "ahmed@example.com" not in mask_digit_runs("to ahmed@example.com")
 
 
 def test_message_arguments_are_masked(capture):
