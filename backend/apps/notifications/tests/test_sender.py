@@ -417,14 +417,52 @@ def test_rows_held_through_off_mode_pass_the_relevance_check_on_resuming(setting
 
 def test_fallback_created_after_expiry_is_expired_on_the_next_run():
     now = timezone.now()
-    get_whatsapp_client().errors = [PermanentProviderError("131026")]
-    row = make_row(next_attempt_at=now, expires_at=now + timedelta(minutes=1))
-    run(now=now)
+    row = make_row(
+        status="SENT",
+        attempts=1,
+        sent_at=now - timedelta(minutes=45),
+        expires_at=now - timedelta(minutes=5),
+    )
+    run(
+        now=now
+    )  # the timeout creates a fallback that is already overdue; the email pass expires it
     fallback = Notification.objects.get(fallback_of=row)
-    assert fallback.expires_at == row.expires_at
+    assert reload(row).error_code == "NO_DELIVERY_RECEIPT"
+    assert fallback.expires_at == row.expires_at and fallback.status == "EXPIRED"
     run(now=now + timedelta(minutes=5))
     assert reload(fallback).status == "EXPIRED"
     assert get_email_client().sent == []
+
+
+def test_four_temporary_errors_a_no_address_row_and_one_more_stop_the_channel():
+    failing = TemporaryProviderError("HTTP_500")
+    get_email_client().errors = [failing] * 5
+    base = timezone.now() - timedelta(hours=1)
+    rows = []
+    for i in range(4):
+        rows.append(email_row(next_attempt_at=base + timedelta(seconds=i)))
+    blank = email_row(next_attempt_at=base + timedelta(seconds=4))
+    type(blank.application.doctor.user).objects.filter(pk=blank.application.doctor.user_id).update(
+        email=""
+    )
+    rows.append(email_row(next_attempt_at=base + timedelta(seconds=5)))
+    later = [email_row(next_attempt_at=base + timedelta(seconds=6 + i)) for i in range(2)]
+    run()
+    assert reload(blank).error_code == "NO_ADDRESS"
+    assert all(reload(r).attempts == 1 for r in rows)
+    assert all((reload(r).status, r.attempts) == ("PENDING", 0) for r in later)
+
+
+def test_five_unexpected_errors_stop_the_channel(monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("render fault")
+
+    monkeypatch.setattr(sender, "render_email", broken)
+    rows = [email_row() for _ in range(8)]
+    run()
+    states = [(reload(r).status, r.attempts, r.error_code) for r in rows]
+    assert states.count(("FAILED", 1, "SEND_ERROR")) == 5
+    assert states.count(("PENDING", 0, "")) == 3
 
 
 def test_two_dues_requests_each_name_their_own_amount_on_both_channels():
@@ -449,3 +487,5 @@ def test_two_dues_requests_each_name_their_own_amount_on_both_channels():
     assert wa["parameters"][1] == "1٬000 ج.م"
     assert "1٬000 ج.م" in em["text"] and "1٬000 ج.م" in em["html"]
     assert "2٬500" not in em["text"] + em["html"] + "".join(wa["parameters"])
+    assert "لا حاجة" not in em["text"] + em["html"] + em["subject"] + "".join(wa["parameters"])
+    assert "لا حاجة" not in wa["template"]

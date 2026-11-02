@@ -37,7 +37,10 @@ OUTAGE_STREAK = 5
 NO_ADDRESS = "NO_ADDRESS"
 SEND_ERROR = "SEND_ERROR"
 
-OK, ERROR, OTHER = "ok", "error", "other"
+# What an attempt says about the provider: OK (it answered: success or a permanent rejection)
+# resets the outage streak, ERROR (temporary, unknown or an unexpected fault) adds one, and KEEP
+# (the row never reached a provider) leaves it alone.
+OK, ERROR, KEEP = "ok", "error", "keep"
 
 
 @dataclass
@@ -72,11 +75,11 @@ def _send_email(claim: Claim) -> str:
 
 
 def _attempt(claim: Claim, *, now: datetime, summary: RunSummary) -> str:
-    """Send one claimed row and record the outcome. ERROR means the provider looks unhealthy."""
+    """Send one claimed row and record the outcome; OK, ERROR or KEEP says how the streak moves."""
     if not claim.recipient:
         services.record_permanent(claim, error_code=NO_ADDRESS)
         summary.failed += 1
-        return OTHER
+        return KEEP
     try:
         if claim.channel == NotificationChannel.WHATSAPP:
             message_id = _send_whatsapp(claim)
@@ -93,7 +96,7 @@ def _attempt(claim: Claim, *, now: datetime, summary: RunSummary) -> str:
     except PermanentProviderError as exc:
         services.record_permanent(claim, error_code=exc.code)
         summary.failed += 1
-        return OTHER
+        return OK
     except Exception:
         # Notification ID only, no traceback and no message: either could hold the recipient.
         logger.error(
@@ -101,7 +104,7 @@ def _attempt(claim: Claim, *, now: datetime, summary: RunSummary) -> str:
         )
         services.record_permanent(claim, error_code=SEND_ERROR)
         summary.failed += 1
-        return OTHER
+        return ERROR
     services.record_accepted(claim, provider_message_id=message_id)
     summary.sent += 1
     return OK
@@ -123,10 +126,11 @@ def _send_channel(
         if claim is None:
             return
         summary.attempted += 1
-        if _attempt(claim, now=now, summary=summary) != ERROR:
-            streak = 0  # a success, or an answer from the provider, ends the streak
-            continue
-        streak += 1
+        outcome = _attempt(claim, now=now, summary=summary)
+        if outcome == OK:
+            streak = 0
+        elif outcome == ERROR:
+            streak += 1
         if streak >= OUTAGE_STREAK:
             summary.skipped_channels += 1
             return
