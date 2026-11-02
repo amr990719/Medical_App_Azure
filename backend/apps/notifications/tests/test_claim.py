@@ -296,23 +296,38 @@ def test_permanent_error_on_email_fails_with_no_fallback():
     ],
     ids=["accepted", "temporary", "unknown", "permanent"],
 )
+@pytest.mark.parametrize("seeded", ["FAILED", "SENT", "PENDING"])
 def test_a_stale_result_is_dropped_and_logged_by_id_only(
-    caplog, django_capture_on_commit_callbacks, record
+    caplog, django_capture_on_commit_callbacks, record, seeded
 ):
     row, c = claimed()
-    Notification.objects.filter(pk=row.pk).update(status="FAILED", error_code="SEND_INTERRUPTED")
+    # The attempts value still matches the claim; only the status says recovery moved on.
+    Notification.objects.filter(pk=row.pk).update(status=seeded, error_code="SEND_INTERRUPTED")
     with (
         caplog.at_level(logging.INFO, logger="apps.notifications"),
         django_capture_on_commit_callbacks(execute=True),
     ):
         record(c)
     row.refresh_from_db()
-    assert (row.status, row.error_code) == ("FAILED", "SEND_INTERRUPTED")
+    assert (row.status, row.error_code) == (seeded, "SEND_INTERRUPTED")
+    assert not Notification.objects.filter(fallback_of=row).exists()
     records = [r for r in caplog.records if r.name == "apps.notifications"]
     assert [r.getMessage() for r in records] == ["notification_result_dropped"]
     assert records[0].levelno == logging.INFO
     assert records[0].notification_id == str(row.pk)
     assert PHONE not in caplog.text
+
+
+def test_a_very_long_email_address_still_records_acceptance():
+    row = make_row(channel="EMAIL")
+    user = row.application.doctor.user
+    user.email = "a" * 60 + "@" + "d" * 63 + "." + "e" * 63 + "." + "f" * 57 + ".com"
+    user.save()
+    c = claim("EMAIL")
+    assert len(c.recipient_masked) <= 64
+    record_accepted(c, provider_message_id="ses-1")
+    row.refresh_from_db()
+    assert row.status == "SENT" and row.recipient_masked == c.recipient_masked
 
 
 def test_a_result_from_an_older_claim_is_dropped():

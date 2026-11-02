@@ -43,6 +43,15 @@ def test_masks():
     assert mask_email("ahmed@example.com") == "a•••@example.com"
 
 
+def test_mask_email_never_exceeds_the_column_and_hides_the_address():
+    local, domain = "l" * 64, "d" * 63 + "." + "e" * 63 + "." + "f" * 57 + ".com"
+    address = f"{local}@{domain}"
+    assert len(address) == 254
+    masked = mask_email(address)
+    assert len(masked) <= 64 and masked.startswith("l•••@")
+    assert local not in masked and domain not in masked
+
+
 def test_to_e164():
     assert to_e164("01012345678") == "+201012345678"
 

@@ -146,6 +146,7 @@ def apply_transition(
     *,
     to_status: str,
     expected_attempts: int | None = None,
+    expected_status: str | None = None,
     error_code: str = "",
     provider_message_id: str | None = None,
     recipient_masked: str = "",
@@ -166,6 +167,8 @@ def apply_transition(
         if pair not in ALLOWED_TRANSITIONS:
             return None
         if pair in WHATSAPP_ONLY_TRANSITIONS and row.channel != NotificationChannel.WHATSAPP:
+            return None
+        if expected_status is not None and row.status != expected_status:
             return None
         if expected_attempts is not None and row.attempts != expected_attempts:
             return None
@@ -319,6 +322,7 @@ def record_accepted(claim: Claim, *, provider_message_id: str) -> None:
             claim.notification_id,
             to_status=S.SENT,
             expected_attempts=claim.attempts,
+            expected_status=S.SENDING,
             provider_message_id=provider_message_id,
             recipient_masked=claim.recipient_masked,
         ),
@@ -333,6 +337,7 @@ def record_temporary(claim: Claim, *, error_code: str, now: datetime) -> None:
             claim.notification_id,
             to_status=S.FAILED,
             expected_attempts=claim.attempts,
+            expected_status=S.SENDING,
             error_code=error_code,
             recipient_masked=claim.recipient_masked,
             now=now,
@@ -342,6 +347,7 @@ def record_temporary(claim: Claim, *, error_code: str, now: datetime) -> None:
             claim.notification_id,
             to_status=S.PENDING,
             expected_attempts=claim.attempts,
+            expected_status=S.SENDING,
             error_code=error_code,
             recipient_masked=claim.recipient_masked,
             next_attempt_at=now + delay,
@@ -357,6 +363,7 @@ def record_unknown(claim: Claim, *, now: datetime) -> None:
             claim.notification_id,
             to_status=S.FAILED,
             expected_attempts=claim.attempts,
+            expected_status=S.SENDING,
             error_code=UNKNOWN_RESULT,
             recipient_masked=claim.recipient_masked,
             now=now,
@@ -373,6 +380,7 @@ def record_permanent(claim: Claim, *, error_code: str) -> None:
             claim.notification_id,
             to_status=S.FAILED,
             expected_attempts=claim.attempts,
+            expected_status=S.SENDING,
             error_code=error_code,
             recipient_masked=claim.recipient_masked,
         ),

@@ -8,6 +8,7 @@ from config.logging import MASK_CHAR
 # Same character as `ARABIC_THOUSANDS_SEPARATOR` in frontend/src/utils/format.ts.
 ARABIC_THOUSANDS_SEPARATOR = "٬"
 CURRENCY = "ج.م"
+MASKED_MAX_LENGTH = 64
 
 
 def format_amount(amount: Decimal) -> str:
@@ -48,4 +49,6 @@ def mask_phone(local: str) -> str:
 def mask_email(address: str) -> str:
     """`ahmed@example.com` as `a•••@example.com`."""
     name, at, domain = address.partition("@")
-    return name[:1] + MASK_CHAR * 3 + at + domain
+    prefix = name[:1] + MASK_CHAR * 3 + at
+    # Fits `Notification.recipient_masked` (64); a long domain is cut, never the whole address.
+    return prefix + domain[: MASKED_MAX_LENGTH - len(prefix)]
