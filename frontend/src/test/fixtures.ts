@@ -80,7 +80,24 @@ const unauthenticated = () =>
     { status: 401 },
   );
 
+export type ApiNotificationPreference = Schemas["NotificationPreference"];
+
+export function apiNotificationPreference(
+  overrides: Partial<ApiNotificationPreference> = {},
+): ApiNotificationPreference {
+  return {
+    doctor_id: "8b1f4a52-0000-4000-8000-000000000001",
+    whatsapp_opt_in: false,
+    whatsapp_opt_in_at: null,
+    phone_number: "01012345678",
+    phone_valid: true,
+    ...overrides,
+  };
+}
+
 export const handlers = {
+  whatsappOptIn: (preference: ApiNotificationPreference = apiNotificationPreference()) =>
+    http.get(`${API}/profile/notifications/`, () => HttpResponse.json(preference)),
   me: (me: ApiMe | null) =>
     http.get(`${API}/auth/me/`, () => (me ? HttpResponse.json(me) : unauthenticated())),
   referenceData: () => http.get(`${API}/reference-data/`, () => HttpResponse.json(apiReferenceData)),

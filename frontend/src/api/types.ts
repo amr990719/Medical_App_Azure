@@ -21,6 +21,7 @@ export type ApplicationType = Schemas["ApplicationTypeEnum"];
 export type CurrentUser = Camelize<Schemas["CurrentUser"]>;
 export type Me = Camelize<Schemas["Me"]>;
 export type DevUser = Camelize<Schemas["DevUser"]>;
+export type NotificationPreference = Camelize<Schemas["NotificationPreference"]>;
 export type DoctorProfile = Camelize<Schemas["DoctorProfile"]>;
 export type DocumentSummary = Camelize<Schemas["DocumentSummary"]>;
 export type Application = Camelize<Schemas["Application"]>;

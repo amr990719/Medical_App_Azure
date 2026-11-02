@@ -7,6 +7,7 @@ import { isAwaitingReview, useApplication } from "@/features/applications/useApp
 import { snapshotTotal } from "@/features/applications/useApplications";
 import { StatusTimeline } from "@/features/applications/StatusTimeline";
 import { OutstandingDues, SettledDues } from "@/features/dues/DuesSection";
+import { WhatsAppPrompt } from "@/features/notifications/WhatsAppPrompt";
 import { statusLabel, useReferenceData } from "@/features/reference/useReferenceData";
 import { ar, t } from "@/i18n/ar";
 import { formatDate, formatMoney, formatRelativeTime } from "@/utils/format";
@@ -57,6 +58,7 @@ export function StatusPage() {
           ) : null}
 
           <OutstandingDues applicationId={id} requests={app.duesRequests} />
+          <WhatsAppPrompt />
 
           <section className="rounded-2xl border border-border bg-white p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">

@@ -4,6 +4,7 @@ export const queryKeys = {
   devUsers: ["auth", "dev-users"] as const,
   referenceData: ["reference-data"] as const,
   profile: ["profile"] as const,
+  whatsappOptIn: ["profile", "whatsapp-opt-in"] as const,
   applications: {
     all: ["applications"] as const,
     list: () => ["applications", "list"] as const,
