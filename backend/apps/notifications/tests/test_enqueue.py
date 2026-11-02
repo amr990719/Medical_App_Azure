@@ -16,6 +16,11 @@ from apps.doctors.factories import DoctorFactory
 from apps.doctors.models import Doctor
 from apps.dues import services as dues_services
 from apps.notifications.models import Notification
+from apps.notifications.providers import (
+    PermanentProviderError,
+    get_email_client,
+    get_whatsapp_client,
+)
 from apps.notifications.services import enqueue, first_channel
 from apps.reference.constants import ApplicationStatus as S
 from apps.reference.constants import DuesRequestStatus as DS
@@ -244,3 +249,21 @@ def test_row_uses_the_doctors_first_channel(admin):
     Doctor.objects.filter(pk=app.doctor_id).update(whatsapp_opt_in=True)
     app_services.transition(app, to_status=S.APPROVED, actor=admin)
     assert Notification.objects.get(event=E.APPROVED).channel == C.WHATSAPP
+
+
+# --- an outage never reaches the admin action -----------------------------------------------------
+
+
+@pytest.mark.parametrize("event,prepare", EVENT_ACTIONS)
+def test_provider_outage_never_blocks_an_admin_action(event, prepare, admin):
+    """The request path calls no provider, so an outage cannot fail or roll back the action."""
+    action = prepare(admin)
+    whatsapp, email = get_whatsapp_client(), get_email_client()
+    whatsapp.errors = [PermanentProviderError("OUTAGE")] * 3
+    email.errors = [PermanentProviderError("OUTAGE")] * 3
+
+    action()
+
+    assert Notification.objects.filter(event=event).count() == 1
+    assert (len(whatsapp.errors), len(email.errors)) == (3, 3)  # nothing was called
+    assert whatsapp.sent == [] and email.sent == []

@@ -165,6 +165,27 @@ Each run creates `e2e-*@dev.local` doctors and submitted applications in the dev
 reference numbers each time); `docker compose down -v` resets everything. The doctor and admin
 specs run on the desktop project and resize to 390 px themselves.
 
+## Notifications locally
+
+Notifications are off by default (`NOTIFICATIONS_MODE=off`) and use fake providers
+(`NOTIFICATION_PROVIDERS=fake`), so nothing leaves your machine and no Meta or AWS account is
+needed. Status, payment and dues changes still create `Notification` rows, visible on the admin
+application page.
+
+To send them through the fakes, run the job by hand against the development database:
+
+```bash
+cd backend
+NOTIFICATIONS_MODE=allowlist NOTIFICATIONS_ALLOWLIST=doctor@dev.local   DJANGO_SETTINGS_MODULE=config.settings.development .venv/Scripts/python manage.py send_notifications
+```
+
+(`NOTIFICATIONS_MODE=live` sends to everyone; `allowlist` limits it to the listed numbers and
+addresses.) A fake records what it "sent" in memory for the length of that process only, so the
+useful output is the `Notification` rows (status `SENT`, `recipient_masked`) and the `notify_run`
+log line with counts. The job is not scheduled locally: run it again to process retries. A doctor
+only gets WhatsApp rows after opting in on the profile page. Tests use the same fakes
+(`apps/notifications/tests`).
+
 ## Troubleshooting
 
 - **`port is already allocated`** — another process holds 5432/10000/8000: set the matching

@@ -57,7 +57,10 @@ def test_opt_out_clears_flag_and_time():
     set_whatsapp_opt_in(doctor, enabled=False, actor=doctor.user)
     doctor.refresh_from_db()
     assert doctor.whatsapp_opt_in is False and doctor.whatsapp_opt_in_at is None
-    assert audit_entries(doctor).last().metadata == {"enabled": False, "source": "profile"}
+    assert audit_entries(doctor).get(metadata__enabled=False).metadata == {
+        "enabled": False,
+        "source": "profile",
+    }
 
 
 def test_repeating_the_same_value_writes_no_audit():
@@ -121,7 +124,10 @@ def test_changing_the_phone_clears_the_opt_in_and_audits():
     doctor.refresh_from_db()
     assert doctor.whatsapp_opt_in is False and doctor.whatsapp_opt_in_at is None
     assert audit_entries(doctor).count() == 2
-    assert audit_entries(doctor).last().metadata == {"enabled": False, "source": "profile"}
+    assert audit_entries(doctor).get(metadata__enabled=False).metadata == {
+        "enabled": False,
+        "source": "profile",
+    }
 
 
 def test_clearing_the_phone_clears_the_opt_in():

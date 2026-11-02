@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from apps.notifications import sender
 from apps.notifications.factories import NotificationFactory
+from apps.notifications.models import Notification
 from apps.notifications.providers import (
     PermanentProviderError,
     TemporaryProviderError,
@@ -130,3 +131,33 @@ def test_span_and_log_attributes_are_masked():
     dumped = finished.name + str(dict(finished.attributes))
     dumped += "".join(str(dict(e.attributes)) for e in finished.events)
     assert secret not in dumped and phone not in dumped
+
+
+def test_rows_hold_no_message_text_full_phone_or_full_address(settings):
+    """After real-shaped sends on both channels, no column of any row carries the recipient."""
+    settings.NOTIFICATIONS_MODE = "live"
+    wa = NotificationFactory(application__doctor__whatsapp_opt_in=True)
+    mail = NotificationFactory(channel="EMAIL", application__doctor__whatsapp_opt_in=True)
+    sender.run_once(now=timezone.now())
+
+    (template,) = get_whatsapp_client().sent
+    (message,) = get_email_client().sent
+    doctor, user = wa.application.doctor, wa.application.doctor.user
+    secrets = [
+        doctor.phone_number,
+        user.email,
+        message["to"],
+        message["subject"],
+        message["text"],
+        message["html"],
+        *template["parameters"],
+    ]
+    values = []
+    for row in Notification.objects.all():
+        values += [str(getattr(row, f.attname)) for f in Notification._meta.concrete_fields]
+    dumped = " | ".join(values)
+    assert {row.status for row in Notification.objects.all()} == {"SENT"}
+    assert wa.pk and mail.pk
+    assert doctor.phone_number and user.email and message["subject"]
+    for secret in filter(None, secrets):  # the factory application has no reference number
+        assert secret not in dumped

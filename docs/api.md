@@ -44,6 +44,9 @@ absolute timeout 12 h (`SESSION_*_TIMEOUT_SECONDS`).
 | GET | `/profile/` | the doctor's own member data (created empty on first visit) |
 | PATCH | `/profile/` | Arabic digits accepted everywhere; national ID derives date of birth, birth year and gender (a conflicting typed value is 400); `DUPLICATE_NATIONAL_ID` 409; 409 `APPLICATION_NOT_EDITABLE` while the current application is submitted / under review / approved |
 
+| GET | `/profile/notifications/` | `{whatsapp_opt_in, whatsapp_opt_in_at, phone_number, phone_valid}`: the doctor's own WhatsApp consent. Never frozen with the profile |
+| PUT | `/profile/notifications/` | `{whatsapp_opt_in: bool}`; opting in needs a valid mobile number (400 `VALIDATION_ERROR` otherwise). Audited `WHATSAPP_OPT_IN_CHANGED`. Changing the phone number through `PATCH /profile/` clears the opt-in |
+
 ## Applications (doctor, own objects only)
 
 | Method | Path | Notes |
@@ -88,11 +91,24 @@ application detail requested with `?reveal_national_id=1` (audited `NATIONAL_ID_
 | POST | `/admin/applications/{id}/dues-requests/` | `{amount, reason}` — additional syndicate dues; amount as a string or number, Arabic digits and `٫` accepted, > 0, ≤ 2 decimals. 201 with the detail. 409 unless SUBMITTED / UNDER_REVIEW / NEEDS_CORRECTION |
 | POST | `/admin/applications/{id}/dues-requests/{dues_id}/review/` | `{receipt_id, decision: CONFIRMED|REJECTED, reason}` — the receipt waiting for review; `reason` required to reject (shown to the member) |
 | POST | `/admin/applications/{id}/dues-requests/{dues_id}/cancel/` | `{reason}` (required, admin-only) — any unresolved request |
+| GET | `/admin/applications/{id}/notifications/` | notification history: event, channel, status, `recipient_masked`, `error_code`, timestamps, `fallback_of`, `created_by_email`. No message text, no full phone or address |
+| POST | `/admin/applications/{id}/notifications/{nid}/resend/` | a new row for the same event, routed again; 201. Audited `NOTIFICATION_RESENT`; throttled per admin (`notification_resend`, default 30/hour). 409 `NOTIFICATION_CONFLICT` while a row for the same event (and dues request) is `PENDING`, `SENDING` or a WhatsApp `SENT` row inside the delivery timeout; 409 `NOTIFICATION_NOT_RELEVANT` when the action is no longer needed |
 | GET/POST | `/admin/applications/{id}/notes/` | internal notes, never on doctor endpoints |
 | GET | `/admin/applications/{id}/audit/` | audit history of the application, its documents and its dues requests |
 | GET | `/admin/doctors/`, `/admin/doctors/{id}/` | members (masked IDs), search, filters |
 | GET/POST | `/admin/fee-schedules/` | POST creates the next version for a fiscal year and deactivates the previous one |
 | GET | `/admin/fee-schedules/{id}/` | |
+
+## WhatsApp webhook (Meta, not a browser)
+
+`/api/v1/notifications/whatsapp/webhook/`. No session, no CSRF; authenticity is the signature.
+
+| Method | Notes |
+|---|---|
+| GET | Meta's subscription handshake: `hub.mode=subscribe` and `hub.verify_token` must match, the response is `hub.challenge`. 403 otherwise |
+| POST | `X-Hub-Signature-256` is verified as HMAC-SHA256 of the **raw body** with the app secret before anything is parsed (403 on failure). Applies delivery receipts (`statuses`) to notification rows and handles stop and help replies (`messages`). 200 with an empty body only after the database work commits; 500 on a database failure so Meta retries; 413 for a body over the size limit |
+
+Payloads and message text are never logged or stored. Behaviour in `docs/superpowers/specs/2026-11-02-notifications-design.md` §7.
 
 ## Probes
 
@@ -118,7 +134,7 @@ database is unreachable). Public, no session.
 | `PERMISSION_DENIED` (incl. CSRF failures) | 403 |
 | `NOT_FOUND` | 404 |
 | `METHOD_NOT_ALLOWED` | 405 |
-| `DUPLICATE_NATIONAL_ID`, `ACTIVE_APPLICATION_EXISTS`, `INVALID_STATUS_TRANSITION`, `APPLICATION_NOT_EDITABLE` | 409 |
+| `DUPLICATE_NATIONAL_ID`, `ACTIVE_APPLICATION_EXISTS`, `INVALID_STATUS_TRANSITION`, `APPLICATION_NOT_EDITABLE`, `NOTIFICATION_CONFLICT`, `NOTIFICATION_NOT_RELEVANT` | 409 |
 | `FILE_TOO_LARGE` | 413 |
 | `UNSUPPORTED_FILE_TYPE`, `UNSUPPORTED_MEDIA_TYPE` | 415 |
 | `RATE_LIMITED` (with `Retry-After`) | 429 |
