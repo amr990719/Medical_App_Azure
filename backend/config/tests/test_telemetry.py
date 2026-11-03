@@ -9,6 +9,7 @@ import logging
 from unittest import mock
 
 import pytest
+from django.test import RequestFactory
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter, SimpleLogRecordProcessor
 from opentelemetry.sdk.trace import TracerProvider
@@ -140,6 +141,39 @@ def test_handler_from_logging_config_masks_through_the_filter():
         logger.removeHandler(handler)
     (exported,) = exporter.get_finished_logs()
     assert exported.log_record.body == f"search for {MASKED}"
+
+
+def test_django_request_extra_never_reaches_telemetry():
+    """`django.request` attaches the request, whose repr holds the query string, for every 4xx
+    and 5xx: a rejected webhook handshake would otherwise export the presented verify token."""
+    token = "presented-verify-token"
+    request = RequestFactory().get("/api/v1/hook/", {"hub.verify_token": token})
+    assert token in repr(request)  # the leak this guards against
+    exporter = InMemoryLogRecordExporter()
+    provider = LoggerProvider()
+    provider.add_log_record_processor(telemetry.MaskingLogRecordProcessor())
+    provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
+    handler = telemetry.TelemetryLogHandler(logger_provider=provider)
+    logger = logging.getLogger("test.telemetry.request")
+    logger.addHandler(handler)
+    seen = []
+    other = logging.Handler()
+    other.emit = seen.append
+    logger.addHandler(other)
+    try:
+        logger.warning(
+            "Forbidden: %s", "/api/v1/hook/", extra={"request": request, "status_code": 403}
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.removeHandler(other)
+    (exported,) = exporter.get_finished_logs()
+    record = exported.log_record
+    assert "request" not in record.attributes
+    assert token not in str(record.body)
+    assert all(token not in str(value) for value in record.attributes.values())
+    assert record.attributes["status_code"] == 403  # other extras still arrive
+    assert seen[0].request is request  # the record other handlers see is untouched
 
 
 def test_handler_without_a_configured_provider_is_inert():

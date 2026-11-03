@@ -23,6 +23,7 @@ identity (`Monitoring Metrics Publisher` role) for Entra-authenticated ingestion
 NOT VERIFIED against a real Application Insights resource — requires Azure credentials.
 """
 
+import copy
 import logging
 import os
 
@@ -121,6 +122,10 @@ class TelemetryLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         if self._delegate is not None:
+            # Django's `request` extra is exported as its repr, query string included (a presented
+            # `hub.verify_token`). A copy, because other handlers share this record.
+            record = copy.copy(record)
+            record.__dict__.pop("request", None)
             self._delegate.emit(record)
 
     def flush(self) -> None:
