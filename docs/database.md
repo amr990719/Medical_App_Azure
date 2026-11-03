@@ -149,7 +149,7 @@ erDiagram
         varchar event "10 events"
         varchar channel "WHATSAPP | EMAIL"
         varchar status "PENDING SENDING SENT DELIVERED FAILED EXPIRED SUPERSEDED SUPPRESSED"
-        varchar provider_message_id "wamid or SES MessageId"
+        varchar provider_message_id "SHA-256 of the wamid, or SES MessageId"
         smallint attempts "also identifies the current claim"
         timestamptz next_attempt_at
         timestamptz sending_started_at "only while SENDING"

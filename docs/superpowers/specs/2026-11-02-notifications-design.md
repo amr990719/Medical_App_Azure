@@ -227,9 +227,12 @@ resend is a deliberate admin decision: it passes the relevance check, is audited
   5. Log the run summary.
 
   Steps 1–3 each handle at most 500 rows per run.
-- **Provider outage:** after 5 consecutive temporary errors from one provider, the run skips that
-  provider's remaining rows. They use no attempt and wait for the next run, so a Meta outage cannot
-  use up the budget that fallback emails need.
+- **Provider outage:** after 5 consecutive errors from one provider, the run skips that provider's
+  remaining rows. They use no attempt and wait for the next run, so a Meta outage cannot use up the
+  budget that fallback emails need. Temporary errors, unknown results and unexpected send errors
+  count. On email only, permanent errors count too, because it is the last channel, except
+  `BadRequestException`, which is one recipient's problem. A success resets the count, and so does a
+  permanent WhatsApp error, because the provider answered and the row still reaches email.
 - **Claiming a row:** a short transaction uses `select_for_update(skip_locked=True)`, applies the
   checks in section 4, sets `SENDING` and commits. The provider call happens **outside** any
   transaction. A second transaction records the outcome through `apply_transition()`.
@@ -432,7 +435,7 @@ and the web app.
 `config/telemetry.py` uses the same function, so exported logs and spans are covered too. The rule
 against logging payloads stays.
 
-**AWS (`eu-north-1`, to be confirmed as the selected Region in AWS Settings):**
+**AWS (`eu-north-1`, the selected Region, confirmed by the owner on 2026-11-03):**
 - SES in this Region was still in the sandbox when this was written (checked 2026-11-02).
 - Domain identity for `neqabacare.com` with DKIM, custom MAIL FROM and DMARC. Records go in Cloudflare
   as DNS only (not proxied).

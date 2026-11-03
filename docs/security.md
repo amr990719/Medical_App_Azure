@@ -123,8 +123,11 @@ and birth years, identity-document images, personal photos and payment receipts.
 
 - JSON logs to stdout with request id, internal user UUID, method, path (no query string),
   status and latency. Never cookies, headers, bodies, tokens, passwords or document bytes.
-- `NationalIdMaskingFilter` masks every run of 14+ digits (Western or Eastern Arabic) as
-  `29•••••••••123` in messages and `extra` fields; the JSON formatter masks again (tracebacks).
+- `NationalIdMaskingFilter` masks every run of 11+ digits (Western or Eastern Arabic), email
+  addresses and Egyptian mobiles written with separators, as `29•••••••••123` for a national ID, in
+  messages and `extra` fields; canonical UUIDs are left alone. The JSON formatter masks again
+  (tracebacks). Django's `request` extra, whose repr holds the query string, is dropped from both
+  the JSON logs and Application Insights.
 - Application Insights (`config/telemetry.py`, Azure Monitor OpenTelemetry distro): the log
   handler carries the same filter; a log-record processor masks bodies and attributes
   (exception messages and stack traces); a span processor drops query strings and fragments

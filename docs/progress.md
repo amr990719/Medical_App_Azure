@@ -2169,6 +2169,11 @@ created, no real message sent.**
   admin panel words each channel's errors on their own: WhatsApp rows say the message was moved to
   email, an unknown email result says the send is unconfirmed. (h) A failed notify job exits 1 with
   no traceback.
+- **D207 — Django's `request` extra never reaches Application Insights (Session 23):**
+  `TelemetryLogHandler` drops it on a copy of the record, because OpenTelemetry exports extras and
+  stringifies this one, query string included. This closes what D206(d) left open: a rejected
+  webhook handshake could export the presented verify token, and any 4xx or 5xx its query string.
+  Not checked against a real Application Insights resource.
 
 ## Deviations from PROMPT.md
 
@@ -2429,12 +2434,18 @@ confirmed by the organization). Technical/environment questions for the user:
 ## Next session starts with
 
 **Doctor notifications (WhatsApp first, email fallback) are built and not pushed** (Session 23,
-D193–D205). The branch `feat/notifications-2026-11-02` holds the work; nothing is pushed, no PR is
+D193–D207). The branch `feat/notifications-2026-11-02` holds the work; nothing is pushed, no PR is
 open, nothing is deployed. Next is the owner's review of the branch, then the owner gates, each
 needing explicit confirmation: push and PR; phase 0 spikes (0a webhook through the SWA proxy, 0b AWS
 federation, which unblocks Task 14); phase 1 provider setup (SES domain and production access,
 Meta onboarding, templates); phase 3 dev trial in `allowlist` mode; phase 4 only after L3 and L4
-sign-off. Open items: Q-N1–Q-N9. Runbook: `docs/azure-deployment.md` section 11.
+sign-off. Open items: Q-N1–Q-N13. Runbook: `docs/azure-deployment.md` section 11.
+
+Owner answers on 2026-11-03: the selected AWS Region is `eu-north-1`. The Meta app, a WhatsApp test
+number (to be replaced later) and the alert email were supplied, and are deliberately not recorded
+in Git. Still waiting on the owner: approval of the consent wording, whether staff need a stop
+button, the mailbox behind `notifications@neqabacare.com`, and which legal entity owns the WhatsApp
+business.
 
 **Session 22 (D186–D192, additional syndicate dues) is merged (PR #14, `c056f3f`) and deployed to
 dev** (see "Session 22 (cont.)"); this deploy note is on the local branch
