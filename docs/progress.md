@@ -2441,11 +2441,18 @@ federation, which unblocks Task 14); phase 1 provider setup (SES domain and prod
 Meta onboarding, templates); phase 3 dev trial in `allowlist` mode; phase 4 only after L3 and L4
 sign-off. Open items: Q-N1–Q-N13. Runbook: `docs/azure-deployment.md` section 11.
 
-Owner answers on 2026-11-03: the selected AWS Region is `eu-north-1`. The Meta app, a WhatsApp test
-number (to be replaced later) and the alert email were supplied, and are deliberately not recorded
-in Git. Still waiting on the owner: approval of the consent wording, whether staff need a stop
-button, the mailbox behind `notifications@neqabacare.com`, and which legal entity owns the WhatsApp
-business.
+Owner answers on 2026-11-03: the selected AWS Region is `eu-north-1`; NeqabaCare owns the WhatsApp
+business; the consent wording is approved; staff get no stop button (Q-N on stop requests outside
+WhatsApp: the doctor uses the profile checkbox). The Meta app, a WhatsApp test number (to be replaced
+later), the alert email and the mailbox behind `notifications@neqabacare.com` were supplied, and are
+deliberately not recorded in Git.
+
+Phase 1 progress on 2026-11-03: the SES domain identity for `neqabacare.com` passes the domain, DKIM
+and custom MAIL FROM (`bounce.neqabacare.com`) checks in `eu-north-1`, with DMARC at `p=none`.
+Cloudflare Email Routing forwards `notifications@` (not yet tested with a real message). SES
+production access was requested as transactional mail; check `Details.ReviewDetails.Status` with
+`aws sesv2 get-account`. Next: the review decision, CloudWatch reputation alarms, Meta onboarding and
+templates, and the phase 0 spikes.
 
 **Session 22 (D186–D192, additional syndicate dues) is merged (PR #14, `c056f3f`) and deployed to
 dev** (see "Session 22 (cont.)"); this deploy note is on the local branch
