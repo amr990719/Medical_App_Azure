@@ -15,6 +15,16 @@ param deployApplication = !empty(image)
 param publicHostname = readEnvironmentVariable('PUBLIC_HOSTNAME', '')
 
 param enableOcr = bool(readEnvironmentVariable('ENABLE_OCR', 'false'))
+
+// Doctor notifications (docs/azure-deployment.md section 11). Off unless the dev GitHub
+// environment sets the variables, so a CI redeploy keeps whatever was chosen there. ALERT_EMAIL
+// comes from an environment secret, never a variable. WhatsApp stays parked (no value here).
+param enableNotifications = bool(readEnvironmentVariable('ENABLE_NOTIFICATIONS', 'false'))
+param notificationsMode = readEnvironmentVariable('NOTIFICATIONS_MODE', 'off')
+param sesAccessKeyFromKeyVault = bool(readEnvironmentVariable('SES_ACCESS_KEY_FROM_KEY_VAULT', 'false'))
+param sesRegion = readEnvironmentVariable('SES_REGION', '')
+param sesFromAddress = readEnvironmentVariable('SES_FROM_ADDRESS', '')
+param alertEmail = readEnvironmentVariable('ALERT_EMAIL', '')
 param enablePrivateNetworking = false
 param enableDiagnostics = true
 

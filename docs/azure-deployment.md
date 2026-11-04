@@ -300,8 +300,13 @@ them from a 0600 temp file as in step 4):
 In `off` and `live` nothing references `notifications-allowlist`, and no `whatsapp-*` secret is
 referenced unless `enableWhatsApp=true`.
 
-Deploy parameters of `infrastructure/main.bicep` (the `.bicepparam` files do not set them, so add
-them to the environment's file or pass them at deploy time; non-secret values only):
+Deploy parameters of `infrastructure/main.bicep`. `dev.bicepparam` now reads six of them from the
+`dev` GitHub environment, so the automatic deploy on every merge to `main` keeps them instead of
+undoing a hand-passed deploy. Variables: `ENABLE_NOTIFICATIONS`, `NOTIFICATIONS_MODE`,
+`SES_ACCESS_KEY_FROM_KEY_VAULT`, `SES_REGION`, `SES_FROM_ADDRESS`; environment **secret**:
+`ALERT_EMAIL` (a secret so the what-if log masks it). All unset means off (`false`, `off`, blank).
+`staging.bicepparam` and `prod.bicepparam` do not read them yet: add them there, or pass them at
+deploy time, with non-secret values only:
 
 | Parameter | Meaning |
 |---|---|
