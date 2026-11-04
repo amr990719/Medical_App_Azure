@@ -143,6 +143,16 @@ def test_stop_works_in_off_mode_without_a_reply(settings):
     assert sent() == []
 
 
+def test_stop_with_the_switch_off_clears_the_opt_in_and_sends_nothing(settings):
+    settings.NOTIFICATIONS_MODE = "live"
+    settings.WHATSAPP_ENABLED = False
+    doctor = opted_in_doctor()
+    assert post(text_message("stop")).status_code == 200
+    doctor.refresh_from_db()
+    assert doctor.whatsapp_opt_in is False
+    assert sent() == []
+
+
 def test_allowlist_mode_replies_only_to_listed_numbers(settings):
     settings.NOTIFICATIONS_MODE = "allowlist"
     settings.NOTIFICATIONS_ALLOWLIST = ["+201199999999"]

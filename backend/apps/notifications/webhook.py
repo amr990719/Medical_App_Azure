@@ -131,6 +131,8 @@ def _apply_messages(value: dict, now: datetime) -> Iterator[Reply]:
 
 
 def _may_reply(reply: Reply) -> bool:
+    if not settings.WHATSAPP_ENABLED:
+        return False
     mode = settings.NOTIFICATIONS_MODE
     if mode == "allowlist":
         return services.whatsapp_allowlisted(normalize_mobile(reply.to) or "")
