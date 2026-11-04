@@ -281,7 +281,10 @@ key from the environment. Production settings refuse to start in `allowlist` or 
 providers when `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` is missing, and the message names the
 setting, never a value. **Long-lived keys are the spec's fallback**: use an IAM user limited to
 `ses:SendEmail` on the one identity, rotate the key on a schedule, and move to federation (Task 14,
-the preferred path) when it exists.
+the preferred path) when it exists. To rotate: create the new key first, then update both Key Vault
+secrets (`aws-access-key-id` and `aws-secret-access-key`) together and restart; a mismatched pair
+fails every send as a temporary `SignatureDoesNotMatch` or `IncompleteSignature` until fixed. Delete
+the old key afterwards (NOT VERIFIED).
 
 **Key Vault secrets that must exist before `enableNotifications=true`.** The Container Apps secret
 references are Key Vault references, so a missing secret is expected to stop the app and the job
@@ -349,9 +352,12 @@ credentials** (and Meta ones).
    settings then require all five `WHATSAPP_*` settings.
 4. Trial in `allowlist` mode with the owner's numbers: each event on a device, a real stop and help
    reply, a provider failure reaches each alert. While `notificationsMode=off`, a WhatsApp stop
-   reply still clears a doctor's opt-in and the web app still sends the stop confirmation and help
-   reply.
+   reply still clears a doctor's opt-in (the web app sends no reply in `off`).
 5. Production: L3 and L4 signed off, then `notificationsMode=live`.
+
+After real WhatsApp use, turning it off and on again needs a decision on stale opt-ins first: while
+parked, a stop reply gets a 403 and changes nothing, so a doctor still opted in goes straight back to
+WhatsApp when it is switched on. Decide whether to clear or re-ask opt-ins before turning it back on.
 
 ## Deployment-time migrations (§37)
 

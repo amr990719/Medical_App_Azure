@@ -144,6 +144,7 @@ WhatsApp row that should have an email but does not, and a stale read cannot tur
 |---|---|---|---|
 | `PENDING` | past `expires_at` | `EXPIRED` | no attempt used |
 | `PENDING` | `still_relevant` is false | `SUPERSEDED` | no attempt used |
+| `PENDING` | WhatsApp only: `WHATSAPP_ENABLED` is off (section 14) | `FAILED` | no attempt used; `WHATSAPP_DISABLED`; email row |
 | `PENDING` | `allowlist` mode, recipient not listed | `SUPPRESSED` | no attempt used; no fallback |
 | `PENDING` | WhatsApp only: opt-in withdrawn or phone invalid | `FAILED` | no attempt used; `OPTED_OUT`; email row |
 | `PENDING` | claimed | `SENDING` | `attempts` +1; `sending_started_at` set |
@@ -153,8 +154,6 @@ WhatsApp row that should have an email but does not, and a stale read cannot tur
 | `SENT` | WhatsApp receipt `delivered` or `read` | `DELIVERED` | `delivered_at` set |
 | `SENT` | WhatsApp receipt `failed`, or delivery timeout | `FAILED` | `error_code` set; email row |
 | `FAILED` | late WhatsApp `delivered` or `read` | `DELIVERED` | `delivered_at` set; an email already created still sends |
-
-| `PENDING` | WhatsApp only: `WHATSAPP_ENABLED` is off (section 14) | `FAILED` | no attempt used; `WHATSAPP_DISABLED`; email row |
 
 The checks at claim run in the order listed, inside the claim transaction. The `WHATSAPP_DISABLED`
 check runs right after the relevance check and before the allowlist check, so a parked WhatsApp row
@@ -598,6 +597,8 @@ WhatsApp tests keep their meaning).
 
 **Turning WhatsApp on later:** finish the Meta setup (section 12 phase 1), create the three
 `whatsapp-*` secrets, deploy with `enableWhatsApp=true` and the phone number ID and API version, and
-the app starts with `WHATSAPP_ENABLED=true`. Doctors are then asked for consent again from the
-status page. Everything in sections 5 to 8 applies as written. Nothing here is verified against
+the app starts with `WHATSAPP_ENABLED=true`. On a first switch-on, doctors are asked for consent from the
+status page. A doctor still opted in from an earlier on period is not asked and goes straight back to
+WhatsApp, even if they sent a stop reply while parked (that reply gets a 403 and changes nothing).
+Nobody is affected today. Everything in sections 5 to 8 applies as written. Nothing here is verified against
 Azure, AWS or Meta (`NOT VERIFIED`).
