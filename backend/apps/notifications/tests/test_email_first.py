@@ -106,11 +106,12 @@ def test_live_run_sends_an_email_without_a_whatsapp_call(monkeypatch, settings):
 def test_allowlist_suppresses_an_unlisted_fallback_and_sends_a_listed_one(monkeypatch, settings):
     settings.NOTIFICATIONS_MODE = "allowlist"
     forbid_whatsapp_client(monkeypatch)
-    unlisted = NotificationFactory(channel=C.EMAIL)
+    unlisted = pending_whatsapp_row()
     settings.NOTIFICATIONS_ALLOWLIST = ["nobody@example.test"]
     sender.run_once(now=timezone.now())
     unlisted.refresh_from_db()
-    assert unlisted.status == "SUPPRESSED"
+    assert unlisted.status == "FAILED"
+    assert Notification.objects.get(fallback_of=unlisted).status == "SUPPRESSED"
 
     listed = pending_whatsapp_row()
     settings.NOTIFICATIONS_ALLOWLIST = [listed.application.doctor.email]
