@@ -28,6 +28,9 @@ class AuditAction(models.TextChoices):
     DUES_RECEIPT_UPLOADED = "DUES_RECEIPT_UPLOADED"
     DUES_RECEIPT_REVIEWED = "DUES_RECEIPT_REVIEWED"
     DUES_REQUEST_CANCELLED = "DUES_REQUEST_CANCELLED"
+    # Notifications (apps.notifications); automatic sends are not audited.
+    WHATSAPP_OPT_IN_CHANGED = "WHATSAPP_OPT_IN_CHANGED"
+    NOTIFICATION_RESENT = "NOTIFICATION_RESENT"
 
 
 class AuditLog(models.Model):

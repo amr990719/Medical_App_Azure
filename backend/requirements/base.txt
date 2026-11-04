@@ -18,3 +18,4 @@ openai>=3.24,<4               # Azure OpenAI OCR provider (structured outputs, E
 # contrib release, so both are pinned together.
 azure-monitor-opentelemetry==1.8.10
 opentelemetry-instrumentation-psycopg==0.65b0
+boto3>=1.35,<2                # SES email + STS web-identity (apps.notifications)

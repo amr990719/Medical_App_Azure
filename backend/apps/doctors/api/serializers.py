@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.common.arabic import is_valid_mobile
 from apps.common.fields import (
     CollapsedCharField,
     DigitsCharField,
@@ -8,6 +9,7 @@ from apps.common.fields import (
     YearField,
 )
 from apps.doctors.models import Doctor
+from apps.doctors.services import whatsapp_available
 from apps.reference.constants import GOVERNORATES, Gender, Religion, SyndicateType
 
 
@@ -43,3 +45,34 @@ class DoctorProfileSerializer(serializers.ModelSerializer):
             "governorate", "neighborhood", "address", "updated_at",
         ]  # fmt: skip
         read_only_fields = ["id", "email", "date_of_birth", "updated_at"]
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    """Read side of the WhatsApp consent; `phone_valid` tells the SPA whether opting in is
+    possible. Consent is written only through `set_whatsapp_opt_in`."""
+
+    doctor_id = serializers.UUIDField(source="id", read_only=True)
+    phone_valid = serializers.SerializerMethodField()
+    whatsapp_available = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Doctor
+        fields = [
+            "doctor_id",
+            "whatsapp_opt_in",
+            "whatsapp_opt_in_at",
+            "phone_number",
+            "phone_valid",
+            "whatsapp_available",
+        ]
+        read_only_fields = fields
+
+    def get_phone_valid(self, obj: Doctor) -> bool:
+        return is_valid_mobile(obj.phone_number)
+
+    def get_whatsapp_available(self, obj: Doctor) -> bool:
+        return whatsapp_available()
+
+
+class NotificationPreferenceInputSerializer(serializers.Serializer):
+    whatsapp_opt_in = serializers.BooleanField()

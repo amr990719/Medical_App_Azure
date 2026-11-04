@@ -61,6 +61,46 @@ param enablePrivateNetworking bool = false
 @description('Send Key Vault, Blob and PostgreSQL resource logs to Log Analytics.')
 param enableDiagnostics bool = true
 
+@description('Create the notify job, give the app and the job the notification settings, and (with alertEmail) deploy the alert rules. Email (Amazon SES) is the channel in use. With sesAccessKeyFromKeyVault the Key Vault secrets aws-access-key-id and aws-secret-access-key must exist first; notificationsMode allowlist also needs notifications-allowlist. The WhatsApp secrets are needed only with enableWhatsApp.')
+param enableNotifications bool = false
+
+@description('Turn the parked WhatsApp channel on (sets WHATSAPP_ENABLED and injects the WHATSAPP_* settings). When true the Key Vault secrets whatsapp-access-token, whatsapp-app-secret and whatsapp-verify-token must exist first. Off by default: email only.')
+param enableWhatsApp bool = false
+
+@description('Inject the Key Vault secrets aws-access-key-id and aws-secret-access-key as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (app and notify job only). Long-lived keys are the fallback until OIDC federation (Task 14) exists; rotate them. The secrets must exist first.')
+param sesAccessKeyFromKeyVault bool = false
+
+@description('off = rows accumulate and expire, nothing is sent; allowlist = only NOTIFICATIONS_ALLOWLIST; live = everyone. The app and the notify job always share it.')
+@allowed([
+  'off'
+  'allowlist'
+  'live'
+])
+param notificationsMode string = 'off'
+
+@description('Cron (UTC) for the notify job.')
+param notifyCron string = '*/5 * * * *'
+
+@description('Recipient of the notification alerts. Pass it at deploy time; never commit it.')
+param alertEmail string = ''
+
+param whatsappPhoneNumberId string = ''
+param whatsappApiVersion string = ''
+@description('AWS Region of the SES identity.')
+param sesRegion string = ''
+param sesFromAddress string = ''
+@description('Base URL used in message links. Empty = the public URL.')
+param notificationBaseUrl string = ''
+@description('IAM role the identity assumes through OIDC federation to call SES.')
+param awsRoleArn string = ''
+param awsWebIdentityAudience string = ''
+@description('Blank = the app default applies (the setting is left out).')
+param notificationMaxAgeHours string = ''
+@description('Blank = the app default applies (the setting is left out).')
+param whatsappDeliveryTimeoutMinutes string = ''
+@description('Blank = the app default applies (the setting is left out).')
+param notificationResendRateLimit string = ''
+
 // --- Container Apps sizes (§35) ------------------------------------------------------------------
 
 param containerCpu string = '0.5'
@@ -157,6 +197,7 @@ var names = {
   app: 'ca-${prefix}-api'
   migrateJob: 'caj-${prefix}-migrate'
   cleanupJob: 'caj-${prefix}-cleanup'
+  notifyJob: 'caj-${prefix}-notify'
   staticWebApp: 'swa-${prefix}-${token}'
   openAi: 'oai-${prefix}-${token}'
   vnet: 'vnet-${prefix}'
@@ -386,12 +427,49 @@ var ocrSettings = enableOcr
     }
   : {}
 
+// Plain settings for notifications. On whenever enableNotifications is true, in every mode
+// including 'off'. The WHATSAPP_* ones exist only with enableWhatsApp (the channel is parked
+// otherwise). Optional values are left out when blank rather than set to an empty string.
+var whatsAppSettings = enableWhatsApp
+  ? {
+      WHATSAPP_ENABLED: 'true'
+      WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId
+      WHATSAPP_API_VERSION: whatsappApiVersion
+      WHATSAPP_DELIVERY_TIMEOUT_MINUTES: whatsappDeliveryTimeoutMinutes
+    }
+  : {}
+
+var optionalNotificationSettings = union(whatsAppSettings, {
+  SES_REGION: sesRegion
+  SES_FROM_ADDRESS: sesFromAddress
+  AWS_ROLE_ARN: awsRoleArn
+  AWS_WEB_IDENTITY_AUDIENCE: awsWebIdentityAudience
+  NOTIFICATION_MAX_AGE_HOURS: notificationMaxAgeHours
+  NOTIFICATION_RESEND_RATE_LIMIT: notificationResendRateLimit
+})
+
+var notificationSettings = enableNotifications
+  ? union(
+      {
+        NOTIFICATIONS_MODE: notificationsMode
+        NOTIFICATION_PROVIDERS: 'real'
+        NOTIFICATION_BASE_URL: empty(notificationBaseUrl) ? 'https://${publicHost}' : notificationBaseUrl
+      },
+      toObject(
+        filter(items(optionalNotificationSettings), item => !empty(item.value)),
+        item => item.key,
+        item => item.value
+      )
+    )
+  : {}
+
 module app 'modules/container-app.bicep' = if (deployApplication) {
   name: 'container-app'
   params: {
     appName: names.app
     migrateJobName: names.migrateJob
     cleanupJobName: names.cleanupJob
+    notifyJobName: names.notifyJob
     location: location
     tags: allTags
     environmentId: containerEnv.outputs.id
@@ -401,12 +479,18 @@ module app 'modules/container-app.bicep' = if (deployApplication) {
     keyVaultUri: keyVault.outputs.uri
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
     settings: union(baseSettings, telemetrySettings, ocrSettings)
+    notificationEnv: notificationSettings
     cpu: containerCpu
     memory: containerMemory
     minReplicas: minReplicas
     maxReplicas: maxReplicas
     httpConcurrency: httpConcurrency
     cleanupCron: cleanupCron
+    enableNotifications: enableNotifications
+    enableWhatsApp: enableWhatsApp
+    notificationsMode: notificationsMode
+    sesAccessKeyFromKeyVault: sesAccessKeyFromKeyVault
+    notifyCron: notifyCron
   }
   dependsOn: [
     roleAssignments
@@ -419,6 +503,17 @@ module staticWebAppLink 'modules/static-web-app-link.bicep' = if (deployApplicat
     staticWebAppName: staticWebApp.outputs.name
     backendResourceId: app!.outputs.appId
     backendLocation: location
+  }
+}
+
+module notificationAlerts 'modules/notification-alerts.bicep' = if (enableNotifications && !empty(alertEmail)) {
+  name: 'notification-alerts'
+  params: {
+    location: location
+    tags: allTags
+    namePrefix: prefix
+    appInsightsId: monitoring.outputs.appInsightsId
+    alertEmail: alertEmail
   }
 }
 
@@ -438,6 +533,7 @@ output containerAppsEnvironmentName string = containerEnv.outputs.name
 output containerAppName string = names.app
 output migrateJobName string = names.migrateJob
 output cleanupJobName string = names.cleanupJob
+output notifyJobName string = enableNotifications ? names.notifyJob : ''
 output containerAppFqdn string = appFqdn
 output staticWebAppName string = staticWebApp.outputs.name
 output staticWebAppHostname string = staticWebApp.outputs.defaultHostname

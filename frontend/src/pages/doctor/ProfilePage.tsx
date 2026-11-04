@@ -2,8 +2,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState, type ReactNode } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Link } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import type { ProfilePatch } from "@/api/endpoints/profile";
+import { queryKeys } from "@/api/keys";
 import type { DoctorProfile, ReferenceData } from "@/api/types";
 import { DashedField } from "@/components/form/DashedField";
 import { DashedSelect } from "@/components/form/DashedSelect";
@@ -17,6 +19,7 @@ import {
   type ContactInput,
   type ContactValues,
 } from "@/features/profile/contactSchema";
+import { WhatsAppOptIn } from "@/features/notifications/WhatsAppOptIn";
 import { useProfile, useUpdateProfile } from "@/features/profile/useProfile";
 import { useReferenceData } from "@/features/reference/useReferenceData";
 import { ar } from "@/i18n/ar";
@@ -79,6 +82,7 @@ function IdentitySummary({ profile, reference }: { profile: DoctorProfile; refer
 }
 
 function ContactForm({ profile, reference }: { profile: DoctorProfile; reference: ReferenceData }) {
+  const queryClient = useQueryClient();
   const update = useUpdateProfile();
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -103,6 +107,8 @@ function ContactForm({ profile, reference }: { profile: DoctorProfile; reference
     }
     try {
       const updated = await update.mutateAsync(changes);
+      // A new phone number clears consent on the server, so the opt-in box must refetch.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.whatsappOptIn });
       reset(contactDefaults(updated));
       setSaved(true);
     } catch (error) {
@@ -235,6 +241,7 @@ export function ProfilePage() {
         <>
           <IdentitySummary profile={profile.data} reference={reference.data} />
           <ContactForm profile={profile.data} reference={reference.data} />
+          <WhatsAppOptIn />
         </>
       ) : (
         <div aria-busy="true" className="mt-6 space-y-3">

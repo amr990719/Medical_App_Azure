@@ -26,6 +26,9 @@ erDiagram
     accounts_user ||--o{ documents_document : "uploaded_by_id"
     applications_insuranceapplication ||--o{ applications_adminnote : "application_id"
     accounts_user ||--o{ applications_adminnote : "author_id"
+    applications_insuranceapplication ||--o{ notifications_notification : "application_id"
+    dues_syndicateduesrequest |o--o{ notifications_notification : "dues_request_id (events 7-10)"
+    notifications_notification |o--o| notifications_notification : "fallback_of_id (email replacing a WhatsApp row)"
     accounts_user |o--o{ audit_auditlog : "user_id (actor)"
     accounts_user |o--o{ fees_feeschedule : "created_by_id"
 
@@ -139,6 +142,25 @@ erDiagram
         timestamptz created_at
         timestamptz locked_at "set when first used by a submission"
     }
+    notifications_notification {
+        uuid id PK
+        uuid application_id FK
+        uuid dues_request_id FK "null unless a dues event"
+        varchar event "10 events"
+        varchar channel "WHATSAPP | EMAIL"
+        varchar status "PENDING SENDING SENT DELIVERED FAILED EXPIRED SUPERSEDED SUPPRESSED"
+        varchar provider_message_id "SHA-256 of the wamid, or SES MessageId"
+        smallint attempts "also identifies the current claim"
+        timestamptz next_attempt_at
+        timestamptz sending_started_at "only while SENDING"
+        timestamptz expires_at
+        varchar error_code "code only, never provider text"
+        varchar recipient_masked "010•••••678 or a•••@example.com"
+        uuid fallback_of_id FK "one-to-one"
+        uuid created_by_id FK "admin for a resend"
+        timestamptz sent_at
+        timestamptz delivered_at
+    }
     audit_auditlog {
         uuid id PK
         uuid user_id FK "null for system actions"
@@ -179,6 +201,10 @@ Rules are enforced by the database first and handled as `IntegrityError` in the 
 | `beneficiaries_beneficiary` | `beneficiary_row_number_range` | `row_number BETWEEN 1 AND 20` | hard ceiling; the business limit is `MAX_BENEFICIARIES` (10) in the service |
 | `beneficiaries_beneficiary` | `beneficiary_national_id_format`, `beneficiary_kinship_valid` | `CHECK` | format, enum |
 | `documents_document` | `uniq_active_document_per_slot` | `UNIQUE (application_id, beneficiary_id, document_type) NULLS NOT DISTINCT WHERE deleted_at IS NULL AND document_type <> 'SYNDICATE_DUES_RECEIPT'` | one live document per slot; re-upload replaces. Dues receipts are excluded: every one is kept |
+| `notifications_notification` | `notification_event_valid`, `notification_channel_valid`, `notification_status_valid` | `CHECK (… IN (…))` | enums |
+| `notifications_notification` | `notification_dues_request_iff_dues_event` | `dues_request_id` set exactly for events 7-10 | dues messages read their amount from the request |
+| `notifications_notification` | `notification_fallback_is_email` | `fallback_of_id IS NULL OR channel = 'EMAIL'` | only an email replaces a WhatsApp row |
+| `notifications_notification` | `uniq_notification_provider_id`, `…_fallback_of_id_key` | `UNIQUE (channel, provider_message_id) WHERE NOT NULL`; `UNIQUE (fallback_of_id)` | the webhook finds one row; one email per failed WhatsApp row |
 | `documents_document` | `uniq_document_blob_name` | `UNIQUE (blob_name)` | one row per blob |
 | `documents_document` | `document_type_matches_owner` | member types only without beneficiary, beneficiary types only with one (`OTHER` either, `SYNDICATE_DUES_RECEIPT` without), unless deleted | document rules table cannot be bypassed |
 | `dues_syndicateduesrequest` | `dues_request_amount_positive`, `dues_request_reason_present`, `dues_request_status_valid` | `amount > 0`, `reason <> ''`, enum | additional dues: positive EGP amount (`numeric(10,2)`), explained |
@@ -207,6 +233,9 @@ only `is_active` may change, so a submitted application's `fee_schedule` never m
 | `beneficiary_national_id_idx` | `(national_id) WHERE national_id IS NOT NULL` | admin duplicate warnings across applications |
 | `document_deleted_idx` | `(deleted_at) WHERE deleted_at IS NOT NULL` | `cleanup_blobs` |
 | `adminnote_app_created_idx` | `(application_id, created_at)` | notes timeline |
+| `notification_due_idx` | `(next_attempt_at) WHERE status = 'PENDING'` | the sender's due-row scan |
+| `notification_wa_sent_idx` | `(sent_at) WHERE channel = 'WHATSAPP' AND status = 'SENT'` | delivery-timeout sweep |
+| `notification_app_created_idx` | `(application_id, created_at)` | admin history of one application |
 | `audit_object_idx` | `(object_type, object_id, timestamp)` | audit history of an application |
 | `audit_action_idx`, `audit_user_idx` | `(action, timestamp)`, `(user_id, timestamp)` | audit review |
 
@@ -225,7 +254,8 @@ Money is stored as whole Egyptian pounds (integers), never floats.
 
 ## 5. Sensitive columns (PROMPT.md §47)
 
-`doctors_doctor.national_id`, `religion`, `phone_number`, `address`, `date_of_birth`;
+`doctors_doctor.national_id`, `religion`, `phone_number`, `address`, `date_of_birth`
+(and the consent columns `whatsapp_opt_in`, `whatsapp_opt_in_at`, `whatsapp_help_sent_at`);
 `beneficiaries_beneficiary.national_id`, `full_name`, `birth_year`; the `submitted_snapshot`
 copies of the same; document metadata (the files themselves are in Blob Storage, never in
 PostgreSQL). Admin API responses mask national IDs (`29•••••••••123`) unless a reviewer reveals
@@ -233,19 +263,20 @@ one (audited `NATIONAL_ID_REVEALED`). Logs never contain them (masking filter).
 
 ## 6. Migrations
 
-41 migrations on a clean database: 26 project migrations plus Django's `contenttypes`, `auth` and
+41 migrations on a clean database before the notifications app (it adds `notifications.0001`, `doctors.0003` and `audit.0005`): 26 project migrations plus Django's `contenttypes`, `auth` and
 `sessions`.
 
 | App | Migrations |
 |---|---|
 | accounts | `0001_initial`, `0002_user_display_name` |
-| doctors | `0001_initial`, `0002_remove_doctor_treatment_card_number` (drops رقم بطاقة العلاج) |
+| doctors | `0001_initial`, `0002_remove_doctor_treatment_card_number` (drops رقم بطاقة العلاج), `0003_doctor_whatsapp_consent` (`whatsapp_opt_in` with `db_default=False`, `whatsapp_opt_in_at`, `whatsapp_help_sent_at`; add-only) |
 | fees | `0001_initial`, `0002_seed_fy2026` (FY 2026 v1 — history only, row removed by 0005), `0003_admin_fee_formula`, `0004_fy2026_v2_schedule` (FY 2026 v2 — removed by 0008), `0005_remove_fy2026_v1` (clears v1 references, keeps snapshots, deletes v1), `0006_remove_legacy_admin_fee` (drops the flat-fee columns), `0007_feeschedule_service_fee` (`service_fee`, DB default 800), `0008_fy2026_v3_schedule` (FY 2026 v3, active; re-prices every FY 2026 fee snapshot on it from the submitted data, refusing and rolling back on incomplete submitted data or an invalid quote; deletes the other FY 2026 versions) |
 | applications | `0001_initial` |
 | beneficiaries | `0001_initial`, `0002_beneficiary_is_first_time`, `0003_remove_daughter_kinship`, `0004_validate_kinship_constraint` |
 | documents | `0001_initial`, `0002_document_blob_purged_at`, `0003_document_types_id_back_photo_member_certificate`, `0004_syndicate_dues_receipt` (type; slot index excludes it; 2s `lock_timeout`) |
 | dues | `0001_initial` (`SyndicateDuesRequest`, `DuesReceipt`) |
-| audit | `0001_initial`, `0002_append_only_trigger`, `0003_admin_role_revoked_action`, `0004_dues_actions` (choices only) |
+| notifications | `0001_initial` (`Notification`) |
+| audit | `0001_initial`, `0002_append_only_trigger`, `0003_admin_role_revoked_action`, `0004_dues_actions`, `0005_alter_auditlog_action` (choices only: `WHATSAPP_OPT_IN_CHANGED`, `NOTIFICATION_RESENT`) |
 
 Commands:
 

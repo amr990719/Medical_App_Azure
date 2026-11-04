@@ -29,3 +29,12 @@ MALWARE_SCAN_ENABLED = False
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 ENTRA_AUTHORITY = ""
 ENTRA_ADMIN_REQUIRE_MFA = True
+
+NOTIFICATIONS_MODE = "live"
+NOTIFICATION_PROVIDERS = "fake"
+WHATSAPP_ENABLED = True  # the WhatsApp tests keep their meaning; email-first tests set False
+WHATSAPP_APP_SECRET = "test-app-secret"  # noqa: S105
+WHATSAPP_VERIFY_TOKEN = "test-verify-token"  # noqa: S105
+WHATSAPP_PHONE_NUMBER_ID = "111"
+NOTIFICATION_BASE_URL = "https://example.test"
+SES_FROM_ADDRESS = "notifications@example.test"

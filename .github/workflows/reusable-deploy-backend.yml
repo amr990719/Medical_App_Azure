@@ -2,7 +2,7 @@
 #   1. push the image to the environment's registry (OIDC login, AcrPush);
 #   2. point the migrate job at the new image and run it ONCE; stop on failure
 #      (the running revision keeps serving: migrations are expand/contract);
-#   3. point the cleanup job at the new image;
+#   3. point the cleanup job, and the notify job when NOTIFY_JOB_NAME is set, at the new image;
 #   4. create the new Container App revision; Container Apps shifts traffic only when its
 #      readiness probe (/api/ready/) passes;
 #   5. smoke test /api/health/ and /api/ready/ through the Static Web App (its linked backend
@@ -11,7 +11,7 @@
 #
 # GitHub environment variables used: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
 # AZURE_RESOURCE_GROUP, ACR_NAME, CONTAINER_APP_NAME, MIGRATE_JOB_NAME, CLEANUP_JOB_NAME,
-# STATIC_WEB_APP_NAME.
+# STATIC_WEB_APP_NAME; optional: NOTIFY_JOB_NAME (set only where enableNotifications is on).
 name: deploy backend
 
 on:
@@ -46,6 +46,7 @@ jobs:
       CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
       MIGRATE_JOB_NAME: ${{ vars.MIGRATE_JOB_NAME }}
       CLEANUP_JOB_NAME: ${{ vars.CLEANUP_JOB_NAME }}
+      NOTIFY_JOB_NAME: ${{ vars.NOTIFY_JOB_NAME }}
       STATIC_WEB_APP_NAME: ${{ vars.STATIC_WEB_APP_NAME }}
     steps:
       - name: Check environment variables
@@ -105,6 +106,12 @@ jobs:
       - name: Update the cleanup job image
         run: |
           az containerapp job update --name "$CLEANUP_JOB_NAME" --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE" --output none
+
+      - name: Update the notify job image
+        if: ${{ vars.NOTIFY_JOB_NAME != '' }}
+        run: |
+          az containerapp job update --name "$NOTIFY_JOB_NAME" --resource-group "$RESOURCE_GROUP" \
             --image "$IMAGE" --output none
 
       - name: Create the new revision

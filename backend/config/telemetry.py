@@ -3,10 +3,12 @@
 `configure_telemetry()` runs in `config/wsgi.py` in every Gunicorn worker (no `--preload`, so
 after the fork) BEFORE Django loads, so the Django middleware instrumentation is in place;
 it is a no-op without `APPLICATIONINSIGHTS_CONNECTION_STRING` (local development, tests,
-management commands). Requests, dependencies (psycopg, requests/httpx, Azure SDK) and
-exceptions are exported.
+other management commands). `manage.py` also calls it for `send_notifications`, before Django
+loads, so the job's warnings reach Application Insights. Requests, dependencies (psycopg,
+requests/httpx, Azure SDK) and exceptions are exported.
 
-National IDs must never reach Application Insights, so masking happens at three points:
+National IDs, phone numbers and e-mail addresses must never reach Application Insights, so
+masking happens at three points:
 - logs: Django's LOGGING attaches `TelemetryLogHandler` to the root logger WITH the
   `NationalIdMaskingFilter` (the distro's own handler is parked on `DISTRO_LOGGER_NAME`; Django's
   dictConfig would remove it from the root logger anyway);
@@ -21,6 +23,7 @@ identity (`Monitoring Metrics Publisher` role) for Entra-authenticated ingestion
 NOT VERIFIED against a real Application Insights resource — requires Azure credentials.
 """
 
+import copy
 import logging
 import os
 
@@ -119,6 +122,10 @@ class TelemetryLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         if self._delegate is not None:
+            # Django's `request` extra is exported as its repr, query string included (a presented
+            # `hub.verify_token`). A copy, because other handlers share this record.
+            record = copy.copy(record)
+            record.__dict__.pop("request", None)
             self._delegate.emit(record)
 
     def flush(self) -> None:

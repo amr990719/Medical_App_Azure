@@ -12,6 +12,7 @@ from apps.accounts.factories import AdminUserFactory, UserFactory
 from apps.audit.models import AuditAction, AuditLog
 from apps.beneficiaries.models import Beneficiary
 from apps.fees.models import FeeSchedule
+from apps.notifications.models import Notification
 from apps.reference.constants import DocumentType as T
 from tests.files import png_upload
 
@@ -55,6 +56,8 @@ def full_lifecycle(settings):
     doctor, admin = client_for(doctor_user), client_for(admin_user)
 
     assert doctor.patch("/api/v1/profile/", PROFILE, format="json").status_code == 200
+    optin = doctor.put("/api/v1/profile/notifications/", {"whatsapp_opt_in": True}, format="json")
+    assert optin.status_code == 200  # WHATSAPP_OPT_IN_CHANGED
     app_id = doctor.post("/api/v1/applications/", {}).json()["id"]  # APPLICATION_CREATED
     base = f"/api/v1/applications/{app_id}/"
     doctor.patch(base, {"work_status": "WORKING", "declaration_name": PROFILE["full_name"],
@@ -104,6 +107,15 @@ def full_lifecycle(settings):
     admin.post("/api/v1/admin/fee-schedules/", {
         "fiscal_year": 2026, "tier_fees": schedule.tier_fees, "admin_fee_base": 200,
         "admin_fee_per_beneficiary": 175, "service_fee": 800}, format="json")  # fmt: skip
+
+    queued = Notification.objects.filter(
+        application_id=app_id, event="APPLICATION_RECEIVED"
+    ).first()
+    assert queued is not None  # the first submission queued it
+    # Settle every queued row so the resend is not blocked by an active one.
+    Notification.objects.filter(application_id=app_id).update(status="FAILED", channel="EMAIL")
+    resend = admin.post(f"{admin_base}notifications/{queued.pk}/resend/")  # NOTIFICATION_RESENT
+    assert resend.status_code == 201, resend.json()
 
     promoted = UserFactory(email="new-admin@example.test")
     call_command("grant_admin", promoted.email, stdout=StringIO())  # ADMIN_ROLE_GRANTED

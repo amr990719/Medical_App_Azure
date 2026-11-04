@@ -11,7 +11,15 @@ from django.core.exceptions import ImproperlyConfigured
 from config.secrets import load_secrets
 
 from .base import *  # noqa: F403
-from .base import DATABASES, LOGGING, MIDDLEWARE, REST_FRAMEWORK, env
+from .base import (
+    DATABASES,
+    LOGGING,
+    MIDDLEWARE,
+    NOTIFICATIONS_ALLOWLIST,
+    REST_FRAMEWORK,
+    WHATSAPP_ENABLED,
+    env,
+)
 
 MIN_SECRET_KEY_LENGTH = 50
 ENTRA_TOKEN_MAX_CONN_AGE = 1800  # seconds; below the lifetime of an Entra access token
@@ -112,6 +120,38 @@ if env.bool("OCR_ENABLED", default=False):
             "AZURE_OPENAI_API_VERSION",
         ):
             _require(_name)
+
+# --- Notifications (spec section 6): checks only that settings exist, never calls a provider --
+# SES production access is an owner gate (phases 1 and 4), not something startup can prove.
+# Messages never echo a value: several of these settings are secrets.
+NOTIFICATIONS_MODE = env("NOTIFICATIONS_MODE", default="") or "off"
+NOTIFICATION_PROVIDERS = env("NOTIFICATION_PROVIDERS", default="") or "fake"
+if NOTIFICATIONS_MODE not in {"off", "allowlist", "live"}:
+    raise ImproperlyConfigured("NOTIFICATIONS_MODE must be off, allowlist or live.")
+if NOTIFICATION_PROVIDERS not in {"fake", "real"}:
+    raise ImproperlyConfigured("NOTIFICATION_PROVIDERS must be fake or real.")
+if NOTIFICATIONS_MODE == "live" and NOTIFICATION_PROVIDERS != "real":
+    raise ImproperlyConfigured("NOTIFICATION_PROVIDERS must be real when NOTIFICATIONS_MODE=live.")
+if NOTIFICATIONS_MODE == "allowlist" and not NOTIFICATIONS_ALLOWLIST:
+    raise ImproperlyConfigured(
+        "NOTIFICATIONS_ALLOWLIST must be set when NOTIFICATIONS_MODE=allowlist."
+    )
+if NOTIFICATIONS_MODE != "off" and NOTIFICATION_PROVIDERS == "real":
+    _required_notification_settings = ["SES_REGION", "SES_FROM_ADDRESS", "NOTIFICATION_BASE_URL"]
+    # Federation (Task 14) is not built, so the default boto3 chain reads these two from the
+    # environment. Without them every email would end FAILED/CREDENTIALS. This check goes away
+    # with Task 14.
+    _required_notification_settings += ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+    if WHATSAPP_ENABLED:
+        _required_notification_settings += [
+            "WHATSAPP_PHONE_NUMBER_ID",
+            "WHATSAPP_API_VERSION",
+            "WHATSAPP_ACCESS_TOKEN",
+            "WHATSAPP_APP_SECRET",
+            "WHATSAPP_VERIFY_TOKEN",
+        ]
+    for _name in _required_notification_settings:
+        _require(_name)
 
 API_DOCS_ENABLED = env.bool("API_DOCS_ENABLED", default=False)
 

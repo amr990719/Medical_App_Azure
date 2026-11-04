@@ -14,6 +14,7 @@ import type {
   AuditEntry,
   FeeSchedule,
   NewFeeSchedule,
+  NotificationRow,
   Page,
   PaymentStatus,
   TierFees,
@@ -122,6 +123,20 @@ export async function cancelDuesRequest(id: string, duesId: string, reason: stri
       method: "POST",
       body: { reason },
     }),
+  );
+}
+
+export async function fetchNotifications(id: string): Promise<NotificationRow[]> {
+  return toCamel(await apiFetch<Schemas["NotificationHistory"][]>(`/admin/applications/${id}/notifications/`));
+}
+
+/** Send the same event again; the server answers 409 (Arabic message) when it is not allowed. */
+export async function resendNotification(id: string, notificationId: string): Promise<NotificationRow> {
+  return toCamel(
+    await apiFetch<Schemas["NotificationHistory"]>(
+      `/admin/applications/${id}/notifications/${notificationId}/resend/`,
+      { method: "POST" },
+    ),
   );
 }
 

@@ -18,7 +18,8 @@ from apps.common.exceptions import InvalidStatusTransition, PermissionDeniedErro
 from apps.documents.models import DUES_RECEIPT_TYPE
 from apps.documents.services import create_document_row, stored_blob
 from apps.documents.validators import validate_upload
-from apps.reference.constants import ApplicationStatus
+from apps.notifications.services import enqueue
+from apps.reference.constants import ApplicationStatus, NotificationEvent
 from apps.reference.constants import DuesReceiptStatus as RS
 from apps.reference.constants import DuesRequestStatus as DS
 
@@ -136,6 +137,7 @@ def create_dues_request(
         metadata={"application_id": str(app.pk), "amount": str(amount)},
         request=request,
     )
+    enqueue(app, NotificationEvent.DUES_REQUESTED, dues_request=dues)
     return dues
 
 
@@ -223,6 +225,12 @@ def review_dues_receipt(
         metadata={"receipt_id": str(receipt.pk), "decision": decision},
         request=request,
     )
+    event = (
+        NotificationEvent.DUES_CONFIRMED
+        if decision == RS.CONFIRMED
+        else NotificationEvent.DUES_RECEIPT_REJECTED
+    )
+    enqueue(app, event, dues_request=dues)
     return dues
 
 
@@ -258,4 +266,5 @@ def cancel_dues_request(
         metadata={"from": from_status},
         request=request,
     )
+    enqueue(app, NotificationEvent.DUES_CANCELLED, dues_request=dues)
     return dues

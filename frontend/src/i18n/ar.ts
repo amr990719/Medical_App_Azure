@@ -219,6 +219,37 @@ export const ar = {
       confirm: "تأكيد",
       done: "تم تحديث حالة الطلب إلى: {status}",
     },
+    notifications: {
+      title: "الإشعارات",
+      empty: "لا توجد إشعارات لهذا الطلب بعد.",
+      loading: "جارٍ تحميل الإشعارات…",
+      loadError: "تعذر تحميل الإشعارات.",
+      resend: "إعادة الإرسال",
+      resendTitle: "إعادة إرسال الإشعار",
+      resendConfirm: "سيُرسل هذا الإشعار إلى العضو مرة أخرى. هل تريد المتابعة؟",
+      resent: "تمت إضافة الإشعار إلى قائمة الإرسال.",
+      emailAccepted: "قبله مزوّد البريد، والتسليم غير مؤكد",
+      whatsappSent: "أُرسل، بانتظار تأكيد التسليم",
+      attempts: "عدد المحاولات: {n}",
+      // Lines that hold for either channel.
+      errors: {
+        SEND_INTERRUPTED: "توقف الإرسال قبل اكتماله.",
+        CONNECT_FAILED: "تعذر الاتصال بمزود الخدمة.",
+        NO_ADDRESS: "لا يوجد بريد إلكتروني مسجل للعضو.",
+        SEND_ERROR: "حدث خطأ أثناء الإرسال.",
+        generic: "رفض مزود الخدمة الرسالة (الرمز: {code}).",
+      },
+      // A WhatsApp row only hands over to email; whether the email went out is its own row.
+      whatsappErrors: {
+        OPTED_OUT: "لم يفعّل العضو رسائل واتساب، وحُوّل إلى البريد.",
+        WHATSAPP_DISABLED: "واتساب غير مفعّل حاليًا، فحُوّل إلى البريد.",
+        NO_DELIVERY_RECEIPT: "لم يصل تأكيد التسليم خلال المهلة، وحُوّل إلى البريد.",
+        UNKNOWN_RESULT: "نتيجة الإرسال غير معروفة، وحُوّل إلى البريد.",
+      },
+      emailErrors: {
+        UNKNOWN_RESULT: "نتيجة الإرسال غير معروفة ولم يتأكد الإرسال.",
+      },
+    },
     dues: {
       title: "المستحقات النقابية",
       intro: "مبالغ تطلبها الإدارة من العضو خارج قيمة الاشتراك (مثل اشتراك النقابة). يجب تأكيد سدادها أو إلغاؤها قبل قبول الطلب.",
@@ -305,6 +336,8 @@ export const ar = {
         DUES_RECEIPT_UPLOADED: "رفع إيصال مستحقات نقابية",
         DUES_RECEIPT_REVIEWED: "مراجعة إيصال مستحقات نقابية",
         DUES_REQUEST_CANCELLED: "إلغاء مطالبة مستحقات نقابية",
+        WHATSAPP_OPT_IN_CHANGED: "تغيير موافقة العضو على رسائل واتساب",
+        NOTIFICATION_RESENT: "إعادة إرسال إشعار",
       },
     },
     viewer: {
@@ -391,6 +424,12 @@ export const ar = {
     identityHint: "تُعدَّل هذه البيانات مع الرقم القومي والمستندات من الاستمارة.",
     editInForm: "تعديلها من استمارة الاشتراك",
     contactTitle: "بيانات الاتصال والسكن",
+    whatsapp: {
+      title: "إشعارات واتساب",
+      consent: "أوافق على استلام إشعارات طلبي عبر واتساب على الرقم:",
+      hint: "يمكنك إيقافها في أي وقت من هنا أو بإرسال «إيقاف» ردًا على أي رسالة. وتصلك الإشعارات على بريدك الإلكتروني إذا لم تفعّلها.",
+      invalidPhone: "يرجى إدخال رقم هاتف محمول صحيح أولًا.",
+    },
     notProvided: "لم يُدخل بعد",
     fields: {
       fullName: "الاسم",
@@ -627,6 +666,11 @@ export const ar = {
     view: "عرض {name}",
   },
   status: {
+    whatsappPrompt: {
+      message: "فعّل إشعارات واتساب لمتابعة طلبك أولًا بأول.",
+      action: "تفعيل",
+      dismiss: "إخفاء",
+    },
     title: "حالة الطلب",
     reference: "رقم الطلب",
     submittedNow: "تم تقديم طلبك بنجاح",

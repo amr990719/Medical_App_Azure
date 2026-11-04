@@ -28,14 +28,14 @@ legal decisions in the second table, which nobody has taken yet.
 | Environment separation | separate resource groups, identities, Key Vaults, Entra app registrations, GitHub environments | dev exists; staging/prod not created yet, so separation is NOT VERIFIED |
 | Backups | PostgreSQL PITR (7/14/35 days), geo-redundant backup in prod, Blob soft delete + versioning, Key Vault soft delete + purge protection | Bicep; restore drill NOT DONE (needs Azure) |
 | Restricted production access | no shared or stored credentials; deploys only from `main` with reviewers for prod; operators named by decision L7 | `main` protected and `dev` deploys only from it (verified on GitHub 2026-10-11); prod NOT VERIFIED (never deployed) |
-| No personal data in logs | 14+ digit masking filter, no bodies/headers/query strings, OCR payloads never logged | logging + telemetry tests |
+| No personal data in logs | 11+ digit and email masking filter (14+ before notifications), no bodies/headers/query strings, OCR payloads never logged | logging + telemetry tests |
 
 | Decision that needs legal / organizational approval (§47) | Current technical default | Item |
 |---|---|---|
 | Religion field: collect it at all, who sees it, printed or not | collected (optional), visible to the doctor and admins | L1 |
 | OCR processing of identity documents by an AI service | **decided 2026-10-11: off in production** (`enableOcr = false` pinned in `prod.bicepparam`, no Azure OpenAI resource) | L2 |
-| Data residency / region and cross-border transfer | region is a deployment parameter; not chosen | L3 |
-| Retention periods and deletion on request | nothing deleted automatically except orphan / soft-deleted blobs and expired sessions | L4 |
+| Data residency / region and cross-border transfer | region is a deployment parameter; not chosen. Notifications add Meta and AWS as recipients of phone numbers and email addresses: **owner and legal sign-off needed before `live`** | L3 |
+| Retention periods and deletion on request | nothing deleted automatically except orphan / soft-deleted blobs and expired sessions. `Notification` rows are not purged (12 months proposed); Meta and AWS retention is not assessed: **owner and legal sign-off needed** | L4 |
 | Admin access policy (who, MFA, reviews, unmasked printouts) | `grant_admin` by an operator; MFA required; reveals audited | L5 |
 | Breach procedure | not defined | L6 |
 | Production access (subscription, database, Key Vault, break-glass) | not defined beyond the CI/CD identities | L7 |
@@ -56,6 +56,9 @@ and birth years, identity-document images, personal photos and payment receipts.
 | Key Vault | Django `SECRET_KEY`, Entra client secret, DB password (fallback only) | RBAC, managed identity, soft delete + purge protection |
 | Application Insights / Log Analytics | requests, dependencies, exceptions, logs | national IDs masked before export (§4 below) |
 | Azure OpenAI (only if OCR is enabled) | one identity-document image per OCR request | see §5 and `docs/ocr.md` |
+| Meta WhatsApp Cloud API (notifications) | the doctor's mobile number, the Meta template name, the reference number and, for dues events, the amount | **Parked, not active** (owner decision 2026-11-04): off unless `WHATSAPP_ENABLED` is true, which nothing sets. When switched on later: only in `allowlist` or `live`; opt-in required; **L3/L4 sign-off pending** |
+| Amazon SES (notifications) | the doctor's email address, subject and body with the reference number and amount | the main channel; only in `allowlist` or `live`; **L3/L4 sign-off pending** (AWS stays pending); until Task 14 (federation) exists the credential is a long-lived access key held as a Key Vault secret (`aws-access-key-id`, `aws-secret-access-key`), to be rotated and limited to `ses:SendEmail`; nothing is provisioned from this repository (`NOT VERIFIED`, see progress Task 14) |
+| `notifications_notification` | event, channel, status, provider message ID, masked recipient (`010•••••678`, `a•••@example.com`), error code | no message text, full phone or full address; written only by `notifications/services.py` |
 
 ## 2. Identity, sessions and authorization
 
@@ -120,8 +123,11 @@ and birth years, identity-document images, personal photos and payment receipts.
 
 - JSON logs to stdout with request id, internal user UUID, method, path (no query string),
   status and latency. Never cookies, headers, bodies, tokens, passwords or document bytes.
-- `NationalIdMaskingFilter` masks every run of 14+ digits (Western or Eastern Arabic) as
-  `29•••••••••123` in messages and `extra` fields; the JSON formatter masks again (tracebacks).
+- `NationalIdMaskingFilter` masks every run of 11+ digits (Western or Eastern Arabic), email
+  addresses and Egyptian mobiles written with separators, as `29•••••••••123` for a national ID, in
+  messages and `extra` fields; canonical UUIDs are left alone. The JSON formatter masks again
+  (tracebacks). Django's `request` extra, whose repr holds the query string, is dropped from both
+  the JSON logs and Application Insights.
 - Application Insights (`config/telemetry.py`, Azure Monitor OpenTelemetry distro): the log
   handler carries the same filter; a log-record processor masks bodies and attributes
   (exception messages and stack traces); a span processor drops query strings and fragments
@@ -133,6 +139,19 @@ and birth years, identity-document images, personal photos and payment receipts.
   **Verified on dev (2026-10-11):** telemetry arrives in Log Analytics, and a 30-day scan of
   traces, exceptions, request URLs and container console logs found no unmasked 14-digit run
   (`docs/azure-deployment.md` §"Telemetry verification").
+- Notification logs carry only the notification ID, event, channel, status, error code and counts.
+  Provider clients raise errors with a code only (`raise … from None`), so provider text and request
+  bodies cannot reach a traceback. The masking filter also covers 11+ digit runs, email addresses
+  and Egyptian mobiles written with spaces or hyphens between digits; a separator right after the
+  country code (`+20 10 …`) is masked too. Canonical UUIDs are left alone. The JSON formatter drops
+  Django's `request` extra, whose repr carries the query string.
+- **WhatsApp webhook:** the signature (`X-Hub-Signature-256`, HMAC-SHA256 of the raw body, constant-time
+  compare) is checked before any parsing; payloads and inbound message text are never logged or
+  stored. A reply whose whole text is a stop word (`إيقاف`, `ايقاف`, `stop`, after trimming
+  punctuation and invisible characters) clears `whatsapp_opt_in` in every mode, audited with no
+  actor (`whatsapp_reply`); pending WhatsApp rows then go to email. Any other message gets a help
+  reply at most once per 24 hours. A stop moves notifications to email, it does not end them.
+  Requests to stop made outside WhatsApp are not handled (see progress, Open questions).
 - Expired sessions (user ids, OIDC flow state) are deleted by the scheduled cleanup job
   (`entrypoint.sh cleanup` runs `clearsessions` before `cleanup_blobs`).
 - Audit log (append-only table) for submissions, status and payment changes, document
@@ -170,8 +189,8 @@ and birth years, identity-document images, personal photos and payment receipts.
 |---|---|---|---|
 | L1 | **Religion field.** The paper form asks for religion; it is sensitive data. Is collecting it necessary and lawful, who may see it, and must it be on the printed form? | Collected (optional in the API), shown to the doctor and admins, OCR may suggest it | Legal + syndicate management |
 | L2 | **OCR by an AI service.** Sending identity-document images to Azure OpenAI (abuse monitoring may retain them up to 30 days unless modified abuse monitoring is approved). | **Decided 2026-10-11 (D150): OCR off in production.** `enableOcr = false` is pinned in `prod.bicepparam`; manual entry is the only path. Enabling it later needs this approval and a reviewed change | Legal / DPO |
-| L3 | **Data residency / region.** There is no Azure region in Egypt; choose the region(s) for PostgreSQL, Blob, Key Vault, Log Analytics and Azure OpenAI, and confirm cross-border transfer requirements under Law 151/2020. | Not decided for production. dev runs in uaenorth (Static Web App static files in eastasia, D140) with test data only; the region is a Bicep parameter | Legal + IT |
-| L4 | **Retention periods** for applications, documents, rejected/withdrawn applications, audit logs, telemetry (Log Analytics retention) and backups; deletion on request. | Nothing is deleted automatically except orphan/soft-deleted blobs (`cleanup_blobs`) | Legal + syndicate management |
+| L3 | **Data residency / region.** There is no Azure region in Egypt; choose the region(s) for PostgreSQL, Blob, Key Vault, Log Analytics and Azure OpenAI, and confirm cross-border transfer requirements under Law 151/2020. **Notifications add Meta (WhatsApp) and AWS (SES) as recipients of doctors' phone numbers and email addresses, and Meta/AWS regions and processing terms are not assessed. Owner and legal sign-off is required before `NOTIFICATIONS_MODE=live` in production; it does not block `off` or `allowlist` on dev.** | Not decided for production. dev runs in uaenorth (Static Web App static files in eastasia, D140) with test data only; the region is a Bicep parameter | Legal + IT |
+| L4 | **Retention periods** for applications, documents, rejected/withdrawn applications, audit logs, telemetry (Log Analytics retention), backups and **notification rows (12 months proposed; no automatic purge is implemented) and what Meta and AWS keep**; deletion on request. Owner and legal sign-off needed. | Nothing is deleted automatically except orphan/soft-deleted blobs (`cleanup_blobs`) | Legal + syndicate management |
 | L5 | **Admin access policy:** who may be granted the admin role, MFA, periodic access review, who may reveal full national IDs (audited) and print unmasked forms (Q-B20). | `grant_admin` by an operator with production access; reveal is audited | Syndicate management + IT |
 | L6 | **Breach procedure:** detection (Application Insights alerts, audit review), containment (revoke sessions, rotate Key Vault secrets, disable OCR/uploads by flag), notification duties and timelines, contacts. | Not defined | Legal / DPO + IT |
 | L7 | **Production access:** who may access the Azure subscription, database and Key Vault; break-glass accounts; separation of environments (§49). | Separate resource groups, identities, Key Vaults and Entra app registrations per environment (Bicep parameters, `setup-github-oidc`) | IT |

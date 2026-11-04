@@ -1374,6 +1374,21 @@ Scope set by the user: serve the existing dev app at `https://neqabacare.com` (c
 - **NOT VERIFIED:** a full sign-in and a CSRF-protected POST on `neqabacare.com` (needs an Entra
   user); on the owner smoke list.
 
+### Session 22 (cont.) — 2026-11-01 — Deployed to dev
+
+- **Deploy (user instruction "deploy", merge explicitly allowed):** PR #14 (CI green: backend,
+  frontend, Playwright, image build, CodeQL) merged as `c056f3f`; it also carried the Session 20/21
+  deploy notes (`f2082fc`, `186df5c`). `backend` run `41323599736` and `frontend` run `41323599812`
+  succeeded (deploy-dev; staging/prod skipped). Migrate job execution
+  `caj-medsyn-dev-migrate-hfepjba` Succeeded and its log shows `audit.0004_dues_actions`,
+  `documents.0004_syndicate_dues_receipt` and `dues.0001_initial` applied (OK). Revision
+  `ca-medsyn-dev-api--gc056f3f2eded-1` (image `c056f3f…`) Healthy, Running, 100 % traffic.
+- **Post-check:** on `https://neqabacare.com` the SPA, `/api/health/`, `/api/ready/` and
+  `/admin/applications` answer 200, reference data 401 without a session (as designed); the served
+  bundle (`index-BP1KvumA.js`) contains the dues endpoint and «طلب سداد مستحقات نقابية».
+- **NOT VERIFIED on dev:** the signed-in flows (reference data's dues statuses, request / upload /
+  review / approval blocking on screen) — need an Entra sign-in; on the owner smoke list.
+
 ### Session 22 — 2026-11-01 — Additional syndicate dues (مستحقات نقابية)
 
 Owner requirement of 2026-11-01 (PROMPT.md §18.1 added; §16.2, §19, §24, §39, §44,
@@ -1466,6 +1481,81 @@ layout updated). Local only, branch `feat/syndicate-dues-2026-11-01` from
 - **NOT VERIFIED — requires Azure credentials:** nothing deployed; the dev migrate job has not run
   `documents.0004`, `dues.0001`, `audit.0004`; SAS delivery (`DOCUMENT_CONTENT_DELIVERY=sas`) of a
   dues receipt was not exercised (same code path as every document).
+
+### Session 23 — 2026-11-02 — Doctor notifications (WhatsApp first, email fallback)
+
+Design `docs/superpowers/specs/2026-11-02-notifications-design.md` (revised after a third-party
+audit, section 13); plan `docs/superpowers/plans/2026-11-02-notifications.md`. Built test-first on
+the local branch `feat/notifications-2026-11-02` (from `docs/notifications-design`), 22 commits
+before this documentation commit, **not pushed, nothing deployed, no Azure, AWS or Meta resource
+created, no real message sent.**
+
+- **New app `apps/notifications` (D193–D196):** `Notification` (UUID, `PROTECT`, CHECK and partial
+  unique constraints), ten events enqueued inside the change that triggers them
+  (`transition`, `set_payment_status`, the dues services), a single `apply_transition()` with the
+  fallback email created in the same transaction, `still_relevant()` at claim, one message table for
+  both channels (`templates.py`), `Doctor.whatsapp_opt_in*` columns (`doctors.0003`, add-only),
+  `audit.0005` (`WHATSAPP_OPT_IN_CHANGED`, `NOTIFICATION_RESENT`).
+- **Sender (D194, D197, D202):** `manage.py send_notifications` and the `notify` entrypoint mode:
+  expire, recover, delivery timeout, then email before WhatsApp with a 200-row and 240-second
+  budget, per-provider outage stop, `notify_run` summary, telemetry started before Django
+  (`manage.py`) and flushed on exit. Provider clients (`requests` for the Graph API, `boto3` for SES
+  v2) raise code-only errors; fakes are selected by `NOTIFICATION_PROVIDERS`.
+- **Webhook (D199):** signed `GET` handshake and `POST` applying delivery receipts, stop words and
+  the once-a-day help reply. Opt-in endpoint `/profile/notifications/` (D200). Admin history and
+  resend (`NOTIFICATION_CONFLICT`, `NOTIFICATION_NOT_RELEVANT`).
+- **Settings and infrastructure (D201):** modes `off` / `allowlist` / `live`, production refuses
+  unsafe combinations; `main.bicep` `enableNotifications` creates the `notify` job and the secret
+  references, `notification-alerts.bicep` four alert rules. Bicep builds only.
+- **Frontend:** `NotificationsPanel` on the admin application page, WhatsApp opt-in on the profile,
+  a dismissible prompt on the status page (per-doctor `localStorage` key).
+- **Logging filter** widened to 11+ digit runs, email addresses and Egyptian mobiles with
+  separators (`config/logging.py`, also covers telemetry).
+- **Documentation (Task 18):** `docs/api.md`, `security.md` (L3 and L4 extended to Meta and AWS,
+  marked as needing owner and legal sign-off), `azure-deployment.md` §11 runbook,
+  `local-development.md`, `architecture.md`, `database.md`.
+- **Checks (2026-11-02, final run):** backend `ruff check` and `format --check` clean,
+  `makemigrations --check` no changes, `spectacular --validate --fail-on-warn` OK, pytest
+  **1866 passed, 2 skipped** (Azurite not running) with 3 warnings that exist in the baseline
+  (baseline before this work: 1355 passed, 2 skipped); frontend `typecheck`, `lint --max-warnings 0`,
+  `rtl:check` 0 errors, vitest **397 passed** (49 files), `build` OK (existing >500 kB warning).
+  Task 18 added two tests for gaps in the spec's success list (an outage cannot block an admin
+  action; rows hold no phone, address or text).
+- **NOT VERIFIED — requires credentials:** everything that talks to Meta, AWS or Azure (Open
+  questions Q-N1–Q-N9). Task 14 (AWS federation) was not built.
+
+### Session 24 — 2026-11-04 — Email first, WhatsApp parked (D208–D210)
+
+Owner decision: Amazon SES is in production access and the sending domain is verified in
+`eu-north-1`; WhatsApp onboarding is stopped because the Meta business profile is unfinished. Email
+is the only channel in use and WhatsApp stays in the code behind a switch that is off. Built
+test-first on `feat/notifications-2026-11-02`; **not pushed, nothing deployed, no Azure, AWS or Meta
+resource created, no message sent.**
+
+- **Switch (D208):** `WHATSAPP_ENABLED`, default false, pinned true in test settings. Off:
+  `first_channel()` returns `EMAIL`; `whatsapp_available()` is false (UI hides itself, opting in is
+  refused, opting out works); a pending `WHATSAPP` row ends `FAILED/WHATSAPP_DISABLED` at claim with
+  no attempt and gets its fallback email; `run_once` runs the WhatsApp pass first so the fallback is
+  sent in the same run; no WhatsApp client is built.
+- **Production settings (D209):** the five `WHATSAPP_*` settings are required only with the switch
+  on; a sending mode with real providers requires `SES_REGION`, `SES_FROM_ADDRESS`,
+  `NOTIFICATION_BASE_URL`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (names in the error,
+  never values; goes away with Task 14).
+- **Bicep (D210):** `enableWhatsApp` (default false) gates the `whatsapp-*` references, the
+  `WHATSAPP_*` settings and `WHATSAPP_ENABLED`; `notifications-allowlist` only in `allowlist`;
+  `sesAccessKeyFromKeyVault` injects the two AWS key secrets into the app and the notify job only.
+  With `enableNotifications=false` the result is unchanged. `az bicep build` passes with the 5
+  baseline warnings. Not deployed.
+- **Admin panel:** Arabic text for `WHATSAPP_DISABLED`.
+- **Docs:** spec section 14 (and sections 4, 5), `azure-deployment.md` section 11 rewritten as an
+  email-only runbook with WhatsApp under "Later", `security.md` (WhatsApp/Meta parked, AWS L3/L4
+  pending).
+- **Checks (2026-11-04):** backend `ruff check` and `format --check` clean, `makemigrations --check`
+  no changes, `spectacular --validate --fail-on-warn` OK, pytest **1963 passed, 2 skipped** (Azurite
+  not running) with 3 baseline warnings; frontend `typecheck`, `lint`, `rtl:check` 0 errors, vitest
+  **403 passed** (49 files), `build` OK.
+- **NOT VERIFIED — requires Azure credentials** (and AWS ones): the Bicep output against a real
+  deployment, Key Vault references to missing secrets, SES sending with the stored key.
 
 ## Decisions
 
@@ -2041,6 +2131,105 @@ layout updated). Local only, branch `feat/syndicate-dues-2026-11-01` from
   the change 1–3 first-tests timed out per run). `configure({ asyncUtilTimeout: 3000 })` in the
   test setup changes only waiting time, never assertions; 3 consecutive full runs green.
 
+- **D193 — Providers are Meta WhatsApp Cloud API and Amazon SES (owner):** not Azure Communication
+  Services. Meta and AWS become recipients of phone numbers and addresses, so L3 and L4 in
+  `docs/security.md` are extended and need owner and legal sign-off before `live` in production.
+  SES is used through `boto3` in the selected Region; the Meta Graph version is a setting.
+- **D194 — The `notify` job is the only sender of event notifications:** `enqueue()` runs inside the
+  transaction of the change (committed together or not at all); no send after commit, so an admin
+  action never waits on or fails with a provider. Five minutes is the normal delay (cron `*/5`).
+  A fallback email created during a run is sent on the next run (ruling R9).
+- **D195 — One writer for status:** `apply_transition()` locks and re-reads the row, checks the
+  transition table, applies the change and creates the fallback email in one transaction; `attempts`
+  identifies the claim, so a stale send result is dropped and logged by notification ID. Lock order:
+  application, dues request, notification.
+- **D196 — Relevance at claim:** `still_relevant()` runs on every attempt, fallback and resend. An
+  obsolete correction, payment or dues request becomes `SUPERSEDED` with no fallback. Resend is
+  refused with 409 `NOTIFICATION_NOT_RELEVANT`, or `NOTIFICATION_CONFLICT` while a row for the same
+  event and dues request is active. The panel hides Resend on `SUPERSEDED`, `PENDING` and `SENDING`
+  rows (R19) and explains `error_code` only on `FAILED` and `EXPIRED` rows (R6).
+- **D197 — Unknown results go to email:** a WhatsApp send whose result is unknown (read timeout,
+  crash, `SEND_INTERRUPTED`) or that Meta refuses permanently falls back to email instead of
+  retrying WhatsApp; email retries the same cases because it is the last channel. Delivery is at
+  least once. Unclassified `BotoCoreError` and `RequestException` count as unknown (R7). The
+  mapping of Meta error codes is NOT VERIFIED.
+- **D198 — Rows and logs carry no personal content:** a row has the event, channel, status, IDs,
+  `error_code` and a masked recipient; no text, full phone or full address. An `error_code` that is
+  not a plain identifier becomes `SEND_ERROR` (R12). Logs allow only ID, event, channel, status,
+  error code and counts; clients raise code-only errors with `from None`. The masking filter now
+  covers 11+ digit runs, email addresses and mobiles with spaces or hyphens, in logs and telemetry.
+- **D199 — Webhook behaviour:** the signature is checked on the raw bytes before parsing; a blank
+  `WHATSAPP_PHONE_NUMBER_ID` makes it ignore everything (R14); a stop reply clears the opt-in in
+  every mode and is audited with no actor; any other message gets one help reply per 24 hours (the
+  stamp may be set even if the mode prevents sending, R15). Replies are the one provider call outside
+  the job, after commit, with short timeouts; any failure, including an unexpected exception, is
+  logged by code and never changes the 200 (R16).
+- **D200 — Consent:** opt-in has its own endpoint and service, usable while the profile is frozen;
+  changing the phone number clears it; existing doctors are not opted in and receive email.
+- **D201 — Modes and defaults:** `NOTIFICATIONS_MODE` is `off`, `allowlist` or `live` (blank means
+  `off`); `NOTIFICATION_PROVIDERS` is `fake` or `real` (blank means `fake`) (R17, R18). Production
+  refuses `live` with fakes or a missing provider setting. The job and the web app must share the
+  mode. `enableNotifications` is false by default; the WhatsApp settings are set whenever it is on.
+- **D202 — Outage handling:** email rows go first; success or a permanent provider error resets a
+  provider's streak, temporary, unknown and `SEND_ERROR` results add to it, a row with no address
+  leaves it; five in a row skip that provider for the rest of the run without using attempts
+  (R10, R11).
+- **D203 — AWS federation deferred (Task 14, R1, R8):** the credential source for SES is decided by
+  the phase 0b spike. Until then the default credential chain applies, with the spec's Key Vault
+  access key as the fallback. The credential-fetch time bound is open; a forced stop at
+  `replicaTimeout` ends in the `SEND_INTERRUPTED` path.
+- **D204 — Audit outcome:** findings F01 and F06 were not adopted and several were simplified
+  (spec section 13); the accepted duplicate-message cases are in spec section 5.
+- **D205 — Process:** `openapi.yaml` stays untracked, only `frontend/src/api/schema.d.ts` is
+  committed (R13); tests ran on a throwaway PostgreSQL 18 on port 55432 (R2); work happened on a
+  local branch in the main checkout, no worktree (R3); commit trailers name the model that wrote
+  each commit (R4).
+- **D206 — Final review fixes (Session 23):** (a) notification settings go to the app and the notify
+  job only (`notificationEnv`); migrate and cleanup stay `off`/`fake`, because production settings
+  refuse to import a sending mode without the secrets. (b) SES credential, identity and throttling
+  errors (`AccessDenied*`, `ExpiredToken`, `UnrecognizedClientException`, `InvalidClientTokenId`,
+  `ThrottlingException`, `MailFromDomainNotVerifiedException`, any 429) are temporary. On the email
+  channel a permanent error adds 1 to the outage streak (so five stop a run), except
+  `BadRequestException`, which is about one address and leaves the streak alone; WhatsApp permanent
+  errors still reset it because they reach email (amends D202). (c) `DUES_REQUESTED` and
+  `DUES_RECEIPT_REJECTED` are only relevant while the application is submitted, under review or
+  needs-correction. (d) Canonical UUIDs are never masked by the log filter; Egyptian mobiles with a
+  separator after the country code are masked; Django's `request` extra is dropped from the JSON.
+  (e) The GET of `/profile/notifications/` returns `whatsapp_available` (mode is `allowlist` or
+  `live`); opting in is refused otherwise, opting out is always allowed, and the UI hides the prompt
+  and (unless already opted in) the profile section. (f) WhatsApp `provider_message_id` is stored as
+  its SHA-256 hex digest because the `wamid` is believed to embed the number (NOT VERIFIED). (g) The
+  admin panel words each channel's errors on their own: WhatsApp rows say the message was moved to
+  email, an unknown email result says the send is unconfirmed. (h) A failed notify job exits 1 with
+  no traceback.
+- **D207 — Django's `request` extra never reaches Application Insights (Session 23):**
+  `TelemetryLogHandler` drops it on a copy of the record, because OpenTelemetry exports extras and
+  stringifies this one, query string included. This closes what D206(d) left open: a rejected
+  webhook handshake could export the presented verify token, and any 4xx or 5xx its query string.
+  Not checked against a real Application Insights resource.
+
+- **D208 — Email first, WhatsApp parked (Session 24):** `WHATSAPP_ENABLED` (default false) decides
+  routing; the code stays. A leftover `WHATSAPP` row fails with `WHATSAPP_DISABLED` at claim (no
+  attempt, before the allowlist check) and falls back to email through `apply_transition`. In
+  `run_once` the WhatsApp pass runs before the email pass while the switch is off, so the fallback
+  goes out in the same run.
+- **D209 — AWS access key is required until Task 14:** production refuses to start in a sending mode
+  with real providers when `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` is missing, because the
+  default boto3 chain is the only credential path and every email would end `FAILED/CREDENTIALS`.
+  Long-lived keys are the spec's fallback; rotate them; federation stays the preferred path.
+- **D210 — Bicep secrets are opt-in per feature (Session 24):** a missing Key Vault secret stops the
+  app, so `whatsapp-*`, `notifications-allowlist` and the AWS keys are referenced only when
+  `enableWhatsApp`, `notificationsMode=allowlist` and `sesAccessKeyFromKeyVault` ask for them.
+- **D211 — SES sending identity and key storage (2026-11-04):** IAM user `neqabacare-ses-sender`
+  (path `/service/`, no groups, no attached policies) holds one inline policy,
+  `ses-send-notifications-only`: `ses:SendEmail` on the one domain identity in `eu-north-1`, for the
+  one `notifications@` From address. Its key is stored only in `kvmedsyndevyoepoxdsywea2`, as
+  `aws-access-key-id` and `aws-secret-access-key`; both read back equal and the key authenticated
+  with STS. Rotate about every 90 days: create the new key first, update both secrets together,
+  restart, then delete the old key. Checked with `iam:SimulatePrincipalPolicy`, not with a real send.
+  The simulator needs `aws:RequestedRegion=eu-north-1` in its context: without it the project's
+  managed SCP gives `explicitDeny` even for the allowed case.
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -2117,6 +2306,7 @@ layout updated). Local only, branch `feat/syndicate-dues-2026-11-01` from
 | 70 | CLAUDE.md "migrations … expand/contract only" | `fees.0003` (expand) and `fees.0006` (contract) in the same, not yet deployed release | owner instruction 2026-10-24 to remove the legacy fields; D163 (old revision fails closed during the deploy window) |
 | 71 | PROMPT.md §42 / §55 "print view renders to an A4 PDF within two pages" | check removed with the feature; the print URLs are asserted not found | owner requirement 2026-10-28 (application printing retired; PROMPT.md updated) |
 | 72 | PROMPT.md §17.1 / §16 snapshots "never re-priced" (D161); CLAUDE.md "expand/contract only" | `fees.0008` re-prices every FY 2026 snapshot on v3 and deletes v2; `doctors.0002` contracts in the same release | owner requirement 2026-10-29 ("don't preserve previously submitted fee snapshots and historical totals"; PROMPT.md updated); D177, D181 |
+| 73 | CLAUDE.md and architecture: everything on Microsoft Azure; PROMPT.md has no notifications | WhatsApp through Meta and email through Amazon SES; the design document is the requirement | owner decision (spec header, D193); L3/L4 sign-off pending |
 
 ## Open questions
 
@@ -2257,19 +2447,87 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B35** May an admin revise a dues decision (a confirmed receipt, a cancellation)? Default: no —
   final; create a new request instead.
 
+- **Q-N1 — Task 14 and phase 0b deferred (D203):** the AWS federation (managed identity to an IAM
+  role) and spike 0b were not run; they need the owner's confirmation and a real AWS test. The
+  credential time bound of the default chain is open. `PartialCredentialsError` and
+  `TokenRetrievalError` currently become an unknown result, not a credentials code. Spike 0a (a
+  signed POST through the Static Web App `/api` proxy, and Meta's maximum payload against the 2 MiB
+  limit) is also open.
+- **Q-N2 — Telemetry gap for `cleanup` and `migrate` (existing):** from reading the code, they set
+  `OTEL_SERVICE_NAME` but never start telemetry, so their logs reach only the console. Not tested on
+  Azure and not part of this work.
+- **Q-N3 — Stop requests made outside WhatsApp:** Meta's policy also covers a phone call or an
+  email. The doctor has the profile checkbox, staff have no control. Decide whether they need one.
+- **Q-N4 — Cloudflare Email Routing:** `notifications@neqabacare.com` must reach a person, because
+  SES bounce and complaint feedback arrives there. Which mailbox, and whether Email Routing's MX
+  records conflict with the existing ones, are NOT VERIFIED.
+- **Q-N5 — Consent wording:** the opt-in text on the profile and the status-page prompt need the
+  owner's (and legal) review before phase 4.
+- **Q-N6 — NOT VERIFIED against Meta:** the mapping of Meta error codes (any permanent 4xx goes to
+  email), whether free-text stop and help replies are accepted in the customer-service window, the
+  footer length limit on templates, and the maximum webhook payload.
+- **Q-N7 — Alert rules NOT VERIFIED:** the four rules in `notification-alerts.bicep` build, but were
+  never deployed or fired; the `Microsoft.Insights/scheduledQueryRules` API version used
+  (`2026-03-01`) was not checked against Azure. Phase 3 must prove each alert end to end.
+- **Q-N8 — No browser check of the new screens:** the panel, the opt-in and the prompt were tested in
+  jsdom and with `rtl:check` only; no RTL layout or 375 px check.
+- **Q-N9 — Owner and legal gates:** L3 and L4 sign-off for Meta and AWS before `live`; retention
+  (12 months proposed, no purge implemented); the Meta business entity and display name; Meta's rate
+  for Egypt and the price of the 5-minute job; SES production access in the selected Region (the
+  sandbox was still on 2026-11-02); the `.bicepparam` files do not set the notification parameters,
+  so each environment's file needs them added (`docs/azure-deployment.md` section 11).
+- **Q-N10 — No specific alert for webhook signature failures:** a wrong app secret or a probe shows
+  only as 403s on the endpoint; none of the four alert rules covers it.
+- **Q-N11 — Dues rows look alike in the panel:** when an application has two dues requests, their
+  rows show the same event and cannot be told apart without the amount.
+- **Q-N12 — NOT VERIFIED against Meta:** the dues bodies place `{{2}}` before `{{1}}`; Meta may
+  reject that order. Check before the templates are submitted.
+- **Q-N13 — `allowlist` with blank providers uses fakes:** `NOTIFICATIONS_MODE=allowlist` with
+  `NOTIFICATION_PROVIDERS` blank or `fake` sends nothing real, though the doctor UI treats WhatsApp
+  as available.
+
+- **Q-N14 — AWS access key secrets: created for dev (D211).** They are in the dev vault only and
+  nothing reads them yet; `sesAccessKeyFromKeyVault=true` is still a deploy step. Any other vault
+  needs its own decision. Rotate about every 90 days.
+- **Q-N15 — Parked WhatsApp rows and webhook:** the webhook endpoint and its secrets are still part
+  of the app when the switch is off; with no `whatsapp-*` secrets the webhook handshake and stop
+  replies cannot work. Decide whether to hide the webhook route while parked.
+- **Q-N16 — Email suppression and bounces:** with email as the only channel, the SES suppression
+  list, bounce and complaint handling and the CloudWatch reputation alarms matter more (Q-N on
+  alarms is still open).
+
 ## Next session starts with
 
-**Session 22 (D186–D192, additional syndicate dues) is committed locally** on
-`feat/syndicate-dues-2026-11-01` (from `docs/dev-deploy-2026-10-30-align`, which still holds the
-unpushed Session 20/21 deploy notes). Not pushed, no PR, not deployed. Next:
-1. **Owner review** of the dues workflow and answers to Q-B33–Q-B35; then, on confirmation, push
-   the branch and open the PR (CI: backend, frontend, Playwright, image).
-2. **Deploy to dev** (needs the backend image + migrate job: `audit.0004`, `documents.0004`,
-   `dues.0001`, all expand-only; `documents.0004` briefly locks `documents_document` while the
-   slot index is rebuilt, 2s `lock_timeout`). Post-check: `/api/ready/`, reference data has
-   `dues_request_statuses`, then the owner smoke test: request dues on a submitted application,
-   upload as the member, reject → re-upload → confirm, approval appears only afterwards.
-3. Carry-over: the open items of the previous handoff below (owner answers Q-B30–Q-B32 and Q-T22,
+**Email is the only notification channel in use; WhatsApp is parked** (Session 24, D208–D210).
+The branch `feat/notifications-2026-11-02` holds the work (Sessions 23 and 24); nothing is pushed, no
+PR is open, nothing is deployed. Production settings need `NOTIFICATIONS_MODE`, `NOTIFICATION_PROVIDERS=real`,
+`SES_REGION`, `SES_FROM_ADDRESS`, `NOTIFICATION_BASE_URL` and the two AWS key variables;
+`WHATSAPP_ENABLED` stays unset. The sending identity `neqabacare-ses-sender` exists with its narrow
+policy, and its key is in the dev vault as `aws-access-key-id` and `aws-secret-access-key` (D211);
+no email has been sent with it and the Container App does not read it yet. Rotate about every 90
+days: create the new key first and update both secrets together. Next is the owner's review of the
+branch, then the owner gates, each needing explicit confirmation: push and PR; create
+`notifications-allowlist` for `allowlist` mode;
+deploy with `enableNotifications=true`, `sesAccessKeyFromKeyVault=true` and
+`notificationsMode=allowlist` for the dev trial (owner's address only); SES reputation alarms; the
+phase 0 spike on AWS federation (Task 14, which removes the stored key); `live` only after L3 and L4
+sign-off. Later, when the Meta business profile is complete: the WhatsApp steps in
+`docs/azure-deployment.md` section 11 ("Later: turning WhatsApp on"). Open items: Q-N1–Q-N16.
+
+Owner answers on 2026-11-03: the selected AWS Region is `eu-north-1`; NeqabaCare owns the WhatsApp
+business; the consent wording is approved; staff get no stop button. The Meta app, a WhatsApp test
+number, the alert email and the mailbox behind `notifications@` were supplied and are deliberately
+not recorded in Git. SES: production access granted (2026-11-04), the sending domain and custom MAIL
+FROM verified in `eu-north-1`, DMARC at `p=none`. The Cloudflare forward of `notifications@` is not
+yet tested with a real message.
+
+**Session 22 (D186–D192, additional syndicate dues) is merged (PR #14, `c056f3f`) and deployed to
+dev** (see "Session 22 (cont.)"); this deploy note is on the local branch
+`docs/dev-deploy-2026-11-01-dues`, not pushed. Next:
+1. **Owner smoke test on dev** (Entra sign-in): request dues on a submitted application, upload as
+   the member, reject → re-upload → confirm; approval appears only afterwards; the original
+   receipt and payment status stay as they were. Answers to Q-B33–Q-B35.
+2. Carry-over: the open items of the previous handoff below (owner answers Q-B30–Q-B32 and Q-T22,
    the owner smoke list on dev, Q-T24 SWA default domain, `docs/final-report.md` §16, staging
    checklist, Q-B23–Q-B25, Q-B28, Q-T21, legal L1–L8, required status checks D143).
 

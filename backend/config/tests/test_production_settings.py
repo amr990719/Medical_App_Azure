@@ -20,6 +20,28 @@ VALID_ENV = {
     "ENTRA_REDIRECT_URI": "https://app.example.test/api/v1/auth/callback/",
 }
 
+# Dummy values only: the real-provider settings a production notification mode needs.
+# Email-only (the default): SES plus the AWS credentials of the default boto3 chain.
+EMAIL_ONLY = {
+    "SES_REGION": "xx-test-1",
+    "SES_FROM_ADDRESS": "notifications@example.test",
+    "NOTIFICATION_BASE_URL": "https://app.example.test",
+    "AWS_ACCESS_KEY_ID": "dummy-aws-key-id",
+    "AWS_SECRET_ACCESS_KEY": "dummy-aws-secret",
+}
+# With the WhatsApp switch on, the five WhatsApp settings are needed as well.
+ALL = {
+    "WHATSAPP_ENABLED": "true",
+    "WHATSAPP_PHONE_NUMBER_ID": "111111111111111",
+    "WHATSAPP_API_VERSION": "v99.0",
+    "WHATSAPP_ACCESS_TOKEN": "dummy-whatsapp-access-token",
+    "WHATSAPP_APP_SECRET": "dummy-whatsapp-app-secret",
+    "WHATSAPP_VERIFY_TOKEN": "dummy-whatsapp-verify-token",
+    **EMAIL_ONLY,
+}
+REAL_PROVIDER_SETTINGS = tuple(ALL)
+WHATSAPP_SETTINGS = tuple(k for k in ALL if k.startswith("WHATSAPP_") and k != "WHATSAPP_ENABLED")
+
 
 def load_production(monkeypatch, **overrides):
     # The surrounding environment (e.g. the docker compose dev container) must not leak in.
@@ -30,7 +52,8 @@ def load_production(monkeypatch, **overrides):
         "DB_SSLMODE", "DB_CONN_MAX_AGE", "KEY_VAULT_URL", "APPLICATIONINSIGHTS_CONNECTION_STRING",
         "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_API_VERSION",
         "ENTRA_AUTHORITY", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "ENTRA_REDIRECT_URI",
-        "SECURE_HSTS_PRELOAD",
+        "SECURE_HSTS_PRELOAD", "NOTIFICATIONS_MODE", "NOTIFICATION_PROVIDERS",
+        "NOTIFICATIONS_ALLOWLIST", *REAL_PROVIDER_SETTINGS,
     )  # fmt: skip
     for key in inherited:
         monkeypatch.delenv(key, raising=False)
@@ -299,3 +322,156 @@ def test_trusted_proxy_count_is_configurable(monkeypatch):
     monkeypatch.setenv("TRUSTED_PROXY_COUNT", "1")
     prod = load_production(monkeypatch)
     assert prod.REST_FRAMEWORK["NUM_PROXIES"] == 1
+
+
+# --- Notifications (spec section 6) --------------------------------------------------------------
+
+
+def test_notifications_default_to_off(monkeypatch):
+    prod = load_production(monkeypatch)
+    assert prod.NOTIFICATIONS_MODE == "off"
+
+
+def test_blank_notifications_mode_means_off(monkeypatch):
+    prod = load_production(monkeypatch, NOTIFICATIONS_MODE="")
+    assert prod.NOTIFICATIONS_MODE == "off"
+
+
+def test_unknown_mode_is_refused(monkeypatch):
+    with pytest.raises(ImproperlyConfigured, match="NOTIFICATIONS_MODE") as refused:
+        load_production(monkeypatch, NOTIFICATIONS_MODE="on")
+    assert "'on'" not in str(refused.value)  # the value is never echoed
+
+
+def test_unknown_providers_value_is_refused(monkeypatch):
+    with pytest.raises(ImproperlyConfigured, match="NOTIFICATION_PROVIDERS"):
+        load_production(monkeypatch, NOTIFICATION_PROVIDERS="sandbox")
+
+
+def test_live_mode_refuses_fake_providers(monkeypatch):
+    with pytest.raises(ImproperlyConfigured, match="NOTIFICATION_PROVIDERS"):
+        load_production(
+            monkeypatch, NOTIFICATIONS_MODE="live", NOTIFICATION_PROVIDERS="fake", **ALL
+        )
+
+
+def test_live_mode_defaults_to_fake_providers_and_is_refused(monkeypatch):
+    with pytest.raises(ImproperlyConfigured, match="NOTIFICATION_PROVIDERS"):
+        load_production(monkeypatch, NOTIFICATIONS_MODE="live", **ALL)
+
+
+@pytest.mark.parametrize("mode", ["allowlist", "live"])
+@pytest.mark.parametrize("missing", [k for k in ALL if k != "WHATSAPP_ENABLED"])
+def test_real_providers_need_every_setting(monkeypatch, mode, missing):
+    with pytest.raises(ImproperlyConfigured, match=missing):
+        load_production(
+            monkeypatch,
+            NOTIFICATIONS_MODE=mode,
+            NOTIFICATION_PROVIDERS="real",
+            NOTIFICATIONS_ALLOWLIST="01012345678",
+            **{**ALL, missing: None},
+        )
+
+
+def test_allowlist_mode_needs_a_list(monkeypatch):
+    with pytest.raises(ImproperlyConfigured, match="NOTIFICATIONS_ALLOWLIST"):
+        load_production(
+            monkeypatch, NOTIFICATIONS_MODE="allowlist", NOTIFICATION_PROVIDERS="real", **ALL
+        )
+
+
+def test_allowlist_mode_with_fake_providers_needs_no_provider_settings(monkeypatch):
+    prod = load_production(
+        monkeypatch, NOTIFICATIONS_MODE="allowlist", NOTIFICATIONS_ALLOWLIST="01012345678"
+    )
+    assert prod.NOTIFICATIONS_MODE == "allowlist"
+    assert prod.NOTIFICATION_PROVIDERS == "fake"
+
+
+def test_off_mode_needs_no_provider_settings_even_with_real_providers(monkeypatch):
+    prod = load_production(monkeypatch, NOTIFICATIONS_MODE="off", NOTIFICATION_PROVIDERS="real")
+    assert prod.NOTIFICATIONS_MODE == "off"
+
+
+def test_live_with_real_providers_loads(monkeypatch):
+    prod = load_production(
+        monkeypatch, NOTIFICATIONS_MODE="live", NOTIFICATION_PROVIDERS="real", **ALL
+    )
+    assert (prod.NOTIFICATIONS_MODE, prod.NOTIFICATION_PROVIDERS) == ("live", "real")
+
+
+def test_notification_checks_never_call_a_provider(monkeypatch):
+    with (
+        mock.patch("apps.notifications.providers.get_whatsapp_client") as whatsapp,
+        mock.patch("apps.notifications.providers.get_email_client") as email,
+    ):
+        load_production(
+            monkeypatch, NOTIFICATIONS_MODE="live", NOTIFICATION_PROVIDERS="real", **ALL
+        )
+    whatsapp.assert_not_called()
+    email.assert_not_called()
+
+
+def test_a_migrate_or_cleanup_job_environment_loads_with_notifications_enabled_elsewhere(
+    monkeypatch,
+):
+    """Those jobs get no notification env and no notification secrets, so they stay off/fake."""
+    prod = load_production(monkeypatch)  # VALID_ENV only: what the migrate job is given
+    assert (prod.NOTIFICATIONS_MODE, prod.NOTIFICATION_PROVIDERS) == ("off", "fake")
+
+
+# --- Email-first operation (spec section 14) -----------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["allowlist", "live"])
+def test_email_only_loads_without_any_whatsapp_setting(monkeypatch, mode):
+    prod = load_production(
+        monkeypatch,
+        NOTIFICATIONS_MODE=mode,
+        NOTIFICATION_PROVIDERS="real",
+        NOTIFICATIONS_ALLOWLIST="someone@example.test",
+        **EMAIL_ONLY,
+    )
+    assert prod.WHATSAPP_ENABLED is False
+    assert prod.SES_REGION and prod.SES_FROM_ADDRESS and prod.NOTIFICATION_BASE_URL
+    assert not any(getattr(prod, name) for name in WHATSAPP_SETTINGS)
+
+
+@pytest.mark.parametrize("mode", ["allowlist", "live"])
+@pytest.mark.parametrize("missing", list(EMAIL_ONLY))
+def test_email_only_needs_each_ses_and_aws_setting(monkeypatch, mode, missing):
+    with pytest.raises(ImproperlyConfigured, match=missing) as refused:
+        load_production(
+            monkeypatch,
+            NOTIFICATIONS_MODE=mode,
+            NOTIFICATION_PROVIDERS="real",
+            NOTIFICATIONS_ALLOWLIST="someone@example.test",
+            **{**EMAIL_ONLY, missing: None},
+        )
+    for value in EMAIL_ONLY.values():
+        assert value not in str(refused.value)
+
+
+@pytest.mark.parametrize("missing", WHATSAPP_SETTINGS)
+def test_whatsapp_switch_on_still_needs_all_five_settings(monkeypatch, missing):
+    with pytest.raises(ImproperlyConfigured, match=missing) as refused:
+        load_production(
+            monkeypatch,
+            NOTIFICATIONS_MODE="live",
+            NOTIFICATION_PROVIDERS="real",
+            **{**ALL, missing: None},
+        )
+    for value in ALL.values():
+        assert value not in str(refused.value)
+
+
+def test_whatsapp_switch_on_loads_with_everything(monkeypatch):
+    prod = load_production(
+        monkeypatch, NOTIFICATIONS_MODE="live", NOTIFICATION_PROVIDERS="real", **ALL
+    )
+    assert prod.WHATSAPP_ENABLED is True
+
+
+def test_off_mode_needs_neither_aws_nor_whatsapp_settings(monkeypatch):
+    prod = load_production(monkeypatch, NOTIFICATIONS_MODE="off", NOTIFICATION_PROVIDERS="real")
+    assert prod.NOTIFICATIONS_MODE == "off"

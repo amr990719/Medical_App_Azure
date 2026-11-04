@@ -11,6 +11,8 @@ import {
   fetchAdminNotes,
   fetchAdminStats,
   fetchAudit,
+  fetchNotifications,
+  resendNotification,
   fetchFeeSchedules,
   reviewDuesReceipt,
   reviewPayment,
@@ -55,6 +57,7 @@ function useDetailUpdate(id: string) {
     queryClient.setQueryData(keys.application(id, false), detail);
     void queryClient.invalidateQueries({ queryKey: keys.application(id, true) });
     void queryClient.invalidateQueries({ queryKey: keys.audit(id) });
+    void queryClient.invalidateQueries({ queryKey: keys.notifications(id) });
     void queryClient.invalidateQueries({ queryKey: ["admin", "applications", "list"] });
     void queryClient.invalidateQueries({ queryKey: ["admin", "stats"] });
   };
@@ -104,6 +107,21 @@ export function useCancelDuesRequest(id: string) {
   return useMutation({
     mutationFn: ({ duesId, reason }: { duesId: string; reason: string }) => cancelDuesRequest(id, duesId, reason),
     onSuccess: onDetail,
+  });
+}
+
+export function useNotifications(id: string) {
+  return useQuery({ queryKey: keys.notifications(id), queryFn: () => fetchNotifications(id) });
+}
+
+export function useResendNotification(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (notificationId: string) => resendNotification(id, notificationId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.notifications(id) });
+      void queryClient.invalidateQueries({ queryKey: keys.audit(id) });
+    },
   });
 }
 

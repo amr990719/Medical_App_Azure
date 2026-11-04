@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.beneficiaries",
     "apps.documents",
     "apps.dues",
+    "apps.notifications",
     "apps.ocr",
     "apps.audit",
 ]
@@ -176,6 +177,7 @@ REST_FRAMEWORK = {
         "dev_login": "30/min",
         "uploads": env("UPLOAD_RATE_LIMIT", default="60/hour"),
         "ocr": env("OCR_RATE_LIMIT", default="30/hour"),
+        "notification_resend": env("NOTIFICATION_RESEND_RATE_LIMIT", default="30/hour"),
     },
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
@@ -249,3 +251,25 @@ ENTRA_ISSUER: str = env("ENTRA_ISSUER", default="")
 ENTRA_JWKS_URI: str = env("ENTRA_JWKS_URI", default="")
 # Decoded-image size cap (decompression-bomb guard), well below Pillow's own 89 MP warning.
 DOCUMENT_MAX_PIXELS: int = env.int("DOCUMENT_MAX_PIXELS", default=40_000_000)
+
+# --- Notifications (apps.notifications; docs/superpowers/specs/2026-11-02-notifications-design.md)
+# off = nothing is sent; allowlist = only NOTIFICATIONS_ALLOWLIST; live = everyone.
+# Production validates both values (settings/production.py).
+NOTIFICATIONS_MODE: str = env("NOTIFICATIONS_MODE", default="off")
+NOTIFICATION_PROVIDERS: str = env("NOTIFICATION_PROVIDERS", default="fake")  # fake | real
+NOTIFICATION_MAX_AGE_HOURS: int = env.int("NOTIFICATION_MAX_AGE_HOURS", default=72)
+WHATSAPP_DELIVERY_TIMEOUT_MINUTES: int = env.int("WHATSAPP_DELIVERY_TIMEOUT_MINUTES", default=30)
+NOTIFICATIONS_ALLOWLIST: list[str] = env.list("NOTIFICATIONS_ALLOWLIST", default=[])
+# Email is the main channel. WhatsApp stays in the code, parked behind this switch until the
+# Meta business profile is ready (spec section 14).
+WHATSAPP_ENABLED: bool = env.bool("WHATSAPP_ENABLED", default=False)
+WHATSAPP_PHONE_NUMBER_ID: str = env("WHATSAPP_PHONE_NUMBER_ID", default="")
+WHATSAPP_API_VERSION: str = env("WHATSAPP_API_VERSION", default="")
+WHATSAPP_ACCESS_TOKEN: str = env("WHATSAPP_ACCESS_TOKEN", default="")  # Key Vault reference
+WHATSAPP_APP_SECRET: str = env("WHATSAPP_APP_SECRET", default="")  # Key Vault reference
+WHATSAPP_VERIFY_TOKEN: str = env("WHATSAPP_VERIFY_TOKEN", default="")  # Key Vault reference
+SES_REGION: str = env("SES_REGION", default="")
+SES_FROM_ADDRESS: str = env("SES_FROM_ADDRESS", default="")
+NOTIFICATION_BASE_URL: str = env("NOTIFICATION_BASE_URL", default="")
+AWS_ROLE_ARN: str = env("AWS_ROLE_ARN", default="")
+AWS_WEB_IDENTITY_AUDIENCE: str = env("AWS_WEB_IDENTITY_AUDIENCE", default="")

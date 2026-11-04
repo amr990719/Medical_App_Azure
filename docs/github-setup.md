@@ -120,6 +120,7 @@ the operator's *Key Vault Secrets Officer* comes from the first-phase deployment
 | `CONTAINER_APP_NAME` | output `containerAppName` | backend, infrastructure (keeps the running image) |
 | `MIGRATE_JOB_NAME` | output `migrateJobName` | backend |
 | `CLEANUP_JOB_NAME` | output `cleanupJobName` | backend |
+| `NOTIFY_JOB_NAME` *(optional)* | output `notifyJobName`; set only where `enableNotifications` is on. When set, the deploy points the notify job at the new image; when unset, the step is skipped | backend |
 | `STATIC_WEB_APP_NAME` | output `staticWebAppName` | frontend |
 | `PUBLIC_HOSTNAME` *(optional)* | custom domain bound to the Static Web App | infrastructure |
 | `STATIC_WEB_APP_LOCATION` *(optional)* | default `westeurope` | infrastructure |

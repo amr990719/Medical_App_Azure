@@ -19,6 +19,7 @@ flowchart TB
         ACA["Azure Container Apps<br/>Django + DRF + Gunicorn<br/>BFF: session cookies"]
         JOB_M["Container Apps Job<br/>migrate (once per deploy)"]
         JOB_C["Container Apps Job<br/>blob cleanup (scheduled)"]
+        JOB_N["Container Apps Job<br/>notify (scheduled, only with enableNotifications)"]
         PG[("Azure Database for PostgreSQL<br/>Flexible Server<br/>Entra auth, TLS")]
         BLOB[("Blob Storage<br/>private container<br/>soft delete + versioning")]
         KV["Key Vault<br/>SECRET_KEY, Entra client secret"]
@@ -29,6 +30,8 @@ flowchart TB
     end
 
     ENTRA["Microsoft Entra External ID<br/>sign-up / sign-in / MFA (admins)"]
+    META["Meta WhatsApp Cloud API"]
+    SES["Amazon SES (AWS)"]
     GH["GitHub Actions (OIDC federated)"]
 
     D & A -- HTTPS --> SWA
@@ -41,6 +44,10 @@ flowchart TB
     ACA --> AI
     JOB_M --> PG
     JOB_C --> BLOB & PG
+    JOB_N --> PG
+    JOB_N -- "templates" --> META
+    JOB_N -- "fallback email" --> SES
+    META -- "signed webhook: receipts, stop replies" --> ACA
     MI -. "Blob Data Contributor · KV Secrets User · AcrPull · OpenAI User · PG Entra role" .-> ACA
     ACR --> ACA & JOB_M & JOB_C
     GH -- "frontend.yml" --> SWA
@@ -77,6 +84,7 @@ flowchart LR
         SVC --> STOR[documents/storage.py<br/>Blob abstraction, Azurite locally]
         SVC --> OCR[ocr/providers/<br/>mock · azure_openai]
         SVC --> AUD[audit/services.py<br/>append-only log]
+        SVC --> NOTI[notifications/services.py<br/>enqueue, claim, transitions]
     end
 
     API -- "/api/v1 JSON, snake_case" --> VIEWS
@@ -84,6 +92,31 @@ flowchart LR
 
 The frontend owns presentation only. Fees, validation, status transitions, document rules and
 reference data are computed on the server and fetched; the SPA never duplicates them.
+
+### Notifications (`apps/notifications`)
+
+Spec: `docs/superpowers/specs/2026-11-02-notifications-design.md`. A doctor is told about status,
+payment and dues changes on WhatsApp, or by email when WhatsApp is not opted in or fails.
+
+- **Enqueue inside the change:** `applications.services.transition`, `set_payment_status` and the
+  dues services call `notifications.services.enqueue()` in the transaction that already wraps the
+  change, so the change and its row commit together or not at all. Ten events, one row per channel
+  attempt chain.
+- **One writer:** every status change of a row goes through `apply_transition()`, which locks and
+  re-reads the row, applies a table of allowed changes and creates the fallback email in the same
+  transaction. `still_relevant()` runs at claim so an obsolete request is `SUPERSEDED`, not sent.
+- **Sender job:** `manage.py send_notifications` (Container Apps job `notify`, cron `*/5`) expires,
+  recovers and times out rows, then claims due rows with `select_for_update(skip_locked=True)` and
+  calls the provider **outside** any transaction. Admin requests never wait on a provider.
+- **Providers:** `providers.py` holds the WhatsApp (Graph API via `requests`) and SES v2 (`boto3`)
+  clients, which raise code-only errors; fakes are selected with `NOTIFICATION_PROVIDERS=fake`.
+- **Webhook:** `/api/v1/notifications/whatsapp/webhook/` verifies Meta's signature, applies delivery
+  receipts and handles stop and help replies (`webhook.py`, `inbound.py`). It is the one place the
+  web app calls a provider (the stop confirmation and help text).
+- **Modes:** `NOTIFICATIONS_MODE` is `off` (default), `allowlist` or `live`; the job and the web app
+  must share it. Production settings refuse `live` with missing provider settings or fakes.
+- **Delivery is at least once.** A doctor can occasionally get the same news twice, and accepted
+  email means the provider took it, not that it was read.
 
 ## 3. Key request flows
 
@@ -169,6 +202,7 @@ erDiagram
     INSURANCE_APPLICATION ||--o{ ADMIN_NOTE : "1:* (internal)"
     USER |o--o{ AUDIT_LOG : "actor"
     REFERENCE_COUNTER ||--o{ INSURANCE_APPLICATION : "MED-{fy}-{seq} at first submission"
+    INSURANCE_APPLICATION ||--o{ NOTIFICATION : "1:* (no message text stored)"
 ```
 
 All primary keys are UUIDs; every foreign key is `ON DELETE PROTECT`. Constraints that carry
