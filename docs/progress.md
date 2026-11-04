@@ -1524,6 +1524,39 @@ created, no real message sent.**
 - **NOT VERIFIED — requires credentials:** everything that talks to Meta, AWS or Azure (Open
   questions Q-N1–Q-N9). Task 14 (AWS federation) was not built.
 
+### Session 24 — 2026-11-04 — Email first, WhatsApp parked (D208–D210)
+
+Owner decision: Amazon SES is in production access and the sending domain is verified in
+`eu-north-1`; WhatsApp onboarding is stopped because the Meta business profile is unfinished. Email
+is the only channel in use and WhatsApp stays in the code behind a switch that is off. Built
+test-first on `feat/notifications-2026-11-02`; **not pushed, nothing deployed, no Azure, AWS or Meta
+resource created, no message sent.**
+
+- **Switch (D208):** `WHATSAPP_ENABLED`, default false, pinned true in test settings. Off:
+  `first_channel()` returns `EMAIL`; `whatsapp_available()` is false (UI hides itself, opting in is
+  refused, opting out works); a pending `WHATSAPP` row ends `FAILED/WHATSAPP_DISABLED` at claim with
+  no attempt and gets its fallback email; `run_once` runs the WhatsApp pass first so the fallback is
+  sent in the same run; no WhatsApp client is built.
+- **Production settings (D209):** the five `WHATSAPP_*` settings are required only with the switch
+  on; a sending mode with real providers requires `SES_REGION`, `SES_FROM_ADDRESS`,
+  `NOTIFICATION_BASE_URL`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (names in the error,
+  never values; goes away with Task 14).
+- **Bicep (D210):** `enableWhatsApp` (default false) gates the `whatsapp-*` references, the
+  `WHATSAPP_*` settings and `WHATSAPP_ENABLED`; `notifications-allowlist` only in `allowlist`;
+  `sesAccessKeyFromKeyVault` injects the two AWS key secrets into the app and the notify job only.
+  With `enableNotifications=false` the result is unchanged. `az bicep build` passes with the 5
+  baseline warnings. Not deployed.
+- **Admin panel:** Arabic text for `WHATSAPP_DISABLED`.
+- **Docs:** spec section 14 (and sections 4, 5), `azure-deployment.md` section 11 rewritten as an
+  email-only runbook with WhatsApp under "Later", `security.md` (WhatsApp/Meta parked, AWS L3/L4
+  pending).
+- **Checks (2026-11-04):** backend `ruff check` and `format --check` clean, `makemigrations --check`
+  no changes, `spectacular --validate --fail-on-warn` OK, pytest **1963 passed, 2 skipped** (Azurite
+  not running) with 3 baseline warnings; frontend `typecheck`, `lint`, `rtl:check` 0 errors, vitest
+  **403 passed** (49 files), `build` OK.
+- **NOT VERIFIED — requires Azure credentials** (and AWS ones): the Bicep output against a real
+  deployment, Key Vault references to missing secrets, SES sending with the stored key.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -2175,6 +2208,19 @@ created, no real message sent.**
   webhook handshake could export the presented verify token, and any 4xx or 5xx its query string.
   Not checked against a real Application Insights resource.
 
+- **D208 — Email first, WhatsApp parked (Session 24):** `WHATSAPP_ENABLED` (default false) decides
+  routing; the code stays. A leftover `WHATSAPP` row fails with `WHATSAPP_DISABLED` at claim (no
+  attempt, before the allowlist check) and falls back to email through `apply_transition`. In
+  `run_once` the WhatsApp pass runs before the email pass while the switch is off, so the fallback
+  goes out in the same run.
+- **D209 — AWS access key is required until Task 14:** production refuses to start in a sending mode
+  with real providers when `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` is missing, because the
+  default boto3 chain is the only credential path and every email would end `FAILED/CREDENTIALS`.
+  Long-lived keys are the spec's fallback; rotate them; federation stays the preferred path.
+- **D210 — Bicep secrets are opt-in per feature (Session 24):** a missing Key Vault secret stops the
+  app, so `whatsapp-*`, `notifications-allowlist` and the AWS keys are referenced only when
+  `enableWhatsApp`, `notificationsMode=allowlist` and `sesAccessKeyFromKeyVault` ask for them.
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -2431,28 +2477,37 @@ confirmed by the organization). Technical/environment questions for the user:
   `NOTIFICATION_PROVIDERS` blank or `fake` sends nothing real, though the doctor UI treats WhatsApp
   as available.
 
+- **Q-N14 — Owner still has to create the AWS access key secrets:** an IAM user limited to
+  `ses:SendEmail` on the one identity, then Key Vault secrets `aws-access-key-id` and
+  `aws-secret-access-key`, before `sesAccessKeyFromKeyVault=true`. Plan their rotation.
+- **Q-N15 — Parked WhatsApp rows and webhook:** the webhook endpoint and its secrets are still part
+  of the app when the switch is off; with no `whatsapp-*` secrets the webhook handshake and stop
+  replies cannot work. Decide whether to hide the webhook route while parked.
+- **Q-N16 — Email suppression and bounces:** with email as the only channel, the SES suppression
+  list, bounce and complaint handling and the CloudWatch reputation alarms matter more (Q-N on
+  alarms is still open).
+
 ## Next session starts with
 
-**Doctor notifications (WhatsApp first, email fallback) are built and not pushed** (Session 23,
-D193–D207). The branch `feat/notifications-2026-11-02` holds the work; nothing is pushed, no PR is
-open, nothing is deployed. Next is the owner's review of the branch, then the owner gates, each
-needing explicit confirmation: push and PR; phase 0 spikes (0a webhook through the SWA proxy, 0b AWS
-federation, which unblocks Task 14); phase 1 provider setup (SES domain and production access,
-Meta onboarding, templates); phase 3 dev trial in `allowlist` mode; phase 4 only after L3 and L4
-sign-off. Open items: Q-N1–Q-N13. Runbook: `docs/azure-deployment.md` section 11.
+**Email is the only notification channel in use; WhatsApp is parked** (Session 24, D208–D210).
+The branch `feat/notifications-2026-11-02` holds the work (Sessions 23 and 24); nothing is pushed, no
+PR is open, nothing is deployed. Production settings need `NOTIFICATIONS_MODE`, `NOTIFICATION_PROVIDERS=real`,
+`SES_REGION`, `SES_FROM_ADDRESS`, `NOTIFICATION_BASE_URL` and the two AWS key variables;
+`WHATSAPP_ENABLED` stays unset. Next is the owner's review of the branch, then the owner gates, each
+needing explicit confirmation: push and PR; create the AWS access key and the Key Vault secrets
+`aws-access-key-id` and `aws-secret-access-key` (Q-N14), plus `notifications-allowlist` for
+`allowlist` mode; deploy with `enableNotifications=true`, `sesAccessKeyFromKeyVault=true` and
+`notificationsMode=allowlist` for the dev trial (owner's address only); SES reputation alarms; the
+phase 0 spike on AWS federation (Task 14, which removes the stored key); `live` only after L3 and L4
+sign-off. Later, when the Meta business profile is complete: the WhatsApp steps in
+`docs/azure-deployment.md` section 11 ("Later: turning WhatsApp on"). Open items: Q-N1–Q-N16.
 
 Owner answers on 2026-11-03: the selected AWS Region is `eu-north-1`; NeqabaCare owns the WhatsApp
-business; the consent wording is approved; staff get no stop button (Q-N on stop requests outside
-WhatsApp: the doctor uses the profile checkbox). The Meta app, a WhatsApp test number (to be replaced
-later), the alert email and the mailbox behind `notifications@neqabacare.com` were supplied, and are
-deliberately not recorded in Git.
-
-Phase 1 progress on 2026-11-03: the SES domain identity for `neqabacare.com` passes the domain, DKIM
-and custom MAIL FROM (`bounce.neqabacare.com`) checks in `eu-north-1`, with DMARC at `p=none`.
-Cloudflare Email Routing forwards `notifications@` (not yet tested with a real message). SES
-production access was requested as transactional mail; check `Details.ReviewDetails.Status` with
-`aws sesv2 get-account`. Next: the review decision, CloudWatch reputation alarms, Meta onboarding and
-templates, and the phase 0 spikes.
+business; the consent wording is approved; staff get no stop button. The Meta app, a WhatsApp test
+number, the alert email and the mailbox behind `notifications@` were supplied and are deliberately
+not recorded in Git. SES: production access granted (2026-11-04), the sending domain and custom MAIL
+FROM verified in `eu-north-1`, DMARC at `p=none`. The Cloudflare forward of `notifications@` is not
+yet tested with a real message.
 
 **Session 22 (D186–D192, additional syndicate dues) is merged (PR #14, `c056f3f`) and deployed to
 dev** (see "Session 22 (cont.)"); this deploy note is on the local branch

@@ -1,7 +1,7 @@
 # Design: doctor notifications (WhatsApp first, email fallback)
 
 **Date:** 2026-11-02 (revised the same day after the third-party audit; see section 13)
-**Status:** awaiting owner review of this document
+**Status:** awaiting owner review of this document. Amended 2026-11-04: email is the main channel and WhatsApp is parked behind `WHATSAPP_ENABLED` (section 14).
 **Providers (owner decision):** Meta WhatsApp Cloud API and Amazon SES (not Azure Communication Services)
 
 ## 1. Goal
@@ -154,7 +154,11 @@ WhatsApp row that should have an email but does not, and a stale read cannot tur
 | `SENT` | WhatsApp receipt `failed`, or delivery timeout | `FAILED` | `error_code` set; email row |
 | `FAILED` | late WhatsApp `delivered` or `read` | `DELIVERED` | `delivered_at` set; an email already created still sends |
 
-The checks at claim run in the order listed, inside the claim transaction. `SENT` is final for
+| `PENDING` | WhatsApp only: `WHATSAPP_ENABLED` is off (section 14) | `FAILED` | no attempt used; `WHATSAPP_DISABLED`; email row |
+
+The checks at claim run in the order listed, inside the claim transaction. The `WHATSAPP_DISABLED`
+check runs right after the relevance check and before the allowlist check, so a parked WhatsApp row
+never reaches a client and its fallback email passes its own checks. `SENT` is final for
 email.
 
 **Recording a send result:** the result applies only if the row is still `SENDING` with the
@@ -175,6 +179,7 @@ A WhatsApp row ends as `FAILED` and gets a linked email row (`fallback_of`) in e
 | Trigger | `error_code` |
 |---|---|
 | Opt-in withdrawn or phone invalid at claim | `OPTED_OUT` |
+| `WHATSAPP_ENABLED` is off at claim (section 14) | `WHATSAPP_DISABLED` |
 | Meta returns a permanent error (4xx other than 429) | Meta's code |
 | Meta did not accept the message after 3 attempts (connection refused, connect timeout, 5xx, 429) | Meta's code or `CONNECT_FAILED` |
 | The request was sent but the result is unknown (read timeout, connection dropped) | `UNKNOWN_RESULT` |
@@ -558,3 +563,41 @@ design takes the smaller fix below.
 | F15 | Adopted | Production access in the phase 1 exit; `live` refuses fakes (sections 6, 12) |
 | F16 | Adopted | `expires_at` inherited by fallbacks; a resend sets it deliberately (section 5) |
 | F17 | Adopted | Separate safety and progress tests (section 12) |
+
+## 14. Email-first operation (owner decision, 2026-11-04)
+
+Amazon SES is in production (50,000 a day, 14 a second, the sending domain verified in the selected
+Region). WhatsApp onboarding is stopped because the Meta business profile is unfinished. Email is
+therefore the only channel in use. No WhatsApp code is deleted: it stays, switched off.
+
+**The switch.** `WHATSAPP_ENABLED` (bool, default `false`; pinned `true` in test settings so the
+WhatsApp tests keep their meaning).
+
+**What changes while it is off:**
+
+- `first_channel()` returns `EMAIL` for every doctor, whatever their opt-in.
+- `whatsapp_available()` is false, so the API reports `whatsapp_available: false`, the status-page
+  prompt and the profile section hide themselves, and opting in is refused. Opting out stays allowed.
+- A `WHATSAPP` row still `PENDING` (created before the switch went off) is not lost. At claim,
+  right after the relevance check and before the allowlist check, it becomes `FAILED` with
+  `WHATSAPP_DISABLED`, uses no attempt, and gets its fallback email through `apply_transition`.
+  The email row then passes its own checks (allowlist included). No WhatsApp client is built.
+- `run_once` runs the WhatsApp pass first (it only settles leftovers), then the email pass, so the
+  fallback goes out in the same run.
+- Production settings require `SES_REGION`, `SES_FROM_ADDRESS` and `NOTIFICATION_BASE_URL` for a
+  sending mode with real providers, and the five `WHATSAPP_*` settings only when the switch is on.
+- Task 14 (federation) is not built, so the default boto3 chain is the only credential path. With a
+  sending mode and real providers production also requires `AWS_ACCESS_KEY_ID` and
+  `AWS_SECRET_ACCESS_KEY` and refuses to start without them (naming the setting, never a value).
+  This check goes away with Task 14. Long-lived keys are the spec's fallback and should be rotated;
+  federation remains the preferred path.
+- Bicep: `enableWhatsApp` (default `false`) controls the `whatsapp-*` Key Vault references, the
+  `WHATSAPP_*` plain settings and `WHATSAPP_ENABLED`. `notifications-allowlist` is referenced only
+  in `allowlist` mode. `sesAccessKeyFromKeyVault` (default `false`) injects `aws-access-key-id` and
+  `aws-secret-access-key` as environment variables, for the app and the notify job only.
+
+**Turning WhatsApp on later:** finish the Meta setup (section 12 phase 1), create the three
+`whatsapp-*` secrets, deploy with `enableWhatsApp=true` and the phone number ID and API version, and
+the app starts with `WHATSAPP_ENABLED=true`. Doctors are then asked for consent again from the
+status page. Everything in sections 5 to 8 applies as written. Nothing here is verified against
+Azure, AWS or Meta (`NOT VERIFIED`).

@@ -254,59 +254,74 @@ first (`az cognitiveservices model list -l <region>`). Disabling: unset `ENABLE_
 (the account is no longer referenced; delete it with `az cognitiveservices account delete` and
 purge it if the data must go).
 
-## 11. Enabling doctor notifications (WhatsApp, with email fallback)
+## 11. Enabling doctor notifications (email now, WhatsApp later)
 
-Design: `docs/superpowers/specs/2026-11-02-notifications-design.md`. Everything here is **NOT
-VERIFIED on Azure, AWS and Meta**: the Bicep builds, but no environment has been deployed with
-`enableNotifications`. Creating Azure, AWS or Meta resources and sending a real message each need
-the owner's confirmation at that step. Production also needs legal decisions L3 and L4
-(`docs/security.md`) before `notificationsMode=live`.
+Design: `docs/superpowers/specs/2026-11-02-notifications-design.md` (section 14 for the email-first
+decision of 2026-11-04). Everything here is **NOT VERIFIED — requires Azure credentials** (and AWS
+and Meta ones): the Bicep builds, but no environment has been deployed with `enableNotifications`.
+Creating Azure, AWS or Meta resources and sending a real message each need the owner's
+confirmation at that step. Production also needs legal decisions L3 and L4 (`docs/security.md`)
+before `notificationsMode=live`.
 
-Phases:
+**Email only is the supported setup.** Amazon SES is the only channel in use. WhatsApp is parked
+behind `WHATSAPP_ENABLED` (off by default) until the Meta business profile is finished; its steps
+are in "Later: turning WhatsApp on" below.
+
+### Email only
 
 | Phase | Work | Done when |
 |---|---|---|
-| 0 | Spikes on dev: (a) a signed webhook POST through the Static Web App `/api` proxy keeps the header and raw body (if not, Meta calls the Container App address directly); (b) credentials from the job's managed identity to AWS | both answered and written down |
-| 1 | Provider setup: SES domain identity (DKIM, custom MAIL FROM, DMARC; Cloudflare records DNS only), a monitored `notifications@` mailbox, SES production access in the selected Region, Meta business and number, webhook subscription to `statuses` and `messages`, the 10 templates approved | domain verified, production access approved, templates approved |
+| 1 | SES: sending domain verified (DKIM, custom MAIL FROM, DMARC; Cloudflare records DNS only), a monitored `notifications@` mailbox, production access in the selected Region | domain verified, production access granted |
 | 2 | Deploy the code (this repository) with `enableNotifications=false` | migrate job succeeded |
-| 3 | Dev trial (entry: Task 14 done, or an AWS access-key secret provisioned; the Bicep cannot inject AWS keys today, so without one of those every email ends `FAILED`): `enableNotifications=true`, `notificationsMode=allowlist` with the owner's numbers | each event seen on a device or inbox, a real stop and help reply work, a provider failure reaches each alert, a paused job raises the missed-run alert |
-| 4 | Production: L3 and L4 signed off, phase 1 confirmed for production, then `notificationsMode=live` | owner decision |
+| 3 | Dev trial: `enableNotifications=true`, `notificationsMode=allowlist` with the owner's address only | each event seen in an inbox, a provider failure reaches each alert, a paused job raises the missed-run alert |
+| 4 | Production: L3 and L4 signed off, then `notificationsMode=live` | owner decision |
 
-**The four Key Vault secrets must exist before `enableNotifications=true`.** The Container Apps
-secret references are Key Vault references, so a missing secret is expected to stop the app and the
-job from starting (NOT VERIFIED). Names only here,
-values never in Git or the shell history (write them from a 0600 temp file as in step 4):
+**Credentials.** Federation (Task 14) is not built, so the app and the notify job read an AWS access
+key from the environment. Production settings refuse to start in `allowlist` or `live` with real
+providers when `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` is missing, and the message names the
+setting, never a value. **Long-lived keys are the spec's fallback**: use an IAM user limited to
+`ses:SendEmail` on the one identity, rotate the key on a schedule, and move to federation (Task 14,
+the preferred path) when it exists.
 
-| Secret | Holds |
-|---|---|
-| `whatsapp-access-token` | the Meta system-user token |
-| `whatsapp-app-secret` | the Meta app secret (webhook signature) |
-| `whatsapp-verify-token` | the string you give Meta for the webhook handshake |
-| `notifications-allowlist` | comma-separated numbers and addresses allowed in `allowlist` mode (may hold a single placeholder in `live`) |
+**Key Vault secrets that must exist before `enableNotifications=true`.** The Container Apps secret
+references are Key Vault references, so a missing secret is expected to stop the app and the job
+from starting (NOT VERIFIED). Names only here; values never in Git or the shell history (write
+them from a 0600 temp file as in step 4):
 
-Deploy parameters of `infrastructure/main.bicep` (the `.bicepparam` files do not set them yet, so
-add them to the environment's file; non-secret values only):
+| Secret | Needed when | Holds |
+|---|---|---|
+| `aws-access-key-id` | `sesAccessKeyFromKeyVault=true` | the AWS access key ID |
+| `aws-secret-access-key` | `sesAccessKeyFromKeyVault=true` | the AWS secret access key |
+| `notifications-allowlist` | `notificationsMode=allowlist` only | comma-separated addresses allowed in `allowlist` mode |
+
+In `off` and `live` nothing references `notifications-allowlist`, and no `whatsapp-*` secret is
+referenced unless `enableWhatsApp=true`.
+
+Deploy parameters of `infrastructure/main.bicep` (the `.bicepparam` files do not set them, so add
+them to the environment's file or pass them at deploy time; non-secret values only):
 
 | Parameter | Meaning |
 |---|---|
 | `enableNotifications` | default `false`; creates the `notify` job and the settings and secret references on the app and the job |
 | `notificationsMode` | `off` (default), `allowlist` or `live`; set on the app and the `notify` job only. The `migrate` and `cleanup` jobs get none of the notification settings or secrets and stay at `off`/`fake`, because production settings refuse to import with a sending mode and no secrets |
+| `sesAccessKeyFromKeyVault` | default `false`; `true` injects `aws-access-key-id` and `aws-secret-access-key` as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` on the app and the notify job only. Required in practice until Task 14 exists |
+| `sesRegion`, `sesFromAddress` | SES identity Region and sender address |
+| `notificationBaseUrl` | link base in messages; empty uses the public host |
 | `notifyCron` | UTC cron of the job, default `*/5 * * * *` |
 | `alertEmail` | when set, deploys the four alert rules (failed or expired notification, oldest due row over 30 minutes, no `notify_run` in 15 minutes, job failed). Pass at deploy time; not committed |
-| `whatsappPhoneNumberId`, `whatsappApiVersion` | Meta sender and pinned Graph API version |
-| `sesRegion`, `sesFromAddress` | SES identity Region and sender address |
-| `awsRoleArn`, `awsWebIdentityAudience` | IAM role and audience for the federation, **NOT VERIFIED** (Task 14 is deferred; until it is done, email needs the access-key fallback described in the spec §10) |
-| `notificationBaseUrl` | link base in messages; empty uses the public host |
-| `notificationMaxAgeHours`, `whatsappDeliveryTimeoutMinutes`, `notificationResendRateLimit` | optional; left blank the application defaults (72 h, 30 min, 30/hour) apply |
+| `awsRoleArn`, `awsWebIdentityAudience` | IAM role and audience for the federation, **NOT VERIFIED** (Task 14 is deferred; leave blank) |
+| `notificationMaxAgeHours`, `notificationResendRateLimit` | optional; left blank the application defaults (72 h, 30/hour) apply |
+| `enableWhatsApp` | default `false`; leave it off (see "Later") |
 
 Notes before enabling:
 
 - A blank `alertEmail` deploys **no alert rules**; set it for any trial that matters.
 - While `enableNotifications=false` no job runs, but rows keep building up from status changes. The
   first enable can therefore produce a burst of `EXPIRED` warnings for old rows.
-- The doctor-facing consent (status-page prompt and profile section) only appears when
-  `whatsapp_available` is true, that is in `allowlist` or `live`. With `notificationsMode=off`
-  nobody is asked to consent, and opting in is refused by the API.
+- With WhatsApp parked, `whatsapp_available` is false: nobody is asked for WhatsApp consent, and
+  opting in is refused by the API. Opting out still works.
+- Any `WHATSAPP` row left `PENDING` from before ends `FAILED/WHATSAPP_DISABLED` at its next claim
+  and is replaced by an email row.
 
 After a deploy with the flag on, set `NOTIFY_JOB_NAME` (output `notifyJobName`) as the GitHub
 variable so `backend.yml` updates the job's image (`docs/github-setup.md`).
@@ -314,9 +329,29 @@ variable so `backend.yml` updates the job's image (`docs/github-setup.md`).
 **Stopping sending.** Set `NOTIFICATIONS_MODE=off` on **both the `notify` job and the web app**
 (`notificationsMode=off` and redeploy, or edit the variable on both). Status changes keep working,
 rows wait and expire (72 h by default), and after resuming each row passes the relevance check
-before it sends. The web app also sends the stop confirmation and help reply, so changing only the
-job leaves those running. A WhatsApp stop reply still clears a doctor's opt-in in `off` mode.
-Switching `enableNotifications` back to `false` removes the job, which is the heavier option.
+before it sends. Switching `enableNotifications` back to `false` removes the job, which is the
+heavier option.
+
+### Later: turning WhatsApp on (not active)
+
+Do this only after the Meta business profile is complete. All **NOT VERIFIED — requires Azure
+credentials** (and Meta ones).
+
+1. Meta: business and number, webhook subscription to `statuses` and `messages`, the 10 templates
+   approved. Spike on dev: a signed webhook POST through the Static Web App `/api` proxy keeps the
+   header and raw body (if not, Meta calls the Container App address directly).
+2. Key Vault secrets (names only): `whatsapp-access-token` (the Meta system-user token),
+   `whatsapp-app-secret` (webhook signature), `whatsapp-verify-token` (the string given to Meta for
+   the webhook handshake). They must exist before the next step.
+3. Deploy with `enableWhatsApp=true`, `whatsappPhoneNumberId` and `whatsappApiVersion` (and
+   optionally `whatsappDeliveryTimeoutMinutes`, default 30). This sets `WHATSAPP_ENABLED=true` and
+   injects the three secrets and the `WHATSAPP_*` settings on the app and the notify job. Production
+   settings then require all five `WHATSAPP_*` settings.
+4. Trial in `allowlist` mode with the owner's numbers: each event on a device, a real stop and help
+   reply, a provider failure reaches each alert. While `notificationsMode=off`, a WhatsApp stop
+   reply still clears a doctor's opt-in and the web app still sends the stop confirmation and help
+   reply.
+5. Production: L3 and L4 signed off, then `notificationsMode=live`.
 
 ## Deployment-time migrations (§37)
 
