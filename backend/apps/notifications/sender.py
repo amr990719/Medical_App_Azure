@@ -146,7 +146,9 @@ def _send_channel(
 def run_once(
     *, now: datetime | None = None, clock: Callable[[], float] = time.monotonic
 ) -> RunSummary:
-    """Expire, recover, time out, send (email first, then WhatsApp), then log the summary.
+    """Expire, recover, time out, send, then log the summary.
+
+    Sending runs email then WhatsApp, or WhatsApp then email while WhatsApp is parked.
 
     Only `allowlist` and `live` send; any other mode (`off`, or a value nobody recognises)
     runs just the expiry sweep and the summary.
