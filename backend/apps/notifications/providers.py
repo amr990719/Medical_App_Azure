@@ -44,6 +44,9 @@ SES_TEMPORARY_CODES = frozenset(
         "ExpiredToken",
         "UnrecognizedClientException",
         "InvalidClientTokenId",
+        # A mismatched key pair (for example mid-rotation) fails every message the same way.
+        "SignatureDoesNotMatch",
+        "IncompleteSignature",
     }
 )
 

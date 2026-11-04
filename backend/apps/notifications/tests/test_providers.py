@@ -287,6 +287,8 @@ def test_ses_account_level_errors_are_temporary(ses, code):
         "InvalidClientTokenId",
         "ThrottlingException",
         "MailFromDomainNotVerifiedException",
+        "SignatureDoesNotMatch",
+        "IncompleteSignature",
     ],
 )
 def test_ses_credential_and_throttle_errors_are_temporary(ses, code):
