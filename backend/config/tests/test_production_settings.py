@@ -21,17 +21,26 @@ VALID_ENV = {
 }
 
 # Dummy values only: the real-provider settings a production notification mode needs.
+# Email-only (the default): SES plus the AWS credentials of the default boto3 chain.
+EMAIL_ONLY = {
+    "SES_REGION": "xx-test-1",
+    "SES_FROM_ADDRESS": "notifications@example.test",
+    "NOTIFICATION_BASE_URL": "https://app.example.test",
+    "AWS_ACCESS_KEY_ID": "dummy-aws-key-id",
+    "AWS_SECRET_ACCESS_KEY": "dummy-aws-secret",
+}
+# With the WhatsApp switch on, the five WhatsApp settings are needed as well.
 ALL = {
+    "WHATSAPP_ENABLED": "true",
     "WHATSAPP_PHONE_NUMBER_ID": "111111111111111",
     "WHATSAPP_API_VERSION": "v99.0",
     "WHATSAPP_ACCESS_TOKEN": "dummy-whatsapp-access-token",
     "WHATSAPP_APP_SECRET": "dummy-whatsapp-app-secret",
     "WHATSAPP_VERIFY_TOKEN": "dummy-whatsapp-verify-token",
-    "SES_REGION": "xx-test-1",
-    "SES_FROM_ADDRESS": "notifications@example.test",
-    "NOTIFICATION_BASE_URL": "https://app.example.test",
+    **EMAIL_ONLY,
 }
 REAL_PROVIDER_SETTINGS = tuple(ALL)
+WHATSAPP_SETTINGS = tuple(k for k in ALL if k.startswith("WHATSAPP_") and k != "WHATSAPP_ENABLED")
 
 
 def load_production(monkeypatch, **overrides):
@@ -352,7 +361,7 @@ def test_live_mode_defaults_to_fake_providers_and_is_refused(monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["allowlist", "live"])
-@pytest.mark.parametrize("missing", list(ALL))
+@pytest.mark.parametrize("missing", [k for k in ALL if k != "WHATSAPP_ENABLED"])
 def test_real_providers_need_every_setting(monkeypatch, mode, missing):
     with pytest.raises(ImproperlyConfigured, match=missing):
         load_production(
@@ -409,3 +418,60 @@ def test_a_migrate_or_cleanup_job_environment_loads_with_notifications_enabled_e
     """Those jobs get no notification env and no notification secrets, so they stay off/fake."""
     prod = load_production(monkeypatch)  # VALID_ENV only: what the migrate job is given
     assert (prod.NOTIFICATIONS_MODE, prod.NOTIFICATION_PROVIDERS) == ("off", "fake")
+
+
+# --- Email-first operation (spec section 14) -----------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["allowlist", "live"])
+def test_email_only_loads_without_any_whatsapp_setting(monkeypatch, mode):
+    prod = load_production(
+        monkeypatch,
+        NOTIFICATIONS_MODE=mode,
+        NOTIFICATION_PROVIDERS="real",
+        NOTIFICATIONS_ALLOWLIST="someone@example.test",
+        **EMAIL_ONLY,
+    )
+    assert prod.WHATSAPP_ENABLED is False
+    assert prod.SES_REGION and prod.SES_FROM_ADDRESS and prod.NOTIFICATION_BASE_URL
+    assert not any(getattr(prod, name) for name in WHATSAPP_SETTINGS)
+
+
+@pytest.mark.parametrize("mode", ["allowlist", "live"])
+@pytest.mark.parametrize("missing", list(EMAIL_ONLY))
+def test_email_only_needs_each_ses_and_aws_setting(monkeypatch, mode, missing):
+    with pytest.raises(ImproperlyConfigured, match=missing) as refused:
+        load_production(
+            monkeypatch,
+            NOTIFICATIONS_MODE=mode,
+            NOTIFICATION_PROVIDERS="real",
+            NOTIFICATIONS_ALLOWLIST="someone@example.test",
+            **{**EMAIL_ONLY, missing: None},
+        )
+    for value in EMAIL_ONLY.values():
+        assert value not in str(refused.value)
+
+
+@pytest.mark.parametrize("missing", WHATSAPP_SETTINGS)
+def test_whatsapp_switch_on_still_needs_all_five_settings(monkeypatch, missing):
+    with pytest.raises(ImproperlyConfigured, match=missing) as refused:
+        load_production(
+            monkeypatch,
+            NOTIFICATIONS_MODE="live",
+            NOTIFICATION_PROVIDERS="real",
+            **{**ALL, missing: None},
+        )
+    for value in ALL.values():
+        assert value not in str(refused.value)
+
+
+def test_whatsapp_switch_on_loads_with_everything(monkeypatch):
+    prod = load_production(
+        monkeypatch, NOTIFICATIONS_MODE="live", NOTIFICATION_PROVIDERS="real", **ALL
+    )
+    assert prod.WHATSAPP_ENABLED is True
+
+
+def test_off_mode_needs_neither_aws_nor_whatsapp_settings(monkeypatch):
+    prod = load_production(monkeypatch, NOTIFICATIONS_MODE="off", NOTIFICATION_PROVIDERS="real")
+    assert prod.NOTIFICATIONS_MODE == "off"

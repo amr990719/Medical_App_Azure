@@ -158,7 +158,12 @@ def run_once(
     if settings.NOTIFICATIONS_MODE in SENDING_MODES:
         summary.recovered = services.recover_stuck(now=now)
         summary.timed_out = services.apply_delivery_timeout(now=now)
-        for channel in (NotificationChannel.EMAIL, NotificationChannel.WHATSAPP):
+        channels = (NotificationChannel.EMAIL, NotificationChannel.WHATSAPP)
+        if not settings.WHATSAPP_ENABLED:
+            # Parked: the WhatsApp pass only settles leftover rows (they fail without a client
+            # call and create their fallback email), so it must run before the email pass.
+            channels = channels[::-1]
+        for channel in channels:
             _send_channel(channel, now=now, summary=summary, clock=clock, started=started)
     summary.oldest_due_age_seconds = services.oldest_due_age_seconds(now=now)
     logger.info("notify_run", extra=asdict(summary))

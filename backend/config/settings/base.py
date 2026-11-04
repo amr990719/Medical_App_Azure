@@ -260,6 +260,9 @@ NOTIFICATION_PROVIDERS: str = env("NOTIFICATION_PROVIDERS", default="fake")  # f
 NOTIFICATION_MAX_AGE_HOURS: int = env.int("NOTIFICATION_MAX_AGE_HOURS", default=72)
 WHATSAPP_DELIVERY_TIMEOUT_MINUTES: int = env.int("WHATSAPP_DELIVERY_TIMEOUT_MINUTES", default=30)
 NOTIFICATIONS_ALLOWLIST: list[str] = env.list("NOTIFICATIONS_ALLOWLIST", default=[])
+# Email is the main channel. WhatsApp stays in the code, parked behind this switch until the
+# Meta business profile is ready (spec section 14).
+WHATSAPP_ENABLED: bool = env.bool("WHATSAPP_ENABLED", default=False)
 WHATSAPP_PHONE_NUMBER_ID: str = env("WHATSAPP_PHONE_NUMBER_ID", default="")
 WHATSAPP_API_VERSION: str = env("WHATSAPP_API_VERSION", default="")
 WHATSAPP_ACCESS_TOKEN: str = env("WHATSAPP_ACCESS_TOKEN", default="")  # Key Vault reference

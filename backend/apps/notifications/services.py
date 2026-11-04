@@ -64,8 +64,13 @@ E = NotificationEvent
 
 
 def first_channel(doctor) -> str:
-    """WhatsApp when the doctor opted in and the phone is a valid mobile, otherwise email."""
-    if doctor.whatsapp_opt_in and is_valid_mobile(doctor.phone_number):
+    """WhatsApp when the switch is on, the doctor opted in and the phone is a valid mobile,
+    otherwise email (always email while `WHATSAPP_ENABLED` is off)."""
+    if (
+        settings.WHATSAPP_ENABLED
+        and doctor.whatsapp_opt_in
+        and is_valid_mobile(doctor.phone_number)
+    ):
         return NotificationChannel.WHATSAPP
     return NotificationChannel.EMAIL
 
@@ -267,6 +272,7 @@ def apply_transition(
 MAX_ATTEMPTS = 3
 RETRY_DELAYS = {1: timedelta(minutes=5), 2: timedelta(minutes=15)}
 OPTED_OUT = "OPTED_OUT"
+WHATSAPP_DISABLED = "WHATSAPP_DISABLED"
 UNKNOWN_RESULT = "UNKNOWN_RESULT"
 
 
@@ -328,6 +334,10 @@ def _claim_one(channel: str, now: datetime) -> tuple[bool, Claim | None]:
             return refuse(S.EXPIRED)
         if not still_relevant(row):
             return refuse(S.SUPERSEDED)
+        if channel == NotificationChannel.WHATSAPP and not settings.WHATSAPP_ENABLED:
+            # Parked channel: fail with no attempt; the fallback email row is created by the
+            # transition and then passes its own checks.
+            return refuse(S.FAILED, error_code=WHATSAPP_DISABLED)
         recipient = _recipient(row)
         if settings.NOTIFICATIONS_MODE == "allowlist" and not _allowlisted(row, recipient):
             return refuse(S.SUPPRESSED)

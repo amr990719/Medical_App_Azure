@@ -11,7 +11,15 @@ from django.core.exceptions import ImproperlyConfigured
 from config.secrets import load_secrets
 
 from .base import *  # noqa: F403
-from .base import DATABASES, LOGGING, MIDDLEWARE, NOTIFICATIONS_ALLOWLIST, REST_FRAMEWORK, env
+from .base import (
+    DATABASES,
+    LOGGING,
+    MIDDLEWARE,
+    NOTIFICATIONS_ALLOWLIST,
+    REST_FRAMEWORK,
+    WHATSAPP_ENABLED,
+    env,
+)
 
 MIN_SECRET_KEY_LENGTH = 50
 ENTRA_TOKEN_MAX_CONN_AGE = 1800  # seconds; below the lifetime of an Entra access token
@@ -129,16 +137,20 @@ if NOTIFICATIONS_MODE == "allowlist" and not NOTIFICATIONS_ALLOWLIST:
         "NOTIFICATIONS_ALLOWLIST must be set when NOTIFICATIONS_MODE=allowlist."
     )
 if NOTIFICATIONS_MODE != "off" and NOTIFICATION_PROVIDERS == "real":
-    for _name in (
-        "WHATSAPP_PHONE_NUMBER_ID",
-        "WHATSAPP_API_VERSION",
-        "WHATSAPP_ACCESS_TOKEN",
-        "WHATSAPP_APP_SECRET",
-        "WHATSAPP_VERIFY_TOKEN",
-        "SES_REGION",
-        "SES_FROM_ADDRESS",
-        "NOTIFICATION_BASE_URL",
-    ):
+    _required_notification_settings = ["SES_REGION", "SES_FROM_ADDRESS", "NOTIFICATION_BASE_URL"]
+    # Federation (Task 14) is not built, so the default boto3 chain reads these two from the
+    # environment. Without them every email would end FAILED/CREDENTIALS. This check goes away
+    # with Task 14.
+    _required_notification_settings += ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+    if WHATSAPP_ENABLED:
+        _required_notification_settings += [
+            "WHATSAPP_PHONE_NUMBER_ID",
+            "WHATSAPP_API_VERSION",
+            "WHATSAPP_ACCESS_TOKEN",
+            "WHATSAPP_APP_SECRET",
+            "WHATSAPP_VERIFY_TOKEN",
+        ]
+    for _name in _required_notification_settings:
         _require(_name)
 
 API_DOCS_ENABLED = env.bool("API_DOCS_ENABLED", default=False)

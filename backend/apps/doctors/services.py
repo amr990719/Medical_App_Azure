@@ -97,8 +97,9 @@ def update_profile(doctor: Doctor, *, actor, changes: dict) -> Doctor:
 
 
 def whatsapp_available() -> bool:
-    """WhatsApp messages can only go out in a sending mode; consent is not collected before."""
-    return settings.NOTIFICATIONS_MODE in SENDING_MODES
+    """WhatsApp consent is collected only while the channel is switched on (`WHATSAPP_ENABLED`)
+    and the mode actually sends."""
+    return settings.WHATSAPP_ENABLED and settings.NOTIFICATIONS_MODE in SENDING_MODES
 
 
 @transaction.atomic
