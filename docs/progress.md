@@ -1567,12 +1567,15 @@ Deployed to dev by `infrastructure.yml` (run `41849338442`, image `c5958d0`, 14:
   `*/5 * * * *` and its first two scheduled executions (14:45 and 14:50 UTC) Succeeded; one `notify_run` trace per execution from role
   `medical-notify` reached Application Insights (all counts 0), so telemetry from the job works.
 - **Not proven:** a real send, allowlist suppression, the failure and expiry paths (no doctor event
-  has happened, so every count is 0); SES `SentLast24Hours` was 0. No email was sent by this work.
+  has happened, so every count was 0 at that point); SES `SentLast24Hours` was 0 then. Superseded by the
+  owner's real email test later the same day, below.
 - **Open:** (1) `ALERT_EMAIL` wiring: `infrastructure.yml` calls the reusable workflow without passing
-  the environment secret, so no `scheduledQueryRules` or action group exist on dev; fix through a PR.
+  the environment secret, so no `scheduledQueryRules` or action group exist on dev. Fix: `secrets: inherit`
+  on the four calling jobs (PR `fix/notification-alert-secret`), **awaiting merge and proof by a deploy**
+  (the what-if must show the action group and four alert rules as creates).
   (2) The Azure subscription ID is printed in public workflow logs (from before this work); decide
-  how to mask or stop printing it. (3) `notify_run` carries no `suppressed` count or oldest-due age
-  property; the counts are expired, recovered, timed_out, attempted, sent, retried, failed, unknown,
+  how to mask or stop printing it. (3) `notify_run` carries no `suppressed` count; the oldest-due age property
+  `oldest_due_age_seconds` appears only while a row is waiting (it is null otherwise); the counts are expired, recovered, timed_out, attempted, sent, retried, failed, unknown,
   skipped_channels. Check the alert queries against those names.
 - A push touching `infrastructure/**` redeploys these same settings; that is intended.
 
@@ -2518,11 +2521,14 @@ confirmed by the organization). Technical/environment questions for the user:
 ## Next session starts with
 
 **Notifications run on dev in `allowlist` mode (email only), deployed 2026-11-04 (run
-`41849338442`, image `c5958d0`); see "Session 24 (cont.)".** The `notify` job runs every 5 minutes
-and its `notify_run` trace reaches Application Insights. Next, in order: (1) fix the `ALERT_EMAIL`
-wiring through a PR so the alert rules deploy (a push touching `infrastructure/**` redeploys the
-same settings, as intended); (2) the owner triggers one real event for the allowlisted address and
-we check `notify_run` sent=1, the SES `SentLast24Hours` and the mailbox; (3) stop the public logs
+`41849338442`, image `c5958d0`); see "Session 24 (cont.)". The owner's real email test on dev on
+2026-11-04 worked: the emails reached the owner's inbox, and the job's `notify_run` telemetry recorded
+4 sent and no `notification_failed` traces. Still unproven: bounce handling, allowlist suppression on
+Azure, DKIM, SPF and DMARC results from the raw headers, and each alert actually firing. The
+`ALERT_EMAIL` fix (`secrets: inherit`) is awaiting merge and proof by a deploy.** The `notify` job runs every 5 minutes
+and its `notify_run` trace reaches Application Insights. Next, in order: (1) merge the `ALERT_EMAIL`
+fix PR and confirm by the deploy's what-if (action group and four alert rules as creates, no delete or replace) (a push touching `infrastructure/**` redeploys the
+same settings, as intended); (2) done 2026-11-04: the owner's real test sent 4 emails to the inbox (see above); (3) stop the public logs
 printing the Azure subscription ID; (4) the gates in the paragraph below (the sub-points about
 allowlist and deploy are now done). Nothing from this note is pushed: this branch is local.
 
@@ -2532,7 +2538,7 @@ PR is open, nothing is deployed. Production settings need `NOTIFICATIONS_MODE`, 
 `SES_REGION`, `SES_FROM_ADDRESS`, `NOTIFICATION_BASE_URL` and the two AWS key variables;
 `WHATSAPP_ENABLED` stays unset. The sending identity `neqabacare-ses-sender` exists with its narrow
 policy, and its key is in the dev vault as `aws-access-key-id` and `aws-secret-access-key` (D211);
-no email has been sent with it and the Container App does not read it yet. Rotate about every 90
+when this was written no email had been sent with it and the Container App did not read it yet (both changed on 2026-11-04: it now sends on dev). Rotate about every 90
 days: create the new key first and update both secrets together. Next is the owner's review of the
 branch, then the owner gates, each needing explicit confirmation: push and PR; create
 `notifications-allowlist` for `allowlist` mode;
