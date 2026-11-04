@@ -2220,6 +2220,15 @@ resource created, no message sent.**
 - **D210 — Bicep secrets are opt-in per feature (Session 24):** a missing Key Vault secret stops the
   app, so `whatsapp-*`, `notifications-allowlist` and the AWS keys are referenced only when
   `enableWhatsApp`, `notificationsMode=allowlist` and `sesAccessKeyFromKeyVault` ask for them.
+- **D211 — SES sending identity and key storage (2026-11-04):** IAM user `neqabacare-ses-sender`
+  (path `/service/`, no groups, no attached policies) holds one inline policy,
+  `ses-send-notifications-only`: `ses:SendEmail` on the one domain identity in `eu-north-1`, for the
+  one `notifications@` From address. Its key is stored only in `kvmedsyndevyoepoxdsywea2`, as
+  `aws-access-key-id` and `aws-secret-access-key`; both read back equal and the key authenticated
+  with STS. Rotate about every 90 days: create the new key first, update both secrets together,
+  restart, then delete the old key. Checked with `iam:SimulatePrincipalPolicy`, not with a real send.
+  The simulator needs `aws:RequestedRegion=eu-north-1` in its context: without it the project's
+  managed SCP gives `explicitDeny` even for the allowed case.
 
 ## Deviations from PROMPT.md
 
@@ -2477,9 +2486,9 @@ confirmed by the organization). Technical/environment questions for the user:
   `NOTIFICATION_PROVIDERS` blank or `fake` sends nothing real, though the doctor UI treats WhatsApp
   as available.
 
-- **Q-N14 — Owner still has to create the AWS access key secrets:** an IAM user limited to
-  `ses:SendEmail` on the one identity, then Key Vault secrets `aws-access-key-id` and
-  `aws-secret-access-key`, before `sesAccessKeyFromKeyVault=true`. Plan their rotation.
+- **Q-N14 — AWS access key secrets: created for dev (D211).** They are in the dev vault only and
+  nothing reads them yet; `sesAccessKeyFromKeyVault=true` is still a deploy step. Any other vault
+  needs its own decision. Rotate about every 90 days.
 - **Q-N15 — Parked WhatsApp rows and webhook:** the webhook endpoint and its secrets are still part
   of the app when the switch is off; with no `whatsapp-*` secrets the webhook handshake and stop
   replies cannot work. Decide whether to hide the webhook route while parked.
@@ -2493,10 +2502,13 @@ confirmed by the organization). Technical/environment questions for the user:
 The branch `feat/notifications-2026-11-02` holds the work (Sessions 23 and 24); nothing is pushed, no
 PR is open, nothing is deployed. Production settings need `NOTIFICATIONS_MODE`, `NOTIFICATION_PROVIDERS=real`,
 `SES_REGION`, `SES_FROM_ADDRESS`, `NOTIFICATION_BASE_URL` and the two AWS key variables;
-`WHATSAPP_ENABLED` stays unset. Next is the owner's review of the branch, then the owner gates, each
-needing explicit confirmation: push and PR; create the AWS access key and the Key Vault secrets
-`aws-access-key-id` and `aws-secret-access-key` (Q-N14), plus `notifications-allowlist` for
-`allowlist` mode; deploy with `enableNotifications=true`, `sesAccessKeyFromKeyVault=true` and
+`WHATSAPP_ENABLED` stays unset. The sending identity `neqabacare-ses-sender` exists with its narrow
+policy, and its key is in the dev vault as `aws-access-key-id` and `aws-secret-access-key` (D211);
+no email has been sent with it and the Container App does not read it yet. Rotate about every 90
+days: create the new key first and update both secrets together. Next is the owner's review of the
+branch, then the owner gates, each needing explicit confirmation: push and PR; create
+`notifications-allowlist` for `allowlist` mode;
+deploy with `enableNotifications=true`, `sesAccessKeyFromKeyVault=true` and
 `notificationsMode=allowlist` for the dev trial (owner's address only); SES reputation alarms; the
 phase 0 spike on AWS federation (Task 14, which removes the stored key); `live` only after L3 and L4
 sign-off. Later, when the Meta business profile is complete: the WhatsApp steps in

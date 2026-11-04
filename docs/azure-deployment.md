@@ -280,7 +280,7 @@ are in "Later: turning WhatsApp on" below.
 key from the environment. Production settings refuse to start in `allowlist` or `live` with real
 providers when `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` is missing, and the message names the
 setting, never a value. **Long-lived keys are the spec's fallback**: use an IAM user limited to
-`ses:SendEmail` on the one identity, rotate the key on a schedule, and move to federation (Task 14,
+`ses:SendEmail` on the one identity, rotate the key about every 90 days, and move to federation (Task 14,
 the preferred path) when it exists. To rotate: create the new key first, then update both Key Vault
 secrets (`aws-access-key-id` and `aws-secret-access-key`) together and restart; a mismatched pair
 fails every send as a temporary `SignatureDoesNotMatch` or `IncompleteSignature` until fixed. Delete
