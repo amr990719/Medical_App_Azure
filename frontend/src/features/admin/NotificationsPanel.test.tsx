@@ -108,6 +108,12 @@ describe("NotificationsPanel", () => {
     expect(screen.queryByText(/فأُرسل/)).not.toBeInTheDocument();
   });
 
+  it("explains that WhatsApp is switched off and the message moved to email", async () => {
+    await show([row({ id: "a", status: "FAILED", error_code: "WHATSAPP_DISABLED" })]);
+    const li = await waitFor(() => item());
+    expect(within(li).getByText("واتساب غير مفعّل حاليًا، فحُوّل إلى البريد.")).toBeInTheDocument();
+  });
+
   it("never claims an email was sent when its result is unknown", async () => {
     await show([row({ channel: "EMAIL", status: "FAILED", error_code: "UNKNOWN_RESULT" })]);
     const li = await waitFor(() => item());

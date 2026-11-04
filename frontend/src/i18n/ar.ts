@@ -242,6 +242,7 @@ export const ar = {
       // A WhatsApp row only hands over to email; whether the email went out is its own row.
       whatsappErrors: {
         OPTED_OUT: "لم يفعّل العضو رسائل واتساب، وحُوّل إلى البريد.",
+        WHATSAPP_DISABLED: "واتساب غير مفعّل حاليًا، فحُوّل إلى البريد.",
         NO_DELIVERY_RECEIPT: "لم يصل تأكيد التسليم خلال المهلة، وحُوّل إلى البريد.",
         UNKNOWN_RESULT: "نتيجة الإرسال غير معروفة، وحُوّل إلى البريد.",
       },
