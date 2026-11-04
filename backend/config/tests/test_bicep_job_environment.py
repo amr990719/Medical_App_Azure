@@ -37,3 +37,41 @@ def test_the_notification_settings_are_not_in_the_shared_settings():
     main = MAIN.read_text(encoding="utf-8")
     assert "settings: union(baseSettings, telemetrySettings, ocrSettings)" in main
     assert "notificationEnv: notificationSettings" in main
+
+
+# --- Email-first operation: each secret group appears only when its feature is on -------------
+
+
+def _module() -> str:
+    return MODULE.read_text(encoding="utf-8")
+
+
+def test_whatsapp_references_exist_only_with_enable_whatsapp():
+    source = _module()
+    assert "var whatsAppSecrets = enableNotifications && enableWhatsApp" in source
+    assert "var whatsAppEnv = enableNotifications && enableWhatsApp" in source
+    assert "enableWhatsApp bool = false" in MAIN.read_text(encoding="utf-8")
+
+
+def test_the_allowlist_reference_exists_only_in_allowlist_mode():
+    source = _module()
+    assert (
+        "var allowlistSecrets = enableNotifications && notificationsMode == 'allowlist'" in source
+    )
+    assert "var allowlistEnv = enableNotifications && notificationsMode == 'allowlist'" in source
+
+
+def test_the_aws_keys_are_opt_in_and_reach_only_the_app_and_the_notify_job():
+    source = _module()
+    assert "var awsKeyEnv = enableNotifications && sesAccessKeyFromKeyVault" in source
+    for container in ("migrate", "cleanup"):
+        env = _container_env(source, container)
+        assert "AWS_" not in env and "awsKey" not in env
+    assert "sesAccessKeyFromKeyVault bool = false" in MAIN.read_text(encoding="utf-8")
+
+
+def test_whatsapp_plain_settings_and_the_switch_are_gated():
+    main = MAIN.read_text(encoding="utf-8")
+    block = main[main.index("var whatsAppSettings") : main.index("var notificationSettings")]
+    assert "enableWhatsApp" in block and "WHATSAPP_ENABLED: 'true'" in block
+    assert block.count("WHATSAPP_") == 4  # the switch plus three plain settings, all gated

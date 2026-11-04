@@ -61,8 +61,14 @@ param enablePrivateNetworking bool = false
 @description('Send Key Vault, Blob and PostgreSQL resource logs to Log Analytics.')
 param enableDiagnostics bool = true
 
-@description('Create the notify job, give the app and the job the WhatsApp settings and secrets, and (with alertEmail) deploy the alert rules. The Key Vault secrets whatsapp-access-token, whatsapp-app-secret, whatsapp-verify-token and notifications-allowlist must exist first.')
+@description('Create the notify job, give the app and the job the notification settings, and (with alertEmail) deploy the alert rules. Email (Amazon SES) is the channel in use. With sesAccessKeyFromKeyVault the Key Vault secrets aws-access-key-id and aws-secret-access-key must exist first; notificationsMode allowlist also needs notifications-allowlist. The WhatsApp secrets are needed only with enableWhatsApp.')
 param enableNotifications bool = false
+
+@description('Turn the parked WhatsApp channel on (sets WHATSAPP_ENABLED and injects the WHATSAPP_* settings). When true the Key Vault secrets whatsapp-access-token, whatsapp-app-secret and whatsapp-verify-token must exist first. Off by default: email only.')
+param enableWhatsApp bool = false
+
+@description('Inject the Key Vault secrets aws-access-key-id and aws-secret-access-key as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (app and notify job only). Long-lived keys are the fallback until OIDC federation (Task 14) exists; rotate them. The secrets must exist first.')
+param sesAccessKeyFromKeyVault bool = false
 
 @description('off = rows accumulate and expire, nothing is sent; allowlist = only NOTIFICATIONS_ALLOWLIST; live = everyone. The app and the notify job always share it.')
 @allowed([
@@ -422,19 +428,25 @@ var ocrSettings = enableOcr
   : {}
 
 // Plain settings for notifications. On whenever enableNotifications is true, in every mode
-// including 'off', so the app still honours a WhatsApp stop reply.
-// Optional values are left out when blank rather than set to an empty string.
-var optionalNotificationSettings = {
-  WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId
-  WHATSAPP_API_VERSION: whatsappApiVersion
+// including 'off'. The WHATSAPP_* ones exist only with enableWhatsApp (the channel is parked
+// otherwise). Optional values are left out when blank rather than set to an empty string.
+var whatsAppSettings = enableWhatsApp
+  ? {
+      WHATSAPP_ENABLED: 'true'
+      WHATSAPP_PHONE_NUMBER_ID: whatsappPhoneNumberId
+      WHATSAPP_API_VERSION: whatsappApiVersion
+      WHATSAPP_DELIVERY_TIMEOUT_MINUTES: whatsappDeliveryTimeoutMinutes
+    }
+  : {}
+
+var optionalNotificationSettings = union(whatsAppSettings, {
   SES_REGION: sesRegion
   SES_FROM_ADDRESS: sesFromAddress
   AWS_ROLE_ARN: awsRoleArn
   AWS_WEB_IDENTITY_AUDIENCE: awsWebIdentityAudience
   NOTIFICATION_MAX_AGE_HOURS: notificationMaxAgeHours
-  WHATSAPP_DELIVERY_TIMEOUT_MINUTES: whatsappDeliveryTimeoutMinutes
   NOTIFICATION_RESEND_RATE_LIMIT: notificationResendRateLimit
-}
+})
 
 var notificationSettings = enableNotifications
   ? union(
@@ -475,6 +487,9 @@ module app 'modules/container-app.bicep' = if (deployApplication) {
     httpConcurrency: httpConcurrency
     cleanupCron: cleanupCron
     enableNotifications: enableNotifications
+    enableWhatsApp: enableWhatsApp
+    notificationsMode: notificationsMode
+    sesAccessKeyFromKeyVault: sesAccessKeyFromKeyVault
     notifyCron: notifyCron
   }
   dependsOn: [

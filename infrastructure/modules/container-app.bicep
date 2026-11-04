@@ -5,7 +5,8 @@
 //            app's image is updated (replicas never migrate).
 //   cleanup  scheduled job, `cleanup`: removes soft-deleted / orphaned blobs after the grace period.
 //   notify   scheduled job, `notify` (only with enableNotifications): sends doctor notifications.
-//            The WhatsApp secrets go to the app and this job only, never to migrate or cleanup.
+//            The notification secrets (AWS keys, allowlist, WhatsApp when enabled) go to the app
+//            and this job only, never to migrate or cleanup.
 // Secrets are Key Vault references resolved with the user-assigned identity (versionless URLs,
 // refreshed by the platform); nothing secret is a template parameter except the App Insights
 // connection string, which is stored as a Container Apps secret rather than a plain variable.
@@ -51,8 +52,22 @@ param httpConcurrency int = 20
 @description('Cron (UTC) for the blob cleanup job.')
 param cleanupCron string = '30 1 * * *'
 
-@description('Create the notify job and give it, and the app, the WhatsApp Key Vault secrets (which must exist first).')
+@description('Create the notify job and give it, and the app, the notification Key Vault references (the secrets must exist first).')
 param enableNotifications bool = false
+
+@description('WhatsApp is parked unless true: only then are the whatsapp-* Key Vault references injected.')
+param enableWhatsApp bool = false
+
+@description('The notifications mode. The notifications-allowlist reference exists only for allowlist.')
+@allowed([
+  'off'
+  'allowlist'
+  'live'
+])
+param notificationsMode string = 'off'
+
+@description('Inject aws-access-key-id and aws-secret-access-key as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (app and notify job only). Fallback until federation (Task 14).')
+param sesAccessKeyFromKeyVault bool = false
 
 @description('Cron (UTC) for the notify job.')
 param notifyCron string = '*/5 * * * *'
@@ -95,8 +110,36 @@ var secretEnv = [
 ]
 
 // Key Vault references for notifications. Only the app (webhook replies) and the notify job get
-// them; `secrets` and `secretEnv` stay as they are for migrate and cleanup.
-var notificationSecrets = enableNotifications
+// them; `secrets` and `secretEnv` stay as they are for migrate and cleanup. Each group exists
+// only when its feature is on: the AWS keys with sesAccessKeyFromKeyVault, the allowlist only in
+// allowlist mode, the WhatsApp ones only with enableWhatsApp. A missing Key Vault secret stops
+// the app, so nothing is referenced that is not needed.
+var awsKeySecrets = enableNotifications && sesAccessKeyFromKeyVault
+  ? [
+      {
+        name: 'aws-access-key-id'
+        keyVaultUrl: '${keyVaultUri}secrets/aws-access-key-id'
+        identity: identityId
+      }
+      {
+        name: 'aws-secret-access-key'
+        keyVaultUrl: '${keyVaultUri}secrets/aws-secret-access-key'
+        identity: identityId
+      }
+    ]
+  : []
+
+var allowlistSecrets = enableNotifications && notificationsMode == 'allowlist'
+  ? [
+      {
+        name: 'notifications-allowlist'
+        keyVaultUrl: '${keyVaultUri}secrets/notifications-allowlist'
+        identity: identityId
+      }
+    ]
+  : []
+
+var whatsAppSecrets = enableNotifications && enableWhatsApp
   ? [
       {
         name: 'whatsapp-access-token'
@@ -113,15 +156,34 @@ var notificationSecrets = enableNotifications
         keyVaultUrl: '${keyVaultUri}secrets/whatsapp-verify-token'
         identity: identityId
       }
+    ]
+  : []
+
+var notificationSecrets = concat(awsKeySecrets, allowlistSecrets, whatsAppSecrets)
+
+var awsKeyEnv = enableNotifications && sesAccessKeyFromKeyVault
+  ? [
       {
-        name: 'notifications-allowlist'
-        keyVaultUrl: '${keyVaultUri}secrets/notifications-allowlist'
-        identity: identityId
+        name: 'AWS_ACCESS_KEY_ID'
+        secretRef: 'aws-access-key-id'
+      }
+      {
+        name: 'AWS_SECRET_ACCESS_KEY'
+        secretRef: 'aws-secret-access-key'
       }
     ]
   : []
 
-var notificationSecretEnv = enableNotifications
+var allowlistEnv = enableNotifications && notificationsMode == 'allowlist'
+  ? [
+      {
+        name: 'NOTIFICATIONS_ALLOWLIST'
+        secretRef: 'notifications-allowlist'
+      }
+    ]
+  : []
+
+var whatsAppEnv = enableNotifications && enableWhatsApp
   ? [
       {
         name: 'WHATSAPP_ACCESS_TOKEN'
@@ -135,12 +197,10 @@ var notificationSecretEnv = enableNotifications
         name: 'WHATSAPP_VERIFY_TOKEN'
         secretRef: 'whatsapp-verify-token'
       }
-      {
-        name: 'NOTIFICATIONS_ALLOWLIST'
-        secretRef: 'notifications-allowlist'
-      }
     ]
   : []
+
+var notificationSecretEnv = concat(awsKeyEnv, allowlistEnv, whatsAppEnv)
 
 var plainEnv = [for item in items(settings): { name: item.key, value: string(item.value) }]
 var notificationPlainEnv = [for item in items(notificationEnv): { name: item.key, value: string(item.value) }]
