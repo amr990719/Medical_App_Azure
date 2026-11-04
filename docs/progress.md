@@ -1557,6 +1557,25 @@ resource created, no message sent.**
 - **NOT VERIFIED — requires Azure credentials** (and AWS ones): the Bicep output against a real
   deployment, Key Vault references to missing secrets, SES sending with the stored key.
 
+### Session 24 (cont.) — 2026-11-04 — Notifications on dev in allowlist mode
+
+Deployed to dev by `infrastructure.yml` (run `41849338442`, image `c5958d0`, 14:44 UTC):
+`NOTIFICATIONS_MODE=allowlist`, email only, `WHATSAPP_*` unset. Read-only checks afterwards:
+
+- **Proven:** health 200 and the revision healthy; the app and the `caj-medsyn-dev-notify` job carry
+  the 8 notification env names and no `WHATSAPP_*`; migrate and cleanup carry none; the job runs on
+  `*/5 * * * *` and its scheduled executions Succeeded; a `notify_run` trace from role
+  `medical-notify` reached Application Insights (all counts 0), so telemetry from the job works.
+- **Not proven:** a real send, allowlist suppression, the failure and expiry paths (no doctor event
+  has happened, so every count is 0); SES `SentLast24Hours` was 0. No email was sent by this work.
+- **Open:** (1) `ALERT_EMAIL` wiring: `infrastructure.yml` calls the reusable workflow without passing
+  the environment secret, so no `scheduledQueryRules` or action group exist on dev; fix through a PR.
+  (2) The Azure subscription ID is printed in public workflow logs (from before this work); decide
+  how to mask or stop printing it. (3) `notify_run` carries no `suppressed` count or oldest-due age
+  property; the counts are expired, recovered, timed_out, attempted, sent, retried, failed, unknown,
+  skipped_channels. Check the alert queries against those names.
+- A push touching `infrastructure/**` redeploys these same settings; that is intended.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -2497,6 +2516,15 @@ confirmed by the organization). Technical/environment questions for the user:
   alarms is still open).
 
 ## Next session starts with
+
+**Notifications run on dev in `allowlist` mode (email only), deployed 2026-11-04 (run
+`41849338442`, image `c5958d0`); see "Session 24 (cont.)".** The `notify` job runs every 5 minutes
+and its `notify_run` trace reaches Application Insights. Next, in order: (1) fix the `ALERT_EMAIL`
+wiring through a PR so the alert rules deploy (a push touching `infrastructure/**` redeploys the
+same settings, as intended); (2) the owner triggers one real event for the allowlisted address and
+we check `notify_run` sent=1, the SES `SentLast24Hours` and the mailbox; (3) stop the public logs
+printing the Azure subscription ID; (4) the gates in the paragraph below (the sub-points about
+allowlist and deploy are now done). Nothing from this note is pushed: this branch is local.
 
 **Email is the only notification channel in use; WhatsApp is parked** (Session 24, D208–D210).
 The branch `feat/notifications-2026-11-02` holds the work (Sessions 23 and 24); nothing is pushed, no
