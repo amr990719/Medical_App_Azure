@@ -83,6 +83,8 @@ jobs:
       contents: read
       id-token: write
     uses: ./.github/workflows/reusable-infrastructure.yml
+    # The reusable workflow's secrets come only from the caller: without this, ALERT_EMAIL resolves to ''.
+    secrets: inherit
     with:
       environment: ${{ inputs.environment }}
       what_if_only: ${{ inputs.what_if_only }}
@@ -94,6 +96,8 @@ jobs:
       contents: read
       id-token: write
     uses: ./.github/workflows/reusable-infrastructure.yml
+    # The reusable workflow's secrets come only from the caller: without this, ALERT_EMAIL resolves to ''.
+    secrets: inherit
     with:
       environment: dev
       what_if_only: false
@@ -106,6 +110,8 @@ jobs:
       contents: read
       id-token: write
     uses: ./.github/workflows/reusable-infrastructure.yml
+    # The reusable workflow's secrets come only from the caller: without this, ALERT_EMAIL resolves to ''.
+    secrets: inherit
     with:
       environment: staging
       what_if_only: false
@@ -116,6 +122,8 @@ jobs:
       contents: read
       id-token: write
     uses: ./.github/workflows/reusable-infrastructure.yml
+    # The reusable workflow's secrets come only from the caller: without this, ALERT_EMAIL resolves to ''.
+    secrets: inherit
     with:
       environment: prod
       what_if_only: false
