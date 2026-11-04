@@ -104,7 +104,7 @@ def test_a_provider_code_that_is_not_a_code_is_not_logged_or_stored(
 
 
 def test_span_and_log_attributes_are_masked():
-    secret = "ahmed@example.test"
+    fake_address = "ahmed@example.test"
     phone = "010 1234 5678"
 
     logs = InMemoryLogRecordExporter()
@@ -115,24 +115,24 @@ def test_span_and_log_attributes_are_masked():
     handler = TelemetryLogHandler(logger_provider=log_provider)
     logger.addHandler(handler)
     try:
-        logger.warning("to %s", secret, extra={"recipient": phone})
+        logger.warning("to %s", fake_address, extra={"recipient": phone})
     finally:
         logger.removeHandler(handler)
     (exported,) = logs.get_finished_logs()
     dumped = str(exported.log_record.body) + str(dict(exported.log_record.attributes))
-    assert secret not in dumped and phone not in dumped
+    assert fake_address not in dumped and phone not in dumped
 
     spans = InMemorySpanExporter()
     tracer_provider = TracerProvider()
     tracer_provider.add_span_processor(MaskingSpanProcessor())
     tracer_provider.add_span_processor(SimpleSpanProcessor(spans))
-    with tracer_provider.get_tracer("test").start_as_current_span(f"send {secret}") as span:
+    with tracer_provider.get_tracer("test").start_as_current_span(f"send {fake_address}") as span:
         span.set_attribute("messaging.destination", phone)
-        span.record_exception(ValueError(f"rejected {secret}"))
+        span.record_exception(ValueError(f"rejected {fake_address}"))
     (finished,) = spans.get_finished_spans()
     dumped = finished.name + str(dict(finished.attributes))
     dumped += "".join(str(dict(e.attributes)) for e in finished.events)
-    assert secret not in dumped and phone not in dumped
+    assert fake_address not in dumped and phone not in dumped
 
 
 def test_rows_hold_no_message_text_full_phone_or_full_address(settings):
@@ -161,5 +161,5 @@ def test_rows_hold_no_message_text_full_phone_or_full_address(settings):
     assert {row.status for row in Notification.objects.all()} == {"SENT"}
     assert wa.pk and mail.pk
     assert doctor.phone_number and user.email and message["subject"]
-    for secret in filter(None, secrets):  # the factory application has no reference number
-        assert secret not in dumped
+    for fake_address in filter(None, secrets):  # the factory application has no reference number
+        assert fake_address not in dumped
