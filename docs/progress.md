@@ -1564,7 +1564,7 @@ Deployed to dev by `infrastructure.yml` (run `41849338442`, image `c5958d0`, 14:
 
 - **Proven:** health 200 and the revision healthy; the app and the `caj-medsyn-dev-notify` job carry
   the 8 notification env names and no `WHATSAPP_*`; migrate and cleanup carry none; the job runs on
-  `*/5 * * * *` and its scheduled executions Succeeded; a `notify_run` trace from role
+  `*/5 * * * *` and its first two scheduled executions (14:45 and 14:50 UTC) Succeeded; one `notify_run` trace per execution from role
   `medical-notify` reached Application Insights (all counts 0), so telemetry from the job works.
 - **Not proven:** a real send, allowlist suppression, the failure and expiry paths (no doctor event
   has happened, so every count is 0); SES `SentLast24Hours` was 0. No email was sent by this work.
