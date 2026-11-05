@@ -540,10 +540,10 @@ and WhatsApp parked, the sizing, `currentFiscalYear`.
 
 Tracked with their state in `docs/progress.md`, "Next session starts with":
 
-1. Approval for the cloud writes (bootstrap stages), and the budget.
-2. The Azure data region. dev uses `uaenorth`, which supports the SKU and geo backup (checked
-   2026-11-05). The estimate assumes it.
-3. Final payment instructions, for `payment.instructions`.
-4. The Entra admin group for PostgreSQL, and who the first administrators are.
-5. A production SES sender, and the monitored address for `ALERT_EMAIL`.
-6. The cutover date, and how long an outage is acceptable.
+1. Final payment instructions, for `payment.instructions`.
+2. A production SES sender.
+3. The cutover date, and how long an outage is acceptable.
+
+Answered on 2026-11-05: approval for the cloud steps; the data region is `uaenorth`, which supports the
+SKU and geo backup; the first administrator and the alert address (kept out of Git). PostgreSQL's Entra
+administrator is the same person as on dev, set by the `postgres` stage, because no group was named.

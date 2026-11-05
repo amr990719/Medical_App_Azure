@@ -2636,10 +2636,9 @@ confirmed by the organization). Technical/environment questions for the user:
 
 - **Q-P1 — Payment wording:** `payment.instructions` is still the placeholder (Q-B19); the cutover
   preflight refuses until it is final.
-- **Q-P2 — Data region:** `uaenorth` is assumed, as on dev. The owner confirms before the first
-  deployment; moving it later is a rebuild.
-- **Q-P3 — Printing:** retired on 2026-10-28 (D171). The request for production acceptance named printing,
-  so `PRN-1` checks it stays retired. If it should come back, that is a new feature.
+- **Q-P2 — Data region: answered.** The owner confirmed `uaenorth` on 2026-11-05.
+- **Q-P3 — Printing: answered.** The owner confirmed on 2026-11-05 that it stays retired (D171); `PRN-1`
+  checks that.
 - **Q-P4 — Whole-region recovery:** Blob ZRS stays in one region, so a regional loss does not bring
   documents back. Promise it only by choosing GZRS, paying for it and drilling it.
 - **Q-P5 — Retention periods:** not decided, and nothing new is deleted (`docs/production-runbook.md`).
@@ -2656,8 +2655,8 @@ the vulnerable Pillow; (2) `ENABLE_SERVICE_ALERTS=true` on dev, once; (3) the bo
 `docs/production-runbook.md`; (4) `mode=bootstrap`; (5) acceptance; (6) cutover; (7) notifications. On that
 first merge, if the backend deploy outruns `infrastructure`, its migrate job refuses to start without
 `CURRENT_FISCAL_YEAR`; the running revision is untouched, so re-run it. Inputs only the owner can give:
-Q-P1, Q-P2, the admin group and first administrators, a production SES sender, the alert address, and the
-cutover date. Older items below still apply, except that formal legal sign-off and the AWS alarms were
+Q-P1, a production SES sender, and the cutover date with an acceptable outage. Given on 2026-11-05 and
+kept out of Git: the first administrator, and the alert address. Older items below still apply, except that formal legal sign-off and the AWS alarms were
 declined (they are not gates).
 
 
