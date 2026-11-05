@@ -5,7 +5,7 @@ django-environ>=0.12,<1
 djangorestframework>=3.16,<4
 django-filter>=25,<27
 drf-spectacular>=0.28,<1
-Pillow>=11,<13
+Pillow>=13,<14
 filetype>=1.2,<2              # content sniffing by signature (pure Python, no libmagic)
 azure-storage-blob>=12.23,<13
 azure-identity>=1.19,<2
@@ -16,6 +16,6 @@ azure-keyvault-secrets>=4.11,<5   # Key Vault settings loader (config/secrets.py
 openai>=3.24,<4               # Azure OpenAI OCR provider (structured outputs, Entra tokens)
 # Application Insights. The distro and the psycopg 3 instrumentation share one OpenTelemetry
 # contrib release, so both are pinned together.
-azure-monitor-opentelemetry==1.8.10
-opentelemetry-instrumentation-psycopg==0.65b0
+azure-monitor-opentelemetry==1.8.11
+opentelemetry-instrumentation-psycopg==0.66b2
 boto3>=1.35,<2                # SES email + STS web-identity (apps.notifications)

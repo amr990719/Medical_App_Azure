@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Django backend image (PROMPT.md §31, §37).
-#   builder  wheels for requirements/prod.txt (no compilers reach the runtime image)
+#   builder  wheels for requirements/prod.txt, hash-checked (no compilers reach the runtime image)
 #   runtime  production: slim, non-root, Gunicorn, collectstatic at build time, health check,
 #            never migrates on start (`migrate` / `cleanup` modes run as Container Apps jobs)
 #   dev      docker compose: runserver, source bind-mounted, development settings
@@ -10,7 +10,8 @@
 # Docker Official Image through Google's Docker Hub mirror (same digest as Docker Hub and ECR
 # Public). Docker Hub's anonymous pull limit (PR #2) and ECR Public's anonymous data limit
 # (PR #7, "toomanyrequests: Data limit exceeded") both blocked the GitHub-hosted runners.
-FROM mirror.gcr.io/library/python:3.12-slim AS base
+# Pinned by digest so a rebuild starts from the same bytes; Dependabot proposes updates.
+FROM mirror.gcr.io/library/python:3.12-slim@sha256:e695ab189fa2d082b1c61c69a6b888a5adeca61ceeccad107b1ed2a125721a9e AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -20,14 +21,14 @@ WORKDIR /app
 # --- builder ----------------------------------------------------------------------------------
 FROM base AS builder
 COPY requirements/ requirements/
-RUN pip wheel --wheel-dir /wheels -r requirements/prod.txt
+RUN pip wheel --wheel-dir /wheels --require-hashes -r requirements/prod.txt
 
 # --- runtime (production) ---------------------------------------------------------------------
 FROM base AS runtime
 # Wheels are bind-mounted from the builder, so they never become an image layer.
 RUN --mount=type=bind,from=builder,source=/wheels,target=/wheels \
     --mount=type=bind,source=requirements,target=/tmp/requirements \
-    pip install --no-index --find-links=/wheels -r /tmp/requirements/prod.txt
+    pip install --no-index --find-links=/wheels --require-hashes -r /tmp/requirements/prod.txt
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 # Code and static files belong to root and are read-only for the `app` user; nothing in the
