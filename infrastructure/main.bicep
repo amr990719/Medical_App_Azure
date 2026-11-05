@@ -4,9 +4,10 @@
 //
 // First deployment of an environment: deployApplication=false (everything except the Container
 // App, its jobs and the SWA link), then set the Key Vault secrets, run
-// scripts/setup-postgres-entra.sh and push an image, then deploy again with
-// deployApplication=true and containerImage=<registry>/medical-backend:<tag>
-// (docs/azure-deployment.md). Container Apps resolve Key Vault references at creation, so the
+// scripts/setup-postgres-entra.sh and push an image, then deploy with
+// containerImage=<registry>/medical-backend@<digest> and deployWebApp=false (the migrate job only),
+// run it, and deploy once more with deployWebApp=true, so the schema exists before anything serves
+// (docs/production-runbook.md). Container Apps resolve Key Vault references at creation, so the
 // secrets must exist first.
 
 targetScope = 'resourceGroup'
@@ -47,8 +48,19 @@ param deployApplication bool = true
 @description('Full image reference for the app and its jobs. Required when deployApplication=true.')
 param containerImage string = ''
 
+@description('false creates only the migrate job: the bootstrap step that applies the schema before any web app, schedule or SWA link exists. Ignored without deployApplication.')
+param deployWebApp bool = true
+
 @description('Public hostname users reach (custom domain bound to the Static Web App). Empty = the Static Web App default hostname.')
 param publicHostname string = ''
+
+@description('Fiscal year of new applications and fee quotes. No default and never inferred from the calendar: each environment sets it, and changing it is a reviewed commit (docs/production-runbook.md, fiscal-year rollover).')
+@minValue(2000)
+@maxValue(2100)
+param currentFiscalYear int
+
+@description('Recovery hold: closes the app ingress, sets notifications off and moves the cleanup and notify schedules out of the way, on every deployment until cleared (docs/production-runbook.md, recovery).')
+param recoveryHold bool = false
 
 // --- Feature switches ----------------------------------------------------------------------------
 
@@ -131,6 +143,9 @@ param postgresGeoRedundantBackup bool = false
 param postgresHighAvailabilityMode string = 'Disabled'
 param postgresDatabaseName string = 'medical'
 
+@description('Name of a server restored from a backup, to adopt it as this environment\'s server. Kept in deployment configuration so the next deployment does not point the app back at the damaged one. Empty = the generated name.')
+param postgresServerNameOverride string = ''
+
 @description('Password authentication fallback (PROMPT.md section 26). Off by default: the app uses Entra tokens.')
 param postgresPasswordAuth bool = false
 param postgresAdministratorLogin string = ''
@@ -152,6 +167,17 @@ param keyVaultSoftDeleteRetentionDays int = 90
 @description('Operator who sets the Key Vault secrets (Key Vault Secrets Officer on this vault). Optional.')
 param keyVaultOperatorPrincipalId string = ''
 param keyVaultOperatorPrincipalType string = 'User'
+
+@description('Availability, error rate, latency, database, restart and cleanup alerts. They need alertEmail and the deployed application.')
+param enableServiceAlerts bool = false
+
+@description('Seconds between availability test runs from each location. Each run is billed.')
+@allowed([
+  300
+  600
+  900
+])
+param availabilityTestFrequencySeconds int = 900
 
 param logAnalyticsRetentionDays int = 30
 param logAnalyticsDailyQuotaGb int = -1
@@ -192,7 +218,7 @@ var names = {
   keyVault: take('kv${baseName}${envShort}${token}', 24)
   storage: take('st${baseName}${envShort}${token}', 24)
   registry: 'cr${baseName}${envShort}${token}'
-  postgres: 'psql-${prefix}-${token}'
+  postgres: empty(postgresServerNameOverride) ? 'psql-${prefix}-${token}' : postgresServerNameOverride
   containerEnv: 'cae-${prefix}'
   app: 'ca-${prefix}-api'
   migrateJob: 'caj-${prefix}-migrate'
@@ -414,6 +440,7 @@ var baseSettings = {
   ENTRA_POST_LOGOUT_REDIRECT_URI: 'https://${publicHost}/signed-out'
   ENTRA_ADMIN_REQUIRE_MFA: string(entraAdminRequireMfa)
   OCR_ENABLED: string(enableOcr)
+  CURRENT_FISCAL_YEAR: string(currentFiscalYear)
 }
 
 var telemetrySettings = appInsightsDisableLocalAuth ? { APPLICATIONINSIGHTS_AUTHENTICATION: 'entra' } : {}
@@ -448,10 +475,25 @@ var optionalNotificationSettings = union(whatsAppSettings, {
   NOTIFICATION_RESEND_RATE_LIMIT: notificationResendRateLimit
 })
 
+// A hold wins over the configured mode, the schedules and the open ingress. This cron still fires
+// on 1 January: a hold across that date must clear or move it, or one cleanup run happens.
+var effectiveNotificationsMode = recoveryHold ? 'off' : notificationsMode
+var recoveryHoldCron = '0 0 1 1 *'
+// TEST-NET-1 (RFC 5737): an allow rule nothing can match, so the ingress refuses every caller,
+// including the Static Web App.
+var recoveryHoldRestrictions = [
+  {
+    name: 'recovery-hold'
+    ipAddressRange: '192.0.2.1/32'
+    action: 'Allow'
+    description: 'Recovery hold: every caller is refused until the hold is cleared.'
+  }
+]
+
 var notificationSettings = enableNotifications
   ? union(
       {
-        NOTIFICATIONS_MODE: notificationsMode
+        NOTIFICATIONS_MODE: effectiveNotificationsMode
         NOTIFICATION_PROVIDERS: 'real'
         NOTIFICATION_BASE_URL: empty(notificationBaseUrl) ? 'https://${publicHost}' : notificationBaseUrl
       },
@@ -478,6 +520,7 @@ module app 'modules/container-app.bicep' = if (deployApplication) {
     registryServer: registry.outputs.loginServer
     keyVaultUri: keyVault.outputs.uri
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    deployWebApp: deployWebApp
     settings: union(baseSettings, telemetrySettings, ocrSettings)
     notificationEnv: notificationSettings
     cpu: containerCpu
@@ -485,19 +528,20 @@ module app 'modules/container-app.bicep' = if (deployApplication) {
     minReplicas: minReplicas
     maxReplicas: maxReplicas
     httpConcurrency: httpConcurrency
-    cleanupCron: cleanupCron
+    cleanupCron: recoveryHold ? recoveryHoldCron : cleanupCron
     enableNotifications: enableNotifications
     enableWhatsApp: enableWhatsApp
-    notificationsMode: notificationsMode
+    notificationsMode: effectiveNotificationsMode
     sesAccessKeyFromKeyVault: sesAccessKeyFromKeyVault
-    notifyCron: notifyCron
+    notifyCron: recoveryHold ? recoveryHoldCron : notifyCron
+    ipSecurityRestrictions: recoveryHold ? recoveryHoldRestrictions : []
   }
   dependsOn: [
     roleAssignments
   ]
 }
 
-module staticWebAppLink 'modules/static-web-app-link.bicep' = if (deployApplication) {
+module staticWebAppLink 'modules/static-web-app-link.bicep' = if (deployApplication && deployWebApp) {
   name: 'static-web-app-link'
   params: {
     staticWebAppName: staticWebApp.outputs.name
@@ -514,6 +558,22 @@ module notificationAlerts 'modules/notification-alerts.bicep' = if (enableNotifi
     namePrefix: prefix
     appInsightsId: monitoring.outputs.appInsightsId
     alertEmail: alertEmail
+  }
+}
+
+module serviceAlerts 'modules/service-alerts.bicep' = if (enableServiceAlerts && !empty(alertEmail) && deployApplication && deployWebApp) {
+  name: 'service-alerts'
+  params: {
+    location: location
+    tags: allTags
+    namePrefix: prefix
+    alertEmail: alertEmail
+    appInsightsId: monitoring.outputs.appInsightsId
+    workspaceId: monitoring.outputs.workspaceId
+    postgresServerId: postgres.outputs.id
+    containerAppName: names.app
+    publicHost: publicHost
+    frequencySeconds: availabilityTestFrequencySeconds
   }
 }
 
@@ -534,6 +594,7 @@ output containerAppName string = names.app
 output migrateJobName string = names.migrateJob
 output cleanupJobName string = names.cleanupJob
 output notifyJobName string = enableNotifications ? names.notifyJob : ''
+output currentFiscalYear int = currentFiscalYear
 output containerAppFqdn string = appFqdn
 output staticWebAppName string = staticWebApp.outputs.name
 output staticWebAppHostname string = staticWebApp.outputs.defaultHostname

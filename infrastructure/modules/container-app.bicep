@@ -1,5 +1,6 @@
-// Django on Azure Container Apps (PROMPT.md §31, §35, §37) plus its two jobs, all running the
-// same image with the same identity and settings:
+// Django on Azure Container Apps (PROMPT.md §31, §35, §37) plus its jobs, all running the same
+// image with the same identity and settings. With deployWebApp=false only the migrate job exists,
+// so a first deployment applies the schema before anything can serve or run on a schedule:
 //   app      `web` (image default): Gunicorn on port 8000, HTTP-concurrency scaling, probes.
 //   migrate  manual job, `migrate`: run exactly once per deployment by backend.yml BEFORE the
 //            app's image is updated (replicas never migrate).
@@ -10,6 +11,9 @@
 // Secrets are Key Vault references resolved with the user-assigned identity (versionless URLs,
 // refreshed by the platform); nothing secret is a template parameter except the App Insights
 // connection string, which is stored as a Container Apps secret rather than a plain variable.
+
+@description('false = the migrate job only (first deployment of an environment).')
+param deployWebApp bool = true
 
 param appName string
 param migrateJobName string
@@ -217,7 +221,7 @@ var resources = {
   memory: memory
 }
 
-resource app 'Microsoft.App/containerApps@2025-01-01' = {
+resource app 'Microsoft.App/containerApps@2025-01-01' = if (deployWebApp) {
   name: appName
   location: location
   tags: tags
@@ -353,7 +357,7 @@ resource migrateJob 'Microsoft.App/jobs@2025-01-01' = {
   }
 }
 
-resource cleanupJob 'Microsoft.App/jobs@2025-01-01' = {
+resource cleanupJob 'Microsoft.App/jobs@2025-01-01' = if (deployWebApp) {
   name: cleanupJobName
   location: location
   tags: tags
@@ -399,7 +403,7 @@ resource cleanupJob 'Microsoft.App/jobs@2025-01-01' = {
   }
 }
 
-resource notifyJob 'Microsoft.App/jobs@2025-01-01' = if (enableNotifications) {
+resource notifyJob 'Microsoft.App/jobs@2025-01-01' = if (enableNotifications && deployWebApp) {
   name: notifyJobName
   location: location
   tags: tags
@@ -447,9 +451,8 @@ resource notifyJob 'Microsoft.App/jobs@2025-01-01' = if (enableNotifications) {
   }
 }
 
-output appId string = app.id
-output appName string = app.name
-output appFqdn string = app.properties.configuration.ingress.fqdn
+output appId string = deployWebApp ? app.id : ''
+output appName string = appName
 output migrateJobName string = migrateJob.name
-output cleanupJobName string = cleanupJob.name
-output notifyJobName string = enableNotifications ? notifyJob.name : ''
+output cleanupJobName string = cleanupJobName
+output notifyJobName string = enableNotifications ? notifyJobName : ''

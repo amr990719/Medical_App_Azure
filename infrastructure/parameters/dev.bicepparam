@@ -12,7 +12,17 @@ param staticWebAppLocation = readEnvironmentVariable('STATIC_WEB_APP_LOCATION', 
 // No image yet = first phase (no Container App / jobs / SWA link). See docs/azure-deployment.md.
 param containerImage = image
 param deployApplication = !empty(image)
+param deployWebApp = bool(readEnvironmentVariable('DEPLOY_WEB_APP', 'true'))
 param publicHostname = readEnvironmentVariable('PUBLIC_HOSTNAME', '')
+
+// Reviewed commit, never inferred from the calendar (docs/production-runbook.md, rollover).
+param currentFiscalYear = 2026
+// Recovery rehearsals only (docs/production-runbook.md, recovery).
+param recoveryHold = bool(readEnvironmentVariable('RECOVERY_HOLD', 'false'))
+param postgresServerNameOverride = readEnvironmentVariable('POSTGRES_SERVER_NAME_OVERRIDE', '')
+// Off: billed, and needs nothing on dev day to day. On once, to prove the module deploys before
+// production's first deployment does it for real (docs/production-runbook.md, bootstrap).
+param enableServiceAlerts = bool(readEnvironmentVariable('ENABLE_SERVICE_ALERTS', 'false'))
 
 param enableOcr = bool(readEnvironmentVariable('ENABLE_OCR', 'false'))
 

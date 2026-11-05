@@ -11,6 +11,7 @@ param staticWebAppLocation = readEnvironmentVariable('STATIC_WEB_APP_LOCATION', 
 param containerImage = image
 param deployApplication = !empty(image)
 param publicHostname = readEnvironmentVariable('PUBLIC_HOSTNAME', '')
+param currentFiscalYear = 2026
 
 param enableOcr = bool(readEnvironmentVariable('ENABLE_OCR', 'false'))
 param enablePrivateNetworking = false
