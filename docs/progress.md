@@ -2559,8 +2559,8 @@ allowlist and deploy are now done); (5) prove an alert firing, bounce handling a
 suppression on Azure, with the owner's confirmation for anything that changes dev.
 
 **Email is the only notification channel in use; WhatsApp is parked** (Session 24, D208–D210).
-The branch `feat/notifications-2026-11-02` holds the work (Sessions 23 and 24); nothing is pushed, no
-PR is open, nothing is deployed. Production settings need `NOTIFICATIONS_MODE`, `NOTIFICATION_PROVIDERS=real`,
+The work of Sessions 23 and 24 is merged (PR #15, branch `feat/notifications-2026-11-02`) and deployed
+to dev; production is not deployed. Production settings need `NOTIFICATIONS_MODE`, `NOTIFICATION_PROVIDERS=real`,
 `SES_REGION`, `SES_FROM_ADDRESS`, `NOTIFICATION_BASE_URL` and the two AWS key variables;
 `WHATSAPP_ENABLED` stays unset. The sending identity `neqabacare-ses-sender` exists with its narrow
 policy, and its key is in the dev vault as `aws-access-key-id` and `aws-secret-access-key` (D211);
