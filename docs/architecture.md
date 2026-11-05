@@ -222,11 +222,11 @@ flowchart LR
         DJL --> AZ[(Azurite blob emulator)]
     end
     Local -. "same code, different settings module + env" .-> Dev[Azure dev<br/>scale-to-zero, Burstable PG]
-    Dev --> Staging --> Prod
+    Dev -- "explicit release, same artifacts" --> Prod
 ```
 
-Three Azure environments (`development`, `staging`, `production`) with separate resource groups,
-identities, Key Vaults and Entra app registrations (or redirect URIs). Settings modules:
+Two Azure environments (dev and prod) with separate resource groups, identities, Key Vaults and
+Entra app registrations. Prod has not been deployed yet. Settings modules:
 `config/settings/{base,development,test,production}.py`; configuration only via environment
 variables / Key Vault references.
 
@@ -254,10 +254,10 @@ variables / Key Vault references.
 
 Django scales on Container Apps independently of the static frontend: HTTP-concurrency rule
 (`httpConcurrency` concurrent requests per replica), `minReplicas`/`maxReplicas` per environment
-(dev 0–2, staging 1–3, prod 1–5), `containerCpu`/`containerMemory` and `gunicornWorkers` all in
+(dev 0–2, prod 1–5), `containerCpu`/`containerMemory` and `gunicornWorkers` all in
 `infrastructure/parameters/<env>.bicepparam`. Replicas are stateless: sessions and rate-limit
 counters live in PostgreSQL, files in Blob Storage, secrets in Key Vault, so any replica can be
-destroyed at any time. The migrate and cleanup jobs run in the same environment with the same
+destroyed at any time. The migrate, cleanup and notify jobs run in the same environment with the same
 image and identity.
 
 ```text
@@ -280,10 +280,18 @@ flowchart LR
     PR --> CI2[backend.yml: ruff → check → migrations check → OpenAPI → pytest on PostgreSQL → docker build]
     PR --> CI3[infrastructure.yml: bicep build + lint → template guard, no Azure access]
     PR --> CI4[e2e.yml: compose stack + Playwright]
-    main[merge to main] --> D1[SWA deploy dev → staging → prod]
-    main --> D2[image → ACR → migrate job → cleanup job → new ACA revision → smoke test]
-    main --> D3[bicep what-if + deploy dev → staging → prod]
+    PR --> CI5[ci-gate.yml: release tooling + waits for what the change triggers]
+    main[merge to main] --> D1[frontend build stored and deployed to dev]
+    main --> D2[image → dev ACR → migrate job → cleanup and notify jobs → new ACA revision → smoke test]
+    main --> D3[bicep what-if + deploy dev]
+    main --> D4[e2e.yml on the merged commit]
+    Person[person starts release-production.yml] --> R1[verify commit and evidence]
+    R1 --> R2[export artifacts from dev by digest]
+    R2 --> R3[approval 1: what-if and migrations]
+    R3 --> R4[approval 2: infrastructure → migrate → release_check → jobs → revision → frontend → smoke → release record]
 ```
+
+A merge never reaches production. Procedures: `docs/production-runbook.md`.
 
 GitHub OIDC federated credentials, no stored Azure passwords or deployment tokens. One GitHub
 environment per Azure environment: `<env>` (deploy and manual what-if, `main` only, required

@@ -1,8 +1,9 @@
 # Deployment Path: Azure and GitHub
 
 This guide is the end-to-end path for taking the app from local code to a deployed Azure
-environment with GitHub Actions. Start with `dev`, prove the full flow, then repeat for
-`staging` and `prod`.
+environment with GitHub Actions: local, then `dev`, then production through an explicit, reviewed
+release (`release-production.yml`, `docs/production-runbook.md`). There is no staging (owner,
+2026-11-05).
 
 The app deploys as:
 
@@ -27,7 +28,7 @@ Git repository
   v
 GitHub platform setup
   |
-  | 3. Create environments: dev, staging, prod
+  | 3. Create environments: dev, prod
   | 4. Protect main and configure prod reviewers
   v
 Azure platform setup
@@ -70,12 +71,13 @@ Ongoing delivery
   |
   | 21. Add GitHub environment variables
   | 22. Push to main
-  | 23. GitHub Actions deploy infrastructure, backend, and frontend
+  | 23. GitHub Actions deploy infrastructure, backend, and frontend to dev
   v
-Staging and production
+Production
   |
-  | 24. Repeat the same path for staging
-  | 25. Repeat for prod with reviewers, backups, private-networking decision, and legal approvals
+  | 24. Bootstrap: docs/production-runbook.md
+  | 25. Release the same artifacts with release-production.yml, reviewed and explicit
+  | 26. Acceptance: docs/production-acceptance.md
 ```
 
 ## 2. Decisions Before Deployment
@@ -87,7 +89,7 @@ Staging and production
 | Git branch | `main` |
 | GitHub repo visibility | Private |
 | Production private networking | Decided 2026-10-11 (D150): off; `prod.bicepparam` pins `enablePrivateNetworking = false`. PostgreSQL networking cannot be changed later without rebuilding. |
-| OCR | Keep off until legal/privacy approval. Enable later with `ENABLE_OCR=true`. |
+| OCR | Off in production (owner, D150; pinned in `prod.bicepparam`). Dev can try it with `ENABLE_OCR=true`. |
 | Entra External ID | Required for deployed sign-in. Local dev sign-in is not used in Azure production settings. |
 
 ## 3. Local Preflight
@@ -115,7 +117,7 @@ curl.exe http://localhost:8000/api/ready/
 Expected:
 
 ```json
-{"status":"ok","database":"ok"}
+{"status":"ok","database":"ok","schema":"ok"}
 ```
 
 Run the checks before the first cloud deployment:
@@ -159,7 +161,6 @@ Create these environments:
 
 ```text
 dev
-staging
 prod
 ```
 
@@ -171,7 +172,7 @@ Repository -> Settings -> Environments -> New environment
 
 | Environment | Purpose |
 |---|---|
-| `dev`, `staging`, `prod` | Real deployments (and manual what-if-only runs) |
+| `dev`, `prod` | Real deployments (and manual what-if-only runs) |
 
 There are no `-plan` environments any more: ARM what-if needs write permission on every resource in the template, so a read-only preview identity cannot work (D145). Pull requests get no Azure credential.
 
@@ -196,17 +197,10 @@ Recommended settings:
 - block branch deletion
 
 With a single maintainer, use 0 required approvals (one approval would block every merge), and
-enforce the rule for admins. Every workflow is path-filtered, so a required check whose workflow
-did not run blocks the PR forever: require only checks that run on every PR (or add a gate job).
-
-Workflow check names come from:
-
-```text
-.github/workflows/frontend.yml
-.github/workflows/backend.yml
-.github/workflows/infrastructure.yml
-.github/workflows/e2e.yml
-```
+enforce the rule for admins. The backend, frontend, infrastructure and e2e workflows are
+path-filtered, so a required check whose workflow did not run blocks the PR forever. Require only
+`ci gate` and `release tooling` (`.github/workflows/ci-gate.yml`): they run on every PR, and `ci gate`
+waits for whichever of the others the change triggers. The command is in `docs/github-setup.md` §5.
 
 ### 4.4 GitHub Actions Permissions
 
@@ -322,7 +316,7 @@ AZURE_SUBSCRIPTION_ID
 AZURE_RESOURCE_GROUP
 ```
 
-Repeat later for `staging` and `prod`.
+Production runs this through `bootstrap-production.sh` (`docs/production-runbook.md`).
 
 ## 7. Azure Infrastructure Phase 1
 
@@ -493,7 +487,9 @@ For private-networked production, run this from inside the VNet and do not use `
 
 ## 11. Application Phase 2: Backend Image And Container App
 
-Build the backend runtime image:
+Production never builds or pushes by hand: it promotes what dev ran (`docs/production-runbook.md`). On
+dev, build the backend runtime image (dependencies are hash-locked: `backend/requirements/*.in`
+compile to `*.txt` with `backend/requirements/lock.sh`):
 
 ```powershell
 $LoginServer = az acr show -n $ACR --query loginServer -o tsv
@@ -557,7 +553,7 @@ everything; that is expected. `/api` on the Static Web App host only works once 
 has been deployed (§12), so run this after §12:
 
 ```powershell
-curl.exe -fsS "https://$SWA_HOST/api/ready/"   # {"status": "ok", "database": "ok"}
+curl.exe -fsS "https://$SWA_HOST/api/ready/"   # {"status": "ok", "database": "ok", "schema": "ok"}
 ```
 
 To see a revision that never becomes ready, read the platform events and the console:
@@ -660,10 +656,11 @@ Set:
 | `ENTRA_AUTHORITY` | printed by `create-entra-app.ps1` |
 | `ENTRA_TENANT_ID` | printed by `create-entra-app.ps1` |
 | `ENTRA_CLIENT_ID` | printed by `create-entra-app.ps1` |
-| `ACR_NAME` | Bicep output `containerRegistryName` |
+| `ACR_NAME` | Bicep output `containerRegistryName`. Used by the backend deploy and the frontend deploy (dev stores both artifacts in it), and by a release |
 | `CONTAINER_APP_NAME` | Bicep output `containerAppName` |
 | `MIGRATE_JOB_NAME` | Bicep output `migrateJobName` |
 | `CLEANUP_JOB_NAME` | Bicep output `cleanupJobName` |
+| `NOTIFY_JOB_NAME` | Bicep output `notifyJobName`, only where notifications are enabled |
 | `STATIC_WEB_APP_NAME` | Bicep output `staticWebAppName` |
 | `PUBLIC_HOSTNAME` | Optional custom domain |
 | `STATIC_WEB_APP_LOCATION` | Optional, default is `westeurope` |
@@ -672,41 +669,51 @@ Set:
 | `POSTGRES_ENTRA_ADMIN_OBJECT_ID` | Optional group/user object id |
 | `POSTGRES_ENTRA_ADMIN_NAME` | Optional group/user display name |
 | `POSTGRES_ENTRA_ADMIN_TYPE` | Optional `Group` or `User` |
+| `RECOVERY_HOLD`, `POSTGRES_SERVER_NAME_OVERRIDE` | Recovery only, set by `recovery.sh`. The parameter files read them, so every later deployment keeps them |
 
-Repeat for `staging` and `prod` when those environments are ready.
+The full `prod` inventory, including the secret `ALERT_EMAIL`, is in `docs/production-runbook.md`.
 
 ## 15. How GitHub Actions Deploys After Setup
 
 Once the first deployment exists, normal delivery is:
 
 ```text
-push to main
+push to main (dev only)
   |
   |-- infrastructure.yml
   |     validates Bicep
   |     runs what-if
-  |     deploys infrastructure dev -> staging -> prod
+  |     deploys infrastructure to dev
   |
   |-- backend.yml
-  |     runs ruff, Django checks, migration check, pytest
+  |     runs ruff, the lock check, Django checks, migration check, pytest
   |     builds runtime image
-  |     pushes image to each ACR
-  |     updates migrate job image
+  |     pushes image to the dev ACR, once per commit
+  |     updates migrate job image, by digest
   |     runs migrate job once
-  |     updates cleanup job image
+  |     updates cleanup and notify job images
   |     updates Container App revision
   |     smoke-tests /api/ready/
   |
   |-- frontend.yml
   |     runs lint, typecheck, tests, RTL check, build
+  |     stores the build in the dev ACR
   |     deploys frontend/dist to Static Web Apps
   |
   |-- e2e.yml
-        runs local docker compose and Playwright on pull requests/manual runs
+        runs local docker compose and Playwright, on pull requests, pushes to main and manual runs
+
+person starts release-production.yml (production, explicit and reviewed)
+  |
+  |-- verify    the commit is on main; each component's checks and dev deployment succeeded
+  |-- export    copies both artifacts out of the dev ACR, digests unchanged
+  |-- preview   first approval, then what-if and new migrations
+  |-- deploy    second approval, then infrastructure, migrate, release_check, jobs, revision,
+                frontend, smoke test, release record
 ```
 
 Important: `backend.yml` expects the Container App and jobs to already exist. That is why the first
-backend creation is manual in phase 2.
+backend creation on dev was manual in phase 2. Production's is `mode=bootstrap` of the release.
 
 ## 16. Validation Checklist
 
@@ -714,7 +721,7 @@ After deployment, verify:
 
 - Static Web App opens at `https://<SWA_HOST>/`
 - `/api` calls happen on the same host as the frontend
-- `https://<SWA_HOST>/api/ready/` returns database ok
+- `https://<SWA_HOST>/api/ready/` returns database ok and schema ok
 - Entra sign-in works
 - first admin can access `/admin`
 - doctor can create/fill an application
@@ -722,62 +729,28 @@ After deployment, verify:
 - payment receipt upload works
 - admin can confirm payment
 - admin can approve/request correction/reject
-- print page opens and prints A4
+- no print action is offered, and the print URLs show the not-found page (printing was retired on
+  2026-10-28, D171)
 - logs appear in Application Insights / Log Analytics
 - migration job reports `Succeeded`
 - cleanup job exists with the expected cron
 
-## 17. Repeat For Staging
+## 17. Staging
 
-Step-by-step list with the staging-specific blockers (admin MFA parameter, SWA region, the
-manual first phase 2, what `DEPLOY_STAGING` does to prod): `docs/staging-checklist.md`.
+Retired on 2026-11-05: dev and prod only (`docs/staging-checklist.md`).
 
-Repeat the same sequence with:
+## 18. Production
 
-```text
-ENV = staging
-RG = rg-medsyn-staging
-parameter file = infrastructure/parameters/staging.bicepparam
-GitHub environment = staging
-```
+Production is not a repeat of the dev steps above. Follow `docs/production-runbook.md`:
 
-Use a separate Entra app registration for staging.
+- **Bootstrap:** the resource group, identities, secrets, Entra, PostgreSQL and variables with
+  `bootstrap-production.sh`, then `release-production.yml` in `bootstrap` mode, which applies the schema
+  before anything serves.
+- **Normal release:** one reviewed commit from protected `main`, promoting the artifacts dev ran.
+- **Domain cutover** and **rollback**, **recovery**, **notifications**, **monitoring**.
 
-Pushes to `main` deploy to staging (and then to prod, after approval) only once staging is
-enabled. When the staging environment and its variables are complete, set the repository
-variable:
-
-```powershell
-gh variable set DEPLOY_STAGING --body true
-```
-
-Until then the `deploy-staging` jobs, and so `deploy-prod`, are skipped.
-
-## 18. Repeat For Production
-
-Before production:
-
-- confirm legal/data-region decision
-- confirm OCR decision
-- decide private networking before first prod deployment
-- configure prod GitHub reviewers
-- confirm backup retention in `prod.bicepparam`
-- run a restore drill in staging
-- confirm monitoring and alerting expectations
-- confirm custom domain, if any
-- create production Entra app registration
-- configure admin MFA group
-
-Then repeat with:
-
-```text
-ENV = prod
-RG = rg-medsyn-prod
-parameter file = infrastructure/parameters/prod.bicepparam
-GitHub environment = prod
-```
-
-Production should deploy from protected `main` only and require reviewer approval.
+Restore drills use temporary copies with synthetic data. Production is ready only when
+`docs/production-acceptance.md` has passed.
 
 ## 19. Common Problems
 
@@ -805,8 +778,13 @@ Production should deploy from protected `main` only and require reviewer approva
 |---|---|
 | `infrastructure/main.bicep` | Main Azure infrastructure template |
 | `infrastructure/parameters/dev.bicepparam` | Dev sizing and environment-variable inputs |
-| `infrastructure/parameters/staging.bicepparam` | Staging sizing |
-| `infrastructure/parameters/prod.bicepparam` | Production sizing |
+| `infrastructure/parameters/prod.bicepparam` | Production sizing and environment-variable inputs |
+| `infrastructure/scripts/bootstrap-production.sh` | First production deployment, up to the release |
+| `infrastructure/scripts/cutover-domain.sh` | Moves `neqabacare.com` from dev to production, and back |
+| `infrastructure/scripts/recovery.sh` | Recovery hold, restored database, reconciliation |
+| `infrastructure/scripts/run-job-command.sh` | One-off management command as a job execution |
+| `infrastructure/scripts/release_gate.py` | What may reach production; the pull request gate |
+| `infrastructure/scripts/acceptance_smoke.py` | Automated part of the acceptance checks |
 | `infrastructure/scripts/setup-github-oidc.ps1` | Creates Azure identities/federated credentials for GitHub |
 | `infrastructure/scripts/create-entra-app.ps1` | Creates Entra app registration and stores client secret |
 | `infrastructure/scripts/setup-postgres-entra.sh` | Configures PostgreSQL Entra auth/database role |
@@ -814,6 +792,11 @@ Production should deploy from protected `main` only and require reviewer approva
 | `.github/workflows/backend.yml` | Backend test/image/deploy pipeline |
 | `.github/workflows/frontend.yml` | Frontend test/build/deploy pipeline |
 | `.github/workflows/e2e.yml` | Docker Compose + Playwright checks |
+| `.github/workflows/release-production.yml` | The only way to production |
+| `.github/workflows/ci-gate.yml` | The always-running pull request checks |
+| `.github/workflows/security-scan.yml` | Dependency and image scans |
+| `docs/production-runbook.md` | Production: bootstrap, release, cutover, rollback, recovery |
+| `docs/production-acceptance.md` | What must pass before production is called ready |
 | `docs/azure-deployment.md` | Detailed Azure operations and recovery notes |
 | `docs/github-setup.md` | Detailed GitHub environments/OIDC setup |
 | `docs/entra-setup.md` | Detailed Entra External ID setup |

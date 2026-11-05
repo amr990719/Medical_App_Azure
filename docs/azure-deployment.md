@@ -1,8 +1,9 @@
 # Azure deployment
 
-Exact commands to create one environment (`dev`, `staging` or `prod`) and deploy the platform to
-it (PROMPT.md §33–§37, §48, §52). Architecture: `docs/architecture.md`. CI/CD: `docs/github-setup.md`.
-Sign-in: `docs/entra-setup.md`.
+Exact commands for the dev environment, and the reference behind production (PROMPT.md §33–§37,
+§48, §52). **Production is created and operated through `docs/production-runbook.md`**, and accepted
+through `docs/production-acceptance.md`. Environments are dev and prod only. Architecture:
+`docs/architecture.md`. CI/CD: `docs/github-setup.md`. Sign-in: `docs/entra-setup.md`.
 
 Commands are Bash (Git Bash or WSL on Windows). The same steps in Windows PowerShell are in
 `README.md` §9–§14.
@@ -11,7 +12,8 @@ Commands are Bash (Git Bash or WSL on Windows). The same steps in Windows PowerS
 
 **dev was deployed with these steps on 2026-10-07/08 and is deployed by GitHub Actions since
 2026-10-09** (resource group `Medical_App`, uaenorth; Static Web App in eastasia, D140). Session
-logs: `docs/progress.md` Sessions 11–13. **staging and prod have never been deployed.**
+logs: `docs/progress.md` Sessions 11–13. **prod has never been deployed.** There is no staging (owner, 2026-11-05). This table
+is about dev; production's record is `docs/production-acceptance.md`.
 
 | Step / capability | dev | How it was checked |
 |---|---|---|
@@ -26,7 +28,7 @@ logs: `docs/progress.md` Sessions 11–13. **staging and prod have never been de
 | Full doctor → admin flow on Azure | **NOT VERIFIED** | same; covered locally by Playwright `e2e.yml` on every PR |
 | App Insights ingestion / Log Analytics queries | verified (2026-10-11) | requests, traces and dependencies arrive; a request to the new revision was queryable about 1 s after it was sent; 0 unmasked 14-digit runs in 30 days. Queried through the ARM endpoint, see §"Telemetry verification" |
 | Admin sign-in with MFA (`amr`, Conditional Access) | **NOT VERIFIED** | dev runs with `ENTRA_ADMIN_REQUIRE_MFA=False` (D144) |
-| §10 OCR with Azure OpenAI | **NOT VERIFIED** | not deployed (legal decisions L2/L3) |
+| §10 OCR with Azure OpenAI | **NOT VERIFIED** | not deployed (off in production by owner decision, D150) |
 | Private networking (`enablePrivateNetworking`) | **NOT VERIFIED** | dev uses public endpoints + Entra-only auth |
 | Restore drill (§"Backups and recovery") | **NOT VERIFIED** | never run |
 | Cleanup job (scheduled) | deployed; a run not checked | — |
@@ -39,6 +41,7 @@ logs: `docs/progress.md` Sessions 11–13. **staging and prod have never been de
 | §11 Alert rules and action group deployed | verified (2026-11-05) | read-only `az` checks: the four `alert-medsyn-dev-notify-*` rules are enabled and send to `ag-medsyn-dev-notify`, whose receiver status is `Enabled`; the rules were created 2026-11-04 15:49 UTC, during run `41861057067` (merge of the `secrets: inherit` fix, `419f68a`) |
 | §11 Each alert actually firing, an alert email arriving | **NOT VERIFIED** | as of 2026-11-05 no alert has fired and no alert email has been seen. The test-email API rejected all 4 attempts on 2026-11-05 with "There are no valid receivers in the request" (CLI and REST); cause unknown (Q-N17 in `docs/progress.md`) |
 | §11 Meta / WhatsApp | parked | `enableWhatsApp` stays off |
+| `release-production.yml`, `bootstrap-production.sh`, `cutover-domain.sh`, `recovery.sh`, `service-alerts.bicep`, `RECOVERY_HOLD`, `POSTGRES_SERVER_NAME_OVERRIDE`, digest-pinned images | **NOT VERIFIED — requires Azure credentials** | written and tested locally (2026-11-05); promotion tested against local registries; never run on Azure |
 
 Static checks still apply to every environment: Bicep builds and lints with zero warnings (strict
 `infrastructure/bicepconfig.json`), and `check-template-security.py` passes in CI.
@@ -47,14 +50,16 @@ Static checks still apply to every environment: Bicep builds and lints with zero
 
 | Module | Resource | Notes |
 |---|---|---|
-| `identity.bicep` | user-assigned identity `id-medsyn-<env>` | used by the app and both jobs for Blob, Key Vault, PostgreSQL, ACR, OpenAI, App Insights |
-| `monitoring.bicep` | Log Analytics + Application Insights | retention / daily cap / Entra-only ingestion parameters |
+| `identity.bicep` | user-assigned identity `id-medsyn-<env>` | used by the app and its jobs for Blob, Key Vault, PostgreSQL, ACR, OpenAI, App Insights |
+| `monitoring.bicep` | Log Analytics + Application Insights | retention / daily cap / Entra-only ingestion parameters. Has no alerts of its own |
+| `service-alerts.bicep` | availability test, its separate `appi-…-uptime` component, action group, metric and log alerts | only with `enableServiceAlerts` (prod), `alertEmail` and the deployed app. Table: `docs/production-runbook.md`, "Monitoring" |
+| `notification-alerts.bicep` | four alert rules on the notify job | with `enableNotifications` and `alertEmail` |
 | `key-vault.bicep` | Key Vault (RBAC, soft delete, purge protection) | secrets set by you, never by Bicep |
 | `storage.bicep` | Storage account + private container `medical-documents` | no public access, **shared keys disabled**, TLS 1.2, soft delete, versioning, lifecycle for old versions |
 | `postgres.bicep` | PostgreSQL Flexible Server 16 | Entra auth on, password auth off by default, TLS ≥ 1.2 required, PITR + optional geo backup / HA |
 | `container-registry.bicep` | Container Registry | no admin user, no anonymous pull |
 | `container-apps-env.bicep` | Container Apps environment (workload profiles, Consumption) | logs to Log Analytics |
-| `container-app.bicep` | Django app + `migrate` job (manual) + `cleanup` job (cron) | Key Vault references, probes on `/api/health/` + `/api/ready/`, HTTP-concurrency scaling |
+| `container-app.bicep` | Django app + `migrate` job (manual) + `cleanup` job (cron) + `notify` job (cron, with `enableNotifications`) | Key Vault references, probes on `/api/health/` + `/api/ready/`, HTTP-concurrency scaling. With `deployWebApp=false`, only the migrate job exists |
 | `static-web-app.bicep` | Static Web App **Standard** | PR preview environments disabled (they would share the backend) |
 | `static-web-app-link.bicep` | linked backend → Container App | `/api/*` same origin (§4.1) |
 | `role-assignments.bicep` | Blob Data Contributor (container), Blob Delegator (account), Key Vault Secrets User, AcrPull, Monitoring Metrics Publisher, OpenAI User | each scoped to one resource |
@@ -70,7 +75,8 @@ everything carries the tags `application`, `environment`, `managed-by`.
   or PowerShell for the scripts.
 - Rights on the target subscription: Owner, or Contributor + User Access Administrator, on the
   resource group (role assignments are part of the template).
-- **Region.** Decide with legal (decision L3). All resources except the Static Web App use the
+- **Region.** The owner's choice (`docs/security.md` L3); production assumes `uaenorth`, as on dev, to
+  be confirmed before its first deployment. All resources except the Static Web App use the
   resource group's region; Static Web Apps exists only in `westeurope`, `centralus`, `eastus2`,
   `westus2`, `eastasia` (`STATIC_WEB_APP_LOCATION`). Check subscription policies first:
 
@@ -97,7 +103,7 @@ everything carries the tags `application`, `environment`, `managed-by`.
 ```bash
 az login
 az account set --subscription <subscription-id>
-ENV=dev                                   # dev | staging | prod
+ENV=dev                                   # for prod, use the bootstrap in docs/production-runbook.md
 RG=rg-medsyn-$ENV
 LOCATION=<region>
 az group create --name "$RG" --location "$LOCATION" \
@@ -115,8 +121,6 @@ export KEY_VAULT_OPERATOR_TYPE=User
 # Optional: Entra admin group of PostgreSQL (otherwise step 6 sets you as admin)
 # export POSTGRES_ENTRA_ADMIN_OBJECT_ID=<group-object-id> POSTGRES_ENTRA_ADMIN_NAME=<group-name> POSTGRES_ENTRA_ADMIN_TYPE=Group
 # export STATIC_WEB_APP_LOCATION=westeurope
-# prod only, decide now (PostgreSQL networking cannot be changed later):
-# export ENABLE_PRIVATE_NETWORKING=false
 unset CONTAINER_IMAGE   # first phase
 ```
 
@@ -193,12 +197,19 @@ APP=$(out containerAppName); MIGRATE=$(out migrateJobName)
 EXEC=$(az containerapp job start -n "$MIGRATE" -g "$RG" --query name -o tsv)
 az containerapp job execution show -n "$MIGRATE" -g "$RG" --job-execution-name "$EXEC" \
   --query properties.status -o tsv            # repeat until Succeeded
-curl -fsS "https://$(out containerAppFqdn)/api/ready/"
 ```
 
-The first revision starts before the migrate job ran; its readiness probe (`/api/ready/` only
-checks connectivity) passes, but requests fail until the migration finishes — on the very first
-deployment only. Every later deployment runs the job first (`backend.yml`).
+Check it through the Static Web App once the frontend is deployed (step 8). The Container App's own
+address answers 401, because the Static Web App link protects it:
+
+```bash
+curl -fsS "https://$SWA_HOST/api/ready/"      # {"status": "ok", "database": "ok", "schema": "ok"}
+```
+
+On dev's first deployment, the revision started before the migrate job ran, and requests failed until
+it finished. With these commands that would still happen, and `/api/ready/` would now answer 503
+meanwhile. **Production avoids it:** the bootstrap deploys with `deployWebApp=false`, so only the migrate
+job exists until the schema does. Every later deployment runs the job first.
 
 ## 8. Frontend
 
@@ -226,8 +237,27 @@ to (or remove them from) the `medical-admins-<env>` group so the MFA policy appl
 `az containerapp exec` needs an interactive terminal (it fails from scripts and CI), so start an
 execution of the **migrate** job with only the container arguments replaced. The image, the
 environment and the secret references stay those of the job. `entrypoint.sh` runs any arguments
-that are not `web`/`migrate`/`cleanup` as given. The dev grant ran this way in Session 12
-(execution `caj-medsyn-dev-migrate-myfcr7j`); the script form below was not re-run.
+that are not `web`/`migrate`/`cleanup`/`notify` as given. The migrate job has no notification
+settings, so nothing run this way can send.
+
+`infrastructure/scripts/run-job-command.sh` does all of this and waits for the result (NOT VERIFIED on
+Azure yet):
+
+```bash
+infrastructure/scripts/run-job-command.sh --job "$MIGRATE" --resource-group "$RG" \
+  -- python manage.py grant_admin <email-or-oid>
+```
+
+| Command | What it does |
+|---|---|
+| `grant_admin`, `revoke_admin` | section 9 |
+| `release_check [--fiscal-year N] [--skip-blob] [--require-admin]` | what a web request cannot check: migrations, shared cache, explicit fiscal year, fee schedule, reference data, a blob round trip, Entra discovery. Exits 1 on any failure |
+| `reconcile_documents [--restored-to <ISO8601>] [--limit N]` | read only: rows without bytes, blobs without rows, and which of those are newer than a restore point. Exits 1 when bytes are missing |
+| `reconcile_notifications --restored-to <ISO8601> [--apply]` | after a restore, ends in-flight rows `SUPERSEDED` so nothing sends twice. Dry run by default. Through this job it cannot see the sending mode, so pause sending first (`recovery.sh` checks) |
+| `alert_test` | emits the one harmless trace that fires the `ops-alert-test` rule: proves an alert reaches a person |
+
+The dev grant ran as a job execution in Session 12 (execution `caj-medsyn-dev-migrate-myfcr7j`). The
+long form, which that script automates:
 
 ```bash
 JOB_ID=$(az containerapp job show -n "$MIGRATE" -g "$RG" --query id -o tsv)
@@ -246,7 +276,7 @@ rm start.json
 `az containerapp job logs show` needs the `containerapp` CLI extension. Do not use `job start
 --image …` for this: overriding the image there can drop the job's environment.
 
-## 10. Enabling OCR (only after legal decisions L2/L3)
+## 10. Enabling OCR (dev only; production pins it off, D150)
 
 ```bash
 export ENABLE_OCR=true          # or the GitHub variable ENABLE_OCR=true
@@ -265,11 +295,12 @@ purge it if the data must go).
 ## 11. Enabling doctor notifications (email now, WhatsApp later)
 
 Design: `docs/superpowers/specs/2026-11-02-notifications-design.md` (section 14 for the email-first
-decision of 2026-11-04). Everything here is **NOT VERIFIED — requires Azure credentials** (and AWS
-and Meta ones): the Bicep builds, but no environment has been deployed with `enableNotifications`.
-Creating Azure, AWS or Meta resources and sending a real message each need the owner's
-confirmation at that step. Production also needs legal decisions L3 and L4 (`docs/security.md`)
-before `notificationsMode=live`.
+decision of 2026-11-04). What has been verified on dev is in the status table above. Nothing has run
+on production: its stages are in `docs/production-runbook.md`, "Notifications". Creating Azure, AWS or
+Meta resources and sending a real message each need the owner's confirmation at that step. Moving
+production to `notificationsMode=live` is the owner's decision. The owner declined formal legal
+sign-off and the AWS CloudWatch reputation alarms on 2026-11-05; that is recorded, not a gate
+(`docs/security.md` §0).
 
 **Email only is the supported setup.** Amazon SES is the only channel in use. WhatsApp is parked
 behind `WHATSAPP_ENABLED` (off by default) until the Meta business profile is finished; its steps
@@ -282,7 +313,7 @@ are in "Later: turning WhatsApp on" below.
 | 1 | SES: sending domain verified (DKIM, custom MAIL FROM, DMARC; Cloudflare records DNS only), a monitored `notifications@` mailbox, production access in the selected Region | domain verified, production access granted |
 | 2 | Deploy the code (this repository) with `enableNotifications=false` | migrate job succeeded |
 | 3 | Dev trial: `enableNotifications=true`, `notificationsMode=allowlist` with the owner's address only | each event seen in an inbox, a provider failure reaches each alert, a paused job raises the missed-run alert |
-| 4 | Production: L3 and L4 signed off, then `notificationsMode=live` | owner decision |
+| 4 | Production: off, then an allowlist trial, then `notificationsMode=live` (`docs/production-runbook.md`) | owner decision |
 
 **Credentials.** Federation (Task 14) is not built, so the app and the notify job read an AWS access
 key from the environment. Production settings refuse to start in `allowlist` or `live` with real
@@ -308,13 +339,12 @@ them from a 0600 temp file as in step 4):
 In `off` and `live` nothing references `notifications-allowlist`, and no `whatsapp-*` secret is
 referenced unless `enableWhatsApp=true`.
 
-Deploy parameters of `infrastructure/main.bicep`. `dev.bicepparam` now reads six of them from the
-`dev` GitHub environment, so the automatic deploy on every merge to `main` keeps them instead of
-undoing a hand-passed deploy. Variables: `ENABLE_NOTIFICATIONS`, `NOTIFICATIONS_MODE`,
-`SES_ACCESS_KEY_FROM_KEY_VAULT`, `SES_REGION`, `SES_FROM_ADDRESS`; environment **secret**:
-`ALERT_EMAIL` (a secret so the what-if log masks it). All unset means off (`false`, `off`, blank).
-`staging.bicepparam` and `prod.bicepparam` do not read them yet: add them there, or pass them at
-deploy time, with non-secret values only:
+Deploy parameters of `infrastructure/main.bicep`. `dev.bicepparam` and `prod.bicepparam` read six of
+them from the GitHub environment, so a later deployment keeps them instead of undoing a hand-passed
+one. Variables: `ENABLE_NOTIFICATIONS`, `NOTIFICATIONS_MODE`, `SES_ACCESS_KEY_FROM_KEY_VAULT`,
+`SES_REGION`, `SES_FROM_ADDRESS`; environment **secret**: `ALERT_EMAIL` (a secret so the what-if log
+masks it). All unset means off (`false`, `off`, blank). The rest can be passed at deploy time, with
+non-secret values only:
 
 | Parameter | Meaning |
 |---|---|
@@ -324,7 +354,7 @@ deploy time, with non-secret values only:
 | `sesRegion`, `sesFromAddress` | SES identity Region and sender address |
 | `notificationBaseUrl` | link base in messages; empty uses the public host |
 | `notifyCron` | UTC cron of the job, default `*/5 * * * *` |
-| `alertEmail` | when set, deploys the four alert rules (failed or expired notification, oldest due row over 30 minutes, no `notify_run` in 15 minutes, job failed). Pass at deploy time; not committed |
+| `alertEmail` | when set, deploys the four alert rules (failed or expired notification, oldest due row over 30 minutes, no `notify_run` in 15 minutes, job failed), and the service alerts on prod. From the secret `ALERT_EMAIL`; not committed |
 | `awsRoleArn`, `awsWebIdentityAudience` | IAM role and audience for the federation, **NOT VERIFIED** (Task 14 is deferred; leave blank) |
 | `notificationMaxAgeHours`, `notificationResendRateLimit` | optional; left blank the application defaults (72 h, 30/hour) apply |
 | `enableWhatsApp` | default `false`; leave it off (see "Later") |
@@ -366,7 +396,7 @@ credentials** (and Meta ones).
 4. Trial in `allowlist` mode with the owner's numbers: each event on a device, a real stop and help
    reply, a provider failure reaches each alert. While `notificationsMode=off`, a WhatsApp stop
    reply still clears a doctor's opt-in (the web app sends no reply in `off`).
-5. Production: L3 and L4 signed off, then `notificationsMode=live`.
+5. Production: the owner's decision, then `notificationsMode=live`.
 
 After real WhatsApp use, turning it off and on again needs a decision on stale opt-ins first: while
 parked, a stop reply gets a 403 and changes nothing, so a doctor still opted in goes straight back to
@@ -374,10 +404,17 @@ WhatsApp when it is switched on. Decide whether to clear or re-ask opt-ins befor
 
 ## Deployment-time migrations (§37)
 
-- `backend.yml` → `reusable-deploy-backend.yml`: push image → `az containerapp job update --image`
-  + `az containerapp job start` on the **migrate** job → wait for `Succeeded` → update the cleanup
-  job → `az containerapp update --image` (new revision) → wait until the revision is `Healthy` →
-  smoke test. Replicas never migrate (`entrypoint.sh web` refuses `RUN_MIGRATIONS_ON_START`).
+- **Dev**, `backend.yml` → `reusable-deploy-backend.yml`: push image → `az containerapp job update
+  --image` + `az containerapp job start` on the **migrate** job → wait for `Succeeded` → update the
+  cleanup and notify jobs → `az containerapp update --image` (new revision) → wait until the revision
+  is `Healthy` → smoke test. Replicas never migrate (`entrypoint.sh web` refuses
+  `RUN_MIGRATIONS_ON_START`).
+- **Production**, `release-production.yml`: refuse an older release → copy the artifacts by digest →
+  infrastructure, keeping the running image → **migrate job** → `release_check` → cleanup and notify
+  jobs → new revision → frontend → smoke test → release record. The first deployment
+  (`mode=bootstrap`) applies the schema before the web app exists (`docs/production-runbook.md`).
+- `/api/ready/` fails with `schema: pending` while a migration this image knows about is unapplied, so
+  a revision that outruns its migration never gets traffic. An older image on a newer schema stays ready.
 - The migrate job runs `migrate --noinput` then `createcachetable` (shared rate-limit cache,
   `CACHE_URL=dbcache://django_cache`).
 - While the job runs, the **previous revision keeps serving** against the migrated schema, so every
@@ -388,6 +425,10 @@ WhatsApp when it is switched on. Decide whether to clear or re-ask opt-ins befor
 
 ### Rolling back
 
+**Production:** `mode=rollback` of `release-production.yml` re-promotes an earlier release, backend and
+frontend together (`docs/production-runbook.md`, "Rolling back a release"). The commands below are the
+manual fallback, and the way on dev.
+
 ```bash
 # Application only (schema unchanged or still compatible): previous image as a new revision
 az containerapp revision list -n "$APP" -g "$RG" \
@@ -396,27 +437,28 @@ az containerapp update -n "$APP" -g "$RG" --image <previous-image>
 ```
 
 Do not reverse migrations in production as a rollback (data loss risk); because migrations are
-expand/contract, the previous image works on the newer schema. If a migration damaged data,
-restore the database (below) to a new server and repoint `DATABASE_URL`.
+expand/contract, the previous image works on the newer schema. If a migration damaged data, restore
+the database: `docs/production-runbook.md`, "Restoring the database".
 
 ## Backups and recovery (§48)
 
 > **Restore NOT VERIFIED.** The protection settings below are deployed on dev and checked in the
 > templates by `check-template-security.py`, but no restore has been run against Azure yet. The
-> first restore drill (below, in staging) is part of going live.
+> first restore drill, on temporary copies with synthetic data, is part of going live
+> (`docs/production-acceptance.md`, REC-1 to REC-6).
 
 ### What is protected (configured by Bicep)
 
-| Store | Protection | dev | staging | prod | Parameter |
-|---|---|---|---|---|---|
-| PostgreSQL | automated backups + point-in-time restore (PITR) | 7 days | 14 days | 35 days | `postgresBackupRetentionDays` |
-| PostgreSQL | geo-redundant backup (restore in the paired region) | off | off | **on** | `postgresGeoRedundantBackup` |
-| PostgreSQL | zone-redundant high availability | off | off | off (enable when the RTO requires it; doubles compute) | `postgresHighAvailabilityMode` |
-| Blob documents | soft delete for blobs **and** the container | 7 days | 14 days | 14 days | `blobSoftDeleteRetentionDays` |
-| Blob documents | versioning; previous versions deleted by a lifecycle rule after | 30 days | 30 days | 90 days | `blobPreviousVersionRetentionDays` |
-| Blob documents | redundancy | LRS | LRS | ZRS | `storageSkuName` |
-| Key Vault | soft delete + **purge protection** | 7 days | 30 days | 90 days | `keyVaultSoftDeleteRetentionDays` (fixed at creation) |
-| Configuration | Bicep, workflows and scripts in Git; images in ACR tagged with the commit SHA | | | | |
+| Store | Protection | dev | prod | Parameter |
+|---|---|---|---|---|
+| PostgreSQL | automated backups + point-in-time restore (PITR) | 7 days | 35 days | `postgresBackupRetentionDays` |
+| PostgreSQL | geo-redundant backup (restore in the paired region) | off | **on** | `postgresGeoRedundantBackup` |
+| PostgreSQL | zone-redundant high availability | off | off, so no automatic failover (enable when the RTO requires it; doubles compute) | `postgresHighAvailabilityMode` |
+| Blob documents | soft delete for blobs **and** the container | 7 days | 14 days | `blobSoftDeleteRetentionDays` |
+| Blob documents | versioning; previous versions deleted by a lifecycle rule after | 30 days | 90 days | `blobPreviousVersionRetentionDays` |
+| Blob documents | redundancy | LRS | ZRS, within one region | `storageSkuName` |
+| Key Vault | soft delete + **purge protection** | 7 days | 90 days | `keyVaultSoftDeleteRetentionDays` (fixed at creation) |
+| Configuration | Bicep, workflows and scripts in Git; images in ACR by commit and digest; production's release records in its registry | | | |
 
 Not backed up: Application Insights / Log Analytics data (retention only), the Entra External ID
 tenant (users live there; Microsoft operates it), and the Container App itself (stateless,
@@ -431,45 +473,16 @@ redeployed from Git + ACR). Documents are restored in two parts: PostgreSQL hold
 | Data damaged by a bug or an operator | ≤ 5 minutes before the damage (PITR) | 1–2 hours | A |
 | Deleted or overwritten document | 0 within the soft-delete / version window | minutes | B |
 | Deleted Key Vault secret or vault | 0 within the soft-delete window | minutes | C |
-| Region outage (prod) | ≤ 1 hour (geo-backup lag) | several hours: new environment in the paired region | D |
+| Region outage (prod) | database ≤ 1 hour (geo-backup lag); **documents are not recoverable with ZRS** | several hours: new environment in the paired region; not promised | D |
 
 ### A. Restore PostgreSQL to a point in time
 
-PITR always creates a **new server**; the original stays untouched until you switch.
-
-```bash
-# 0. Stop writes: scale the app to zero and move the nightly cleanup job far into the future
-#    (it would purge blobs whose rows are newer than the restore point).
-az containerapp update -n "$APP" -g "$RG" --min-replicas 0 --max-replicas 0
-az containerapp job update -n "$(out cleanupJobName)" -g "$RG" --cron-expression "0 0 1 1 *"
-
-# 1. Restore to a new server (UTC timestamp just before the damage)
-az postgres flexible-server restore -g "$RG" --name "$PG-restored" \
-  --source-server "$PG" --restore-time "2026-10-06T08:00:00Z"
-
-# 2. Entra admin + the identity's role and grants on the new server
-infrastructure/scripts/setup-postgres-entra.sh --resource-group "$RG" --server "$PG-restored" \
-  --identity-name "$IDENTITY" --database medical --allow-current-ip
-
-# 3. Point the app and both jobs at the new server
-NEW_URL="postgres://$IDENTITY@$PG-restored.postgres.database.azure.com:5432/medical"
-az containerapp update -n "$APP" -g "$RG" --set-env-vars "DATABASE_URL=$NEW_URL"
-for job in "$(out migrateJobName)" "$(out cleanupJobName)"; do
-  az containerapp job update -n "$job" -g "$RG" --set-env-vars "DATABASE_URL=$NEW_URL"
-done
-
-# 4. Reopen with the environment's replica values, check, restore the cleanup schedule
-az containerapp update -n "$APP" -g "$RG" --min-replicas 1 --max-replicas 5
-curl -fsS "https://$(out containerAppFqdn)/api/ready/"
-az containerapp job update -n "$(out cleanupJobName)" -g "$RG" --cron-expression "30 1 * * *"
-```
-
-Then make the switch permanent: the next `az deployment group create` sets `DATABASE_URL` from
-the template's server name again, so either keep deploying with the original server (restore its
-data from the restored one with `pg_dump`/`pg_restore` during a maintenance window) or change
-the server name in `main.bicep`. Delete the damaged server only after the restored data is
-accepted. Documents uploaded after the restore point have blobs without rows; the cleanup job
-removes them after `BLOB_CLEANUP_GRACE_HOURS` (still recoverable as soft-deleted blobs).
+PITR always creates a **new server**; the original stays untouched until you switch. **Follow
+`docs/production-runbook.md`, "Restoring the database":** the recovery hold pauses writers, sending and
+cleanup; `POSTGRES_SERVER_NAME_OVERRIDE` makes the selection survive every later deployment; and
+reconciliation stops old notifications sending again and shows blobs that cleanup would delete.
+`infrastructure/scripts/recovery.sh` runs each step, on dev or prod. Validate through the Static Web
+App host: the Container App's own address answers 401.
 
 Geo-restore (prod, region loss) — new server in the paired region, then procedure D:
 
@@ -519,55 +532,38 @@ retention ends. Restart the active revision so Container Apps re-reads a recover
 
 ### D. Rebuild an environment
 
-Everything except data is in Git: create a resource group (another region if needed) and follow
-steps 1–9 above, with the geo-restored or PITR server as the database (adjust `DATABASE_URL` as
-in procedure A). Re-run `create-entra-app` with the new public URL. Blob data has no cross-region
-copy with LRS/ZRS; if the organization requires one, switch prod to `Standard_GZRS` (cost
-decision, not configured).
+Everything except data is in Git: create a resource group (another region if needed), run
+`bootstrap-production.sh` (`docs/production-runbook.md`, "Bootstrap"), and select the geo-restored or
+PITR server with `POSTGRES_SERVER_NAME_OVERRIDE`. Re-run `create-entra-app` with the new public URL,
+and move the domain with `cutover-domain.sh`. **Blob data has no cross-region copy with LRS or ZRS, so a
+regional rebuild brings back the database but not the documents.** If the organization requires
+that, the owner chooses `Standard_GZRS` (a cost decision, not configured). Do not promise whole-region
+recovery until that choice is made and drilled.
 
-### Restore drill (once per quarter, in staging)
+### Restore drill (once per quarter, on temporary copies)
 
-1. Note the time `T`; create a test application with two documents in staging and submit it.
-2. Delete one beneficiary in the database copy you will discard (or through the UI on a draft)
-   and delete one document through the UI.
-3. Run procedure A to `T + 1 minute` and procedure B for the deleted blob.
-4. Verify: the application opens in the admin UI with both documents, the fee snapshot and the
-   audit history; `/api/ready/` is green; the migrate job reports `No migrations to apply`.
-5. Record the measured RPO/RTO and every problem in `docs/progress.md` and update the table above.
-6. Delete the restored server, or keep it as the new staging server and redeploy accordingly.
+`docs/production-runbook.md`, "Restore drills": synthetic data, sending off, a temporary server and a
+temporary container, and no permanent environment. Record the measured RPO and RTO there and in
+`docs/progress.md`, then delete the copies.
 
 ## Production upgrade path (§34)
 
-The default is a secure MVP: PostgreSQL accepts only Azure-internal connections (`0.0.0.0` rule)
-plus Entra tokens + TLS; Blob and Key Vault have public endpoints but no anonymous/shared-key
-access; Azure OpenAI has keys disabled. `enablePrivateNetworking=true` (decide **before** the
-first prod deployment) adds a VNet with a delegated Container Apps subnet, a VNet-integrated
+The default is a secure MVP, and it is what production uses (owner, D150: private networking off):
+PostgreSQL accepts only Azure-internal connections (`0.0.0.0` rule) plus Entra tokens + TLS; Blob and
+Key Vault have public endpoints but no anonymous/shared-key access; Azure OpenAI has keys disabled.
+If that is ever revisited, `enablePrivateNetworking=true` (it cannot be changed after the server is
+created, so it means a rebuild) adds a VNet with a delegated Container Apps subnet, a VNet-integrated
 PostgreSQL server without public access, and private endpoints + private DNS for Blob, Key Vault
 and OpenAI (their public network access disabled). Operators then need a jump host / VPN in the
 VNet for `setup-postgres-entra.sh` and Key Vault secret changes; Container Registry stays public
-(Basic/Standard have no private endpoints; Premium does). Further steps: Microsoft Defender for
-Storage malware scanning (L8), Defender for Cloud, alerts on 5xx rate / job failures, Front Door
-WAF in front of the Static Web App if required.
+(Basic/Standard have no private endpoints; Premium does). Further options, none chosen: Microsoft
+Defender for Storage malware scanning (L8, off by owner decision), Defender for Cloud, Front Door WAF
+in front of the Static Web App.
 
 ## Cost (§52)
 
-Retail list prices, USD, `westeurope`, read from the Azure Retail Prices API on 2026-10-06
-(prices vary by region and change; use the Azure pricing calculator for a quote). 730 h/month.
-
-| Component | dev default | prod default | Price basis |
-|---|---|---|---|
-| Static Web Apps | Standard | Standard | $9 / app / month (+ $0.20/GB over 100 GB) |
-| Container Apps app | 0.5 vCPU / 1 GiB, **min 0** (scales to zero) | 1 vCPU / 2 GiB, min 1, max 5 | active vCPU $0.000034/s, idle vCPU $0.000004/s, memory $0.000004/GiB-s; $0.56 per million requests. One always-on prod replica ≈ $31/month idle, ≈ $110/month fully busy; the monthly free grant per subscription reduces this |
-| Container Apps jobs | migrate per deploy, cleanup nightly | same | billed per execution second at the same rates (cents per month) |
-| Container Apps environment | 1 | 1 | the price list now shows an *Environment Management Hour* meter ($0.143/h ≈ $104/month, effective 2026-09-01); whether it applies to Consumption-only environments is **NOT VERIFIED** — check before relying on scale-to-zero savings |
-| PostgreSQL compute | Burstable B1ms | General Purpose D2ds_v5 | B1ms $0.0199/h ≈ $14.5/month; B2s (staging) $0.0796/h ≈ $58; D2ds_v5 $0.212/h ≈ $155; zone-redundant HA doubles compute |
-| PostgreSQL storage/backup | 32 GB, 7-day PITR | 64 GB, 35-day PITR, geo-redundant | storage per provisioned GB; backup storage beyond the free 100 % of provisioned size $0.103/GB-month (LRS), geo-redundant backup costs more |
-| Container Registry | Basic | Standard | Basic $0.1666/day ≈ $5/month; Standard $0.6666/day ≈ $20/month |
-| Blob Storage | LRS hot | ZRS hot | per GB stored + transactions; ID images are small (≤ 10 MB each); versions/soft delete add stored GB |
-| Log Analytics | 1 GB/day cap, 30 days | no cap, 90 days | $2.99/GB ingested (Analytics Logs); the largest variable cost after PostgreSQL — keep `LOG_LEVEL=INFO`, no request bodies |
-| Key Vault | standard | standard | per 10 000 operations (Container Apps cache references; negligible) |
-| Azure OpenAI (optional) | off | off until L2 | per input/output token per OCR call (image tokens dominate); `openAiCapacity` caps throughput, not cost |
-| Private networking (optional) | off | decide | private endpoints per hour + per GB, private DNS zones; Container Registry Premium if it must be private too |
+**Current estimate for production: `docs/production-cost-estimate-2026-11-05.md`**, with retail prices
+for its region, what was assumed, and the budget command.
 
 **Cheapest reasonable dev:** the `dev.bicepparam` defaults — scale-to-zero app, B1ms, Basic ACR,
 LRS, 1 GB/day log cap, no OCR, no private networking. Static Web Apps Standard is kept because the
@@ -576,24 +572,20 @@ linked backend (same-origin cookies, §4.1) requires it; the Free plan has no li
 **Initial production configuration** (`prod.bicepparam`): Container App 1 vCPU / 2 GiB, 1–5
 replicas, 3 Gunicorn workers; PostgreSQL General Purpose D2ds_v5, 64 GB, 35-day PITR,
 geo-redundant backup, HA off; Storage ZRS; ACR Standard; Log Analytics 90 days without a daily
-cap; Application Insights with Entra-only ingestion; OCR off; private networking decided before
-the first deployment (recommended on). Order of magnitude at the list prices above: PostgreSQL
-≈ $155 + storage/backup, Container Apps ≈ $31–110, ACR ≈ $20, SWA $9, Log Analytics a few dollars
-per GB ingested, plus the environment meter if it applies (Q-T16) — roughly **$250–350 per
-month** before private networking and OCR. This is an estimate, not a quote.
+cap; Application Insights with Entra-only ingestion; OCR off; private networking off (D150).
 
 ### Cost drivers (PROMPT.md §52)
 
 | Driver | What makes it grow | How to control it |
 |---|---|---|
-| **PostgreSQL compute** | the SKU runs 24/7 whatever the traffic; HA doubles it | Burstable for dev/staging, General Purpose only in prod; stop an unused dev server (`az postgres flexible-server stop`); HA only when the RTO requires it |
+| **PostgreSQL compute** | the SKU runs 24/7 whatever the traffic; HA doubles it | Burstable for dev, General Purpose only in prod; stop an unused dev server (`az postgres flexible-server stop`); HA only when the RTO requires it |
 | **PostgreSQL storage and backups** | provisioned GB (not used GB); backup storage above 100 % of the provisioned size; geo-redundant backup stores a second copy | start at 32/64 GB (storage can only grow); keep retention at what the RPO needs (7/14/35 days) |
 | **Container Apps vCPU-seconds and min replicas** | `minReplicas ≥ 1` bills idle time all month; active time per vCPU-second and GiB-second; jobs per execution second | dev scales to zero (`minReplicas = 0`; the first request after idle is slow); raise `maxReplicas` for peaks rather than the minimum |
 | **Static Web Apps Standard** | flat per app per month + bandwidth above 100 GB | one app per environment; Standard only because the linked backend needs it |
 | **Blob storage and transactions** | stored GB (documents + previous versions + soft-deleted blobs), read/write operations; ZRS costs more than LRS | 8 MB upload cap and per-user upload limit; lifecycle rule deletes old versions; the cleanup job purges orphans |
-| **Log Analytics ingestion** | GB ingested per day (requests, dependencies, logs) and retention beyond the included period | `LOG_LEVEL=INFO`, no bodies, Gunicorn access log off; daily cap in dev/staging (`logAnalyticsDailyQuotaGb`); Application Insights sampling if traffic grows |
+| **Log Analytics ingestion** | GB ingested per day (requests, dependencies, logs) and retention beyond the included period | `LOG_LEVEL=INFO`, no bodies, Gunicorn access log off; daily cap in dev (`logAnalyticsDailyQuotaGb`); Application Insights sampling if traffic grows |
 | **Azure OpenAI tokens per OCR call** | one image per call (image tokens dominate) + up to 1 000 output tokens; cost = calls × tokens × model price | off by default; only on the doctor's click, one call per document, 30 calls per user per hour; pick the smallest vision model that reads Arabic IDs reliably |
-| **Private networking** | private endpoints (per hour + per GB), private DNS zones, VNet-integrated PostgreSQL; ACR Premium if the registry must be private too | off in dev/staging; a security decision for prod (`ENABLE_PRIVATE_NETWORKING`) |
+| **Private networking** | private endpoints (per hour + per GB), private DNS zones, VNet-integrated PostgreSQL; ACR Premium if the registry must be private too | off in dev and prod (owner, D150); pinned in `prod.bicepparam` |
 | **Container Apps environment** | possible *Environment Management Hour* meter (Q-T16) | check the first month's bill |
 | **Key Vault** | operations (negligible: Container Apps caches the references) | — |
 
@@ -701,6 +693,8 @@ az role definition delete --name "$ROLE" --custom-role-only true --scope "$SCOPE
 | Container App creation fails with a Key Vault reference error | Secrets missing (step 4/5) or the identity's *Key Vault Secrets User* assignment not yet propagated — wait a few minutes and redeploy. |
 | Revision never becomes ready; logs show `ImproperlyConfigured` | A required setting is empty (`ENTRA_*`, secrets). Production settings refuse to start on purpose. |
 | `password authentication failed for user "id-medsyn-<env>"` | Step 6 not run, wrong `AZURE_CLIENT_ID` on the app (must be the user-assigned identity's client id — the template sets it), or token for another tenant. |
+| `/api/ready/` answers 503 with `schema: pending` | This image knows a migration that is not applied: the migrate job did not run, or failed. Run it (or re-run the deployment). The revision gets no traffic meanwhile, by design. |
+| Revision or job fails with `CURRENT_FISCAL_YEAR must be set` | Production settings refuse to start without it. Bicep sets it from `currentFiscalYear`, so deploy the infrastructure first, then re-run the backend deploy. Never infer it from the calendar. |
 | Blob `403 AuthorizationPermissionMismatch` | Role assignment still propagating, or `BLOB_ACCOUNT_URL` points at another account. Shared-key access is disabled by design. |
 | SAS document links fail | *Storage Blob Delegator* missing on the account (user-delegation key). |
 | CSRF failure on POST | The browser origin is not in `CSRF_TRUSTED_ORIGINS` (custom domain not set as `publicHostname`). |

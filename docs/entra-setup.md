@@ -16,16 +16,18 @@ and has no password form.
 > **Still NOT VERIFIED:** §2 step 2 (Arabic is **not enabled** on the dev flow; the sign-in page
 > was still English on 2026-10-11), §2 step 3 branding, §4 admin MFA (the Conditional Access policy
 > and the `amr` claim; dev runs with `ENTRA_ADMIN_REQUIRE_MFA=False`, D144), §5 secret rotation,
-> the bash variant of the script, and anything in staging or prod.
+> the bash variant of the script, and anything in prod (the registration does not exist yet).
 
-One app registration per environment (`medical-syndicates-dev`, `-staging`, `-prod`), each with
-its own client secret in its own Key Vault (§49). Bicep does not create app registrations.
+One app registration per environment (`medical-syndicates-dev`, `medical-syndicates-prod`), each
+with its own client secret in its own Key Vault (§49). Bicep does not create app registrations. The
+production one is created by the `entra` stage of `bootstrap-production.sh`
+(`docs/production-runbook.md`), which runs the script in §3 on the default host, without `--local`.
 
 ## 1. Create the external tenant (once)
 
 1. Azure portal → **Microsoft Entra External ID** → **Overview** → **Create a tenant** →
    **External**. Choose a name (e.g. `medsyndicates`), the country/region (data location of the
-   directory, see legal decision L3 in `docs/security.md`) and the subscription for billing.
+   directory, see L3 in `docs/security.md`) and the subscription for billing.
 2. Note the **tenant ID** (Overview page) and the **initial domain** (`<name>.onmicrosoft.com`).
    The authority used by Django is `https://<name>.ciamlogin.com/<tenant-id>`.
 3. Add at least two administrators of the external tenant with MFA (break-glass account kept
@@ -97,7 +99,8 @@ never committed.
 
 Custom domain later: re-run with `--public-url https://<custom-domain>` (the existing URIs are
 kept), set `PUBLIC_HOSTNAME` (GitHub variable) and redeploy the infrastructure so Django's redirect
-URI and CSRF origin follow.
+URI and CSRF origin follow. For `neqabacare.com`, `cutover-domain.sh` does these in the right order
+on dev and prod (`docs/production-runbook.md`, "Domain cutover").
 
 ## 4. MFA for administrators (Conditional Access)
 
@@ -116,10 +119,14 @@ commands").
    (verify with a test admin: a refused admin lands on `/?auth_error=MFA_REQUIRED`), set the parameter
    `entraAdminRequireMfa=false` and rely on the Conditional Access policy alone (Q-T7).
    **dev does exactly that** (D144): `ENTRA_ADMIN_REQUIRE_MFA=False`, with email one-time passcode
-   through Conditional Access. **staging and prod do the same** (owner decision 2026-10-11, D150):
-   `entraAdminRequireMfa = false` in all three parameter files, so the Conditional Access policy
-   on `medical-admins-<env>` is the only admin MFA control. It must exist before the first admin
-   of that environment is granted.
+   through Conditional Access. **prod does the same** (owner decision 2026-10-11, D150):
+   `entraAdminRequireMfa = false` in the parameter files, so the Conditional Access policy on
+   `medical-admins-<env>` is the only admin MFA control. It must exist before the first admin of that
+   environment is granted.
+5. **Prove it before `grant_admin`.** The app cannot see MFA, so it would not notice a missing or
+   mis-targeted policy, and role checks prove nothing about it. Check the policy targets the group
+   and the app, then have a real member of the group sign in and be asked for MFA
+   (`docs/production-acceptance.md` AUTH-3, AUTH-4). Only then grant the role (AUTH-5).
 
 ## 5. Rotating the client secret
 
@@ -141,6 +148,6 @@ az ad app credential delete --id <client-id> --key-id <old-key-id>
 | `AADSTS50011` redirect URI mismatch | The browser host is not registered. Re-run the script with that `--public-url`; check `ENTRA_REDIRECT_URI` on the Container App ends with `/api/v1/auth/callback/`. |
 | Sign-out leaves the user on an Entra page | `https://<host>/signed-out` not registered (Entra only redirects after logout to a registered reply URL). |
 | `?auth_error=` on the landing page after sign-in | Django logs `ID token rejected` (with the reason: exception type, `nonce` or `tenant`) or `Token exchange failed` (with the OAuth error code); tokens are never logged. An issuer/audience error means a wrong `ENTRA_AUTHORITY` / `ENTRA_CLIENT_ID`. |
-| Admin refused after sign-in (`auth_error=MFA_REQUIRED`) | No `mfa` in `amr` (section 4). |
+| Admin refused after sign-in (`auth_error=MFA_REQUIRED`) | `ENTRA_ADMIN_REQUIRE_MFA` is on and there is no `mfa` in `amr` (section 4). Dev and prod set it off. |
 | `invalid_client` | Client secret expired or Key Vault holds an old one — rotate (section 5). |
 | Email missing on the user | `email` optional claim not configured, or the account signed up with a provider that does not return it. |

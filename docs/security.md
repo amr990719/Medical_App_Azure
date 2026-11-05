@@ -1,18 +1,26 @@
 # Security and privacy
 
 > **Reviewed in Session 9** (findings and fixes in §8). Lists the technical controls that exist in the code and the decisions
-> that need the organization's legal / management approval. It does **not** claim compliance with
+> that are the organization's to take. It does **not** claim compliance with
 > Egypt's Personal Data Protection Law (Law 151 of 2020), GDPR, HIPAA or any other regulation
 > (PROMPT.md §47). **dev has run on Azure since 2026-10-08** (`docs/azure-deployment.md`
 > §"Verification status"); rows marked **verified on dev** were exercised there. Items still marked
 > **NOT VERIFIED** are implemented and unit-tested with mocks but have not run against real Azure
-> resources (or, for staging/prod-only controls, have not run in those environments).
+> resources (or, for prod-only controls, have not run there: **production has not been deployed**).
+> Environments are dev and prod only (owner, 2026-11-05).
 
-## 0. Summary: technical controls vs. decisions that need legal approval (PROMPT.md §47)
+## 0. Summary: technical controls vs. legal and organizational questions (PROMPT.md §47)
 
 The system implements the technical controls below. It is **not** declared compliant with Law
 151/2020, GDPR, HIPAA or any other regulation: compliance also depends on the organizational and
-legal decisions in the second table, which nobody has taken yet.
+legal questions in the second table, most of which nobody has answered.
+
+**Owner decision, 2026-11-05: no formal legal sign-off, and no AWS bounce and complaint alarms.** The
+risk was explained once and the owner accepted it: without sign-off, nobody has confirmed that the
+questions below meet Law 151/2020; without the alarms, there is no early warning before AWS reviews
+or pauses sending. **These are not launch gates, and they are not to be reopened** unless the owner
+raises them. The questions stay listed because they are still unanswered, not because they block
+anything.
 
 | §47 control | Where it is implemented | Verified |
 |---|---|---|
@@ -25,18 +33,18 @@ legal decisions in the second table, which nobody has taken yet.
 | Security headers | API CSP `default-src 'none'`, nosniff, `Referrer-Policy`, COOP, `X-Frame-Options: DENY`; SWA CSP | live checks (Session 9) |
 | Rate limiting | sign-in callback 20/min per client address, uploads 60/h, OCR 30/h per user; shared cache | throttle tests |
 | Audit logs | append-only `AuditLog` (database trigger) for every action in §39 + national-ID reveals | audit tests |
-| Environment separation | separate resource groups, identities, Key Vaults, Entra app registrations, GitHub environments | dev exists; staging/prod not created yet, so separation is NOT VERIFIED |
-| Backups | PostgreSQL PITR (7/14/35 days), geo-redundant backup in prod, Blob soft delete + versioning, Key Vault soft delete + purge protection | Bicep; restore drill NOT DONE (needs Azure) |
+| Environment separation | separate resource groups, identities, Key Vaults, Entra app registrations, GitHub environments | dev exists; prod not created yet, so separation is NOT VERIFIED |
+| Backups | PostgreSQL PITR (7 days dev, 35 days prod), geo-redundant backup in prod, Blob soft delete + versioning, Key Vault soft delete + purge protection | Bicep; restore drill NOT DONE (needs Azure) |
 | Restricted production access | no shared or stored credentials; deploys only from `main` with reviewers for prod; operators named by decision L7 | `main` protected and `dev` deploys only from it (verified on GitHub 2026-10-11); prod NOT VERIFIED (never deployed) |
 | No personal data in logs | 11+ digit and email masking filter (14+ before notifications), no bodies/headers/query strings, OCR payloads never logged | logging + telemetry tests |
 
-| Decision that needs legal / organizational approval (§47) | Current technical default | Item |
+| Legal / organizational question (§47) | Current technical default | Item |
 |---|---|---|
 | Religion field: collect it at all, who sees it, printed or not | collected (optional), visible to the doctor and admins | L1 |
 | OCR processing of identity documents by an AI service | **decided 2026-10-11: off in production** (`enableOcr = false` pinned in `prod.bicepparam`, no Azure OpenAI resource) | L2 |
-| Data residency / region and cross-border transfer | region is a deployment parameter; not chosen. Notifications add Meta and AWS as recipients of phone numbers and email addresses: **owner and legal sign-off needed before `live`** | L3 |
-| Retention periods and deletion on request | nothing deleted automatically except orphan / soft-deleted blobs and expired sessions. `Notification` rows are not purged (12 months proposed); Meta and AWS retention is not assessed: **owner and legal sign-off needed** | L4 |
-| Admin access policy (who, MFA, reviews, unmasked printouts) | `grant_admin` by an operator; MFA required; reveals audited | L5 |
+| Data residency / region and cross-border transfer | region is a deployment parameter. Production assumes `uaenorth`, as on dev; **the owner still has to confirm it** before the first deployment. Notifications add AWS (and later Meta) as recipients of email addresses and phone numbers: moving to `live` is the owner's decision; transfer terms are unanswered | L3 |
+| Retention periods and deletion on request | nothing deleted automatically except orphan / soft-deleted blobs and expired sessions. `Notification` rows are not purged (12 months proposed); Meta and AWS retention is not assessed. Periods are the owner's to set; nothing destructive is enabled meanwhile (`docs/production-runbook.md`, "Retention") | L4 |
+| Admin access policy (who, MFA, reviews, unmasked printouts) | `grant_admin` by an operator; MFA through Conditional Access (D150), proven before the first grant; reveals audited | L5 |
 | Breach procedure | not defined | L6 |
 | Production access (subscription, database, Key Vault, break-glass) | not defined beyond the CI/CD identities | L7 |
 | Malware scanning of uploads | **decided 2026-10-11: off in production** (`MALWARE_SCAN_ENABLED=false`, no Defender for Storage); `scan_status` ready if revisited | L8 |
@@ -56,8 +64,8 @@ and birth years, identity-document images, personal photos and payment receipts.
 | Key Vault | Django `SECRET_KEY`, Entra client secret, DB password (fallback only) | RBAC, managed identity, soft delete + purge protection |
 | Application Insights / Log Analytics | requests, dependencies, exceptions, logs | national IDs masked before export (§4 below) |
 | Azure OpenAI (only if OCR is enabled) | one identity-document image per OCR request | see §5 and `docs/ocr.md` |
-| Meta WhatsApp Cloud API (notifications) | the doctor's mobile number, the Meta template name, the reference number and, for dues events, the amount | **Parked, not active** (owner decision 2026-11-04): off unless `WHATSAPP_ENABLED` is true, which nothing sets. When switched on later: only in `allowlist` or `live`; opt-in required; **L3/L4 sign-off pending** |
-| Amazon SES (notifications) | the doctor's email address, subject and body with the reference number and amount | the main channel; only in `allowlist` or `live`; **L3/L4 sign-off pending** (AWS stays pending); until Task 14 (federation) exists the credential is a long-lived access key held as a Key Vault secret (`aws-access-key-id`, `aws-secret-access-key`), to be rotated and limited to `ses:SendEmail`; nothing is provisioned from this repository (`NOT VERIFIED`, see progress Task 14) |
+| Meta WhatsApp Cloud API (notifications) | the doctor's mobile number, the Meta template name, the reference number and, for dues events, the amount | **Parked, not active** (owner decision 2026-11-04): off unless `WHATSAPP_ENABLED` is true, which nothing sets. When switched on later: only in `allowlist` or `live`; opt-in required; Meta's regions and terms are not assessed (L3, L4) |
+| Amazon SES (notifications) | the doctor's email address, subject and body with the reference number and amount | the main channel; only in `allowlist` or `live`; `live` is the owner's decision; AWS's regions and terms are not assessed (L3, L4); until Task 14 (federation) exists the credential is a long-lived access key held as a Key Vault secret (`aws-access-key-id`, `aws-secret-access-key`), to be rotated and limited to `ses:SendEmail`; nothing is provisioned from this repository (`NOT VERIFIED`, see progress Task 14) |
 | `notifications_notification` | event, channel, status, provider message ID, masked recipient (`010•••••678`, `a•••@example.com`), error code | no message text, full phone or full address; written only by `notifications/services.py` |
 
 ## 2. Identity, sessions and authorization
@@ -72,8 +80,10 @@ and birth years, identity-document images, personal photos and payment receipts.
   `CSRF_TRUSTED_ORIGINS` must list the Static Web Apps origin.
 - Admin role only via `python manage.py grant_admin` (audited `ADMIN_ROLE_GRANTED`) and removed
   with `revoke_admin` (audited `ADMIN_ROLE_REVOKED`; refuses to remove the last active admin); an
-  admin session requires `amr` to contain `mfa` (`ENTRA_ADMIN_REQUIRE_MFA=true`, Q-T7; off on dev,
-  D144). The session is
+  admin session requires `amr` to contain `mfa` when `ENTRA_ADMIN_REQUIRE_MFA=true`, but External ID
+  tokens do not carry it, so this is off on dev and prod (D144, D150) and admin MFA is enforced by
+  Conditional Access only. Nothing in the app would notice a missing policy, so it is proven with a
+  real sign-in before the first grant (`docs/production-acceptance.md` AUTH-3, AUTH-4). The session is
   bound to the role (`User.get_session_auth_hash`), so granting or revoking ADMIN ends that
   user's open sessions: a session that never passed the MFA check cannot become an admin one.
 - Object-level authorization on every endpoint; doctor querysets are scoped to the requesting
@@ -95,7 +105,8 @@ and birth years, identity-document images, personal photos and payment receipts.
   `CSRF_TRUSTED_ORIGINS` / `DATABASE_URL` / Entra settings, non-TLS `DB_SSLMODE`, an unknown
   `DB_AUTH_MODE`, Blob account keys (only managed identity; the Azurite emulator string is the
   sole exception, for local production-like runs), the in-memory blob backend, mock OCR, or
-  incomplete Azure OpenAI settings when OCR is on.
+  incomplete Azure OpenAI settings when OCR is on, or a missing or out-of-range
+  `CURRENT_FISCAL_YEAR` (never inferred from the calendar).
 - HTTPS redirect (probes exempt), HSTS 1 year + `includeSubDomains` + `preload`
   (`SECURE_HSTS_PRELOAD` can turn the preload flag off), `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: same-origin`, `Cross-Origin-Opener-Policy: same-origin`,
@@ -181,16 +192,22 @@ and birth years, identity-document images, personal photos and payment receipts.
 | Azure OpenAI | deployed only with `enableOcr`; `disableLocalAuth=true`; *Cognitive Services OpenAI User* on that account only | NOT VERIFIED — requires Azure credentials |
 | Static Web App | Standard + linked backend (same origin); `staticwebapp.config.json`: strict CSP (no inline/eval script, `frame-ancestors 'none'`, Google Fonts only external origin), HSTS, nosniff, `X-Frame-Options: DENY`, COOP, Permissions-Policy; PR preview environments disabled | CSP checked in Chromium against the production build (landing, doctor form with thumbnails, admin detail + viewer: no violation); verified on dev on 2026-10-11: the SWA serves the CSP, HSTS, nosniff, `X-Frame-Options: DENY`, COOP and Permissions-Policy headers, and the linked backend serves `/api` same-origin |
 | GitHub → Azure | OIDC federated credentials, no stored passwords or SWA tokens. One deploy identity per environment, federated to GitHub environment `<env>` (restricted to `main`, reviewers for prod); pull requests get no Azure credential (the `<env>-plan` preview identities were retired, D145, and dev's leftovers deleted on 2026-10-11). Deployer roles scoped to the resource group: custom *Deployer* (Contributor minus managed-identity federated-credential writes and storage key/SAS listing), AcrPush, RBAC Administrator with an ABAC condition limited to the six app roles **and the app identity's principal id** (it cannot grant itself or any other principal data access). `setup-github-oidc` verifies with `gh` that the deploy environment accepts protected branches only (reviewers for prod) before trusting it. Actions pinned to commit SHAs; `permissions: contents: read` by default. Residual: a deployer can run code as the app identity and reconfigure resources (Azure Policy deny rules not written yet, §7) | actionlint + shellcheck clean; verified on dev: the deploy identity ran infrastructure, backend and frontend deploys from `main` (immutable OIDC subjects) |
-| Private networking (optional) | `enablePrivateNetworking`: VNet-integrated Container Apps and PostgreSQL, private endpoints + DNS for Blob, Key Vault, OpenAI, public access disabled | build verified; NOT VERIFIED — requires Azure credentials |
+| Private networking (optional) | `enablePrivateNetworking`: VNet-integrated Container Apps and PostgreSQL, private endpoints + DNS for Blob, Key Vault, OpenAI, public access disabled | **off in production** (owner, D150); build verified; NOT VERIFIED — requires Azure credentials |
+| Production releases | `release-production.yml`: started by a person, one commit from protected `main` only, each component's checks and dev deployment required, artifacts copied by digest, two approvals (what-if first), older releases refused. Images are hash-locked and digest-pinned. Public repository: run logs and artifacts are public, so identifiers are masked and artifacts hold no secret | local tests and a local registry run; NOT VERIFIED — requires Azure credentials |
+| Monitoring | `service-alerts.bicep`: availability, API errors and latency, database capacity, restarts, cleanup. **Availability results go to a separate Application Insights component with local auth on** (Microsoft does not state that Standard tests can write to an Entra-only one). It holds **synthetic results only**, no user data, so its ingestion key protects nothing sensitive; the app's own component stays Entra-only | build verified; NOT VERIFIED — requires Azure credentials |
 
-## 6. Decisions requiring legal / organizational approval
+## 6. Legal and organizational questions
 
-| # | Decision | Current default | Owner |
+Formal legal sign-off was declined by the owner on 2026-11-05 (§0), so none of these is a launch gate.
+What is written here is what stays unanswered. L1, L5, L6 and L7 are worth settling before production
+opens; that is the owner's call.
+
+| # | Question | Current default | Who can answer |
 |---|---|---|---|
 | L1 | **Religion field.** The paper form asks for religion; it is sensitive data. Is collecting it necessary and lawful, who may see it, and must it be on the printed form? | Collected (optional in the API), shown to the doctor and admins, OCR may suggest it | Legal + syndicate management |
 | L2 | **OCR by an AI service.** Sending identity-document images to Azure OpenAI (abuse monitoring may retain them up to 30 days unless modified abuse monitoring is approved). | **Decided 2026-10-11 (D150): OCR off in production.** `enableOcr = false` is pinned in `prod.bicepparam`; manual entry is the only path. Enabling it later needs this approval and a reviewed change | Legal / DPO |
-| L3 | **Data residency / region.** There is no Azure region in Egypt; choose the region(s) for PostgreSQL, Blob, Key Vault, Log Analytics and Azure OpenAI, and confirm cross-border transfer requirements under Law 151/2020. **Notifications add Meta (WhatsApp) and AWS (SES) as recipients of doctors' phone numbers and email addresses, and Meta/AWS regions and processing terms are not assessed. Owner and legal sign-off is required before `NOTIFICATIONS_MODE=live` in production; it does not block `off` or `allowlist` on dev.** | Not decided for production. dev runs in uaenorth (Static Web App static files in eastasia, D140) with test data only; the region is a Bicep parameter | Legal + IT |
-| L4 | **Retention periods** for applications, documents, rejected/withdrawn applications, audit logs, telemetry (Log Analytics retention), backups and **notification rows (12 months proposed; no automatic purge is implemented) and what Meta and AWS keep**; deletion on request. Owner and legal sign-off needed. | Nothing is deleted automatically except orphan/soft-deleted blobs (`cleanup_blobs`) | Legal + syndicate management |
+| L3 | **Data residency / region.** There is no Azure region in Egypt; choose the region(s) for PostgreSQL, Blob, Key Vault, Log Analytics and Azure OpenAI, and confirm cross-border transfer requirements under Law 151/2020. **Notifications add Meta (WhatsApp) and AWS (SES) as recipients of doctors' phone numbers and email addresses, and Meta/AWS regions and processing terms are not assessed.** Moving to `NOTIFICATIONS_MODE=live` is the owner's decision, recorded when taken; the transfer question remains unanswered. | Production assumes uaenorth, as on dev (Static Web App static files in eastasia, D140); **the owner still has to confirm it** before the first deployment, and moving it later is a rebuild. The region is a resource-group choice | Owner, legal if consulted |
+| L4 | **Retention periods** for applications, documents, rejected/withdrawn applications, audit logs, telemetry (Log Analytics retention), backups and **notification rows (12 months proposed; no automatic purge is implemented) and what Meta and AWS keep**; deletion on request. Periods are unanswered, and no destructive retention is enabled until they are (`docs/production-runbook.md`, "Retention"). | Nothing is deleted automatically except orphan/soft-deleted blobs (`cleanup_blobs`) and expired sessions | Owner, syndicate management |
 | L5 | **Admin access policy:** who may be granted the admin role, MFA, periodic access review, who may reveal full national IDs (audited) and print unmasked forms (Q-B20). | `grant_admin` by an operator with production access; reveal is audited | Syndicate management + IT |
 | L6 | **Breach procedure:** detection (Application Insights alerts, audit review), containment (revoke sessions, rotate Key Vault secrets, disable OCR/uploads by flag), notification duties and timelines, contacts. | Not defined | Legal / DPO + IT |
 | L7 | **Production access:** who may access the Azure subscription, database and Key Vault; break-glass accounts; separation of environments (§49). | Separate resource groups, identities, Key Vaults and Entra app registrations per environment (Bicep parameters, `setup-github-oidc`) | IT |
@@ -201,10 +218,12 @@ and birth years, identity-document images, personal photos and payment receipts.
 - Shared cache for rate limits across replicas: resolved in Session 8 (`CACHE_URL=dbcache://django_cache`,
   table created by the migrate job).
 - Entra External ID claims (Q-T7): `email` verified on dev (real sign-in). `amr` is not usable
-  with External ID v2.0 tokens, so dev relies on Conditional Access alone (D144); admin sign-in
-  with MFA is NOT VERIFIED, and the staging/prod choice is open.
-- Network isolation is implemented behind `enablePrivateNetworking` (off by default, MVP per §34);
-  Defender for Storage/Cloud, alerts and the first restore drill remain operational tasks.
+  with External ID v2.0 tokens, so dev and prod rely on Conditional Access alone (D144, D150); admin sign-in
+  with MFA is NOT VERIFIED until `docs/production-acceptance.md` AUTH-4 passes.
+- Network isolation is implemented behind `enablePrivateNetworking` (off in production, D150).
+  Malware scanning stays off with no pipeline behind it (L8), and OCR stays off (L2). Defender for
+  Cloud is not enabled. Alerts exist in Bicep (§5.1) and the first restore drill is still to do.
+- The AWS reputation alarms were declined by the owner (§0), so SES reputation is watched by hand.
 - Container Apps ingress is public so the Static Web Apps linked backend can reach it. On dev the
   link enables SWA authentication on the Container App, and direct calls to its FQDN answered
   401 (Session 12). Whether that holds for every path and method was not tested exhaustively
