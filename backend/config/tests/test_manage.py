@@ -23,6 +23,12 @@ def test_send_notifications_starts_telemetry_before_django(monkeypatch, calls):
     assert calls == ["telemetry", "django"]
 
 
+def test_cleanup_blobs_starts_telemetry_before_django(monkeypatch, calls):
+    monkeypatch.setattr(sys, "argv", ["manage.py", "cleanup_blobs"])
+    manage.main()
+    assert calls == ["telemetry", "django"]
+
+
 def test_other_commands_do_not_start_telemetry(monkeypatch, calls):
     monkeypatch.setattr(sys, "argv", ["manage.py", "migrate"])
     manage.main()
@@ -34,11 +40,14 @@ def test_other_commands_do_not_start_telemetry(monkeypatch, calls):
     [
         (["manage.py", "send_notifications"], True),
         (["manage.py", "send_notifications", "--verbosity", "2"], True),
+        (["manage.py", "cleanup_blobs"], True),
+        (["manage.py", "cleanup_blobs", "--dry-run"], True),
         (["manage.py"], False),
         ([], False),
         (["manage.py", "runserver"], False),
         (["manage.py", "help", "send_notifications"], False),
+        (["manage.py", "help", "cleanup_blobs"], False),
     ],
 )
-def test_starts_telemetry_only_for_the_sender_command(argv, expected):
+def test_starts_telemetry_only_for_the_scheduled_job_commands(argv, expected):
     assert manage._starts_telemetry(argv) is expected

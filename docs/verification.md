@@ -1,5 +1,11 @@
 # Verification record (PROMPT.md §55)
 
+> **Historical record of Session 9, kept as it was.** It is not evidence for production, which has not
+> been deployed: production's record is `docs/production-acceptance.md`. Since this was written:
+> application printing was retired (D171, 2026-10-28), so the print rows no longer apply;
+> `staging.bicepparam` is inactive (dev and prod only, 2026-11-05); `requirements/*.txt` are hash-locked
+> and generated from `*.in`; `/api/ready/` also reports `schema`.
+
 Session 9, 2026-10-06, on Windows 10 + Docker Desktop 29.7.2, against the compose stack
 (PostgreSQL 16 with TLS, Azurite 3.35, Django with development settings) and the production image.
 Every command below was run in this session after the last code change; outputs are summarized
@@ -102,7 +108,7 @@ python infrastructure/scripts/check-template-security.py main.json && \
 # workflows, secrets, dependencies
 docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -no-color
 docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest git /repo
-pip-audit -r backend/requirements/prod.txt && (cd frontend && npm audit --omit=dev)
+pip-audit --no-deps --disable-pip --require-hashes -r backend/requirements/prod.txt && (cd frontend && npm audit --omit=dev)
 ```
 
 Artefacts: `docs/screenshots/session-9/` (`print-a4-doctor.pdf`, `print-a4-admin.pdf`,

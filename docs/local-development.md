@@ -29,7 +29,7 @@ Check it is up:
 
 ```bash
 docker compose ps                    # postgres, azurite, backend: (healthy)
-curl http://localhost:8000/api/ready/   # {"status": "ok", "database": "ok"}
+curl http://localhost:8000/api/ready/   # {"status": "ok", "database": "ok", "schema": "ok"}
 ```
 
 In Windows PowerShell 5.1 use `curl.exe` (plain `curl` is an alias of `Invoke-WebRequest`) and
@@ -122,7 +122,9 @@ $env:DJANGO_SETTINGS_MODULE = "config.settings.development"
 Remove-Item Env:DJANGO_SETTINGS_MODULE; .venv\Scripts\python -m pytest -q
 ```
 
-(`.venv/bin/python` on Linux/macOS.) Development settings read the root `.env` (empty values are
+(`.venv/bin/python` on Linux/macOS.) With pip instead of uv: `pip install --require-hashes -r
+requirements/dev.txt`. The `requirements/*.txt` files are hash-locked and generated: edit a `*.in`
+file and run `requirements/lock.sh` (needs uv); CI refuses a stale lock. Development settings read the root `.env` (empty values are
 ignored, so a copy of `.env.example` keeps every default), so the host-side Django finds Azurite
 on `AZURITE_BLOB_PORT`.
 
@@ -209,11 +211,12 @@ docker build --target runtime -t medical-backend backend/
 # prodlike.env (never commit it): DJANGO_SECRET_KEY=<64 random chars>, ALLOWED_HOSTS=localhost,
 #   CSRF_TRUSTED_ORIGINS=https://localhost:8443, DATABASE_URL=postgres://medical:medical@postgres:5432/medical,
 #   DB_AUTH_MODE=password, DB_SSLMODE=require, BLOB_CONNECTION_STRING=<Azurite string with host azurite>,
-#   ENTRA_AUTHORITY / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET / ENTRA_REDIRECT_URI=<placeholders>
+#   ENTRA_AUTHORITY / ENTRA_CLIENT_ID / ENTRA_CLIENT_SECRET / ENTRA_REDIRECT_URI=<placeholders>,
+#   CURRENT_FISCAL_YEAR=2026 (production settings refuse to start without it)
 docker run -d --name medical-prod --network medical-syndicates_default --env-file prodlike.env \
   -p 8010:8000 medical-backend            # web mode: Gunicorn, never migrates
 curl http://localhost:8010/api/health/    # {"status": "ok"}
-curl http://localhost:8010/api/ready/     # {"status": "ok", "database": "ok"}
+curl http://localhost:8010/api/ready/     # {"status": "ok", "database": "ok", "schema": "ok"} once migrate has run
 docker run --rm --network medical-syndicates_default --env-file prodlike.env medical-backend migrate
 docker run --rm --network medical-syndicates_default --env-file prodlike.env medical-backend cleanup --dry-run
 ```

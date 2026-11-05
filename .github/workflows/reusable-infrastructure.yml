@@ -6,11 +6,17 @@
 # the Container App is passed as CONTAINER_IMAGE. When no Container App exists yet, the
 # deployment runs the first phase only (no app, jobs or SWA link; docs/azure-deployment.md).
 #
+# Dev deploys on every merge; prod through release-production.yml, or a manual run of
+# infrastructure.yml for a configuration change between releases. A manual prod run deploys the
+# template of the current release (medical-release:current), never main's newer one: unreleased
+# Bicep reaches production only through a release.
+#
 # GitHub environment variables used (in `<env>`): AZURE_CLIENT_ID, AZURE_TENANT_ID,
 # AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP, CONTAINER_APP_NAME (after phase 1), ENTRA_AUTHORITY,
 # ENTRA_TENANT_ID, ENTRA_CLIENT_ID, and optionally PUBLIC_HOSTNAME, STATIC_WEB_APP_LOCATION,
 # ENABLE_OCR, ENABLE_PRIVATE_NETWORKING, POSTGRES_ENTRA_ADMIN_OBJECT_ID / _NAME / _TYPE.
-# Notifications (dev's parameter file reads them; unset gives off): ENABLE_NOTIFICATIONS,
+# Recovery (docs/production-runbook.md): RECOVERY_HOLD, POSTGRES_SERVER_NAME_OVERRIDE.
+# Notifications (the parameter files read them; unset gives off): ENABLE_NOTIFICATIONS,
 # NOTIFICATIONS_MODE, SES_ACCESS_KEY_FROM_KEY_VAULT, SES_REGION, SES_FROM_ADDRESS as variables, and
 # ALERT_EMAIL as an environment *secret* (what-if output is printed to the log; secrets are masked).
 # KEY_VAULT_OPERATOR_* is deliberately not passed: the deployer may only grant roles to the app
@@ -21,7 +27,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: dev, staging or prod
+        description: dev or prod
         required: true
         type: string
       what_if_only:
@@ -53,11 +59,22 @@ jobs:
     env:
       ENVIRONMENT: ${{ inputs.environment }}
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      STATIC_WEB_APP_NAME: ${{ vars.STATIC_WEB_APP_NAME }}
       # An environment secret of the job's own environment; empty when unset (no alert rules).
       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
     steps:
+      # Public repository: run logs are public.
+      - name: Mask identifiers
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        run: |
+          echo "::add-mask::${AZURE_SUBSCRIPTION_ID}"
+          echo "::add-mask::${AZURE_TENANT_ID}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Export the parameter-file variables
         env:
@@ -67,7 +84,7 @@ jobs:
             echo "::error::GitHub environment '${ENVIRONMENT}' has no AZURE_RESOURCE_GROUP variable (docs/github-setup.md)"
             exit 1
           fi
-          keys='["CONTAINER_APP_NAME","ENTRA_AUTHORITY","ENTRA_TENANT_ID","ENTRA_CLIENT_ID","PUBLIC_HOSTNAME","STATIC_WEB_APP_LOCATION","ENABLE_OCR","ENABLE_PRIVATE_NETWORKING","POSTGRES_ENTRA_ADMIN_OBJECT_ID","POSTGRES_ENTRA_ADMIN_NAME","POSTGRES_ENTRA_ADMIN_TYPE","ENABLE_NOTIFICATIONS","NOTIFICATIONS_MODE","SES_ACCESS_KEY_FROM_KEY_VAULT","SES_REGION","SES_FROM_ADDRESS"]'
+          keys='["CONTAINER_APP_NAME","ENTRA_AUTHORITY","ENTRA_TENANT_ID","ENTRA_CLIENT_ID","PUBLIC_HOSTNAME","STATIC_WEB_APP_LOCATION","ENABLE_OCR","ENABLE_PRIVATE_NETWORKING","POSTGRES_ENTRA_ADMIN_OBJECT_ID","POSTGRES_ENTRA_ADMIN_NAME","POSTGRES_ENTRA_ADMIN_TYPE","ENABLE_NOTIFICATIONS","NOTIFICATIONS_MODE","SES_ACCESS_KEY_FROM_KEY_VAULT","SES_REGION","SES_FROM_ADDRESS","RECOVERY_HOLD","POSTGRES_SERVER_NAME_OVERRIDE","ENABLE_SERVICE_ALERTS"]'
           echo "$VARS_JSON" | jq -r --argjson keys "$keys" \
             'to_entries[] | select(.key as $k | $keys | index($k)) | select(.value != "") | "\(.key)=\(.value)"' \
             >> "$GITHUB_ENV"
@@ -76,14 +93,37 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: "Production: use the released template, and mask the unopened host"
+        if: inputs.environment == 'prod'
+        run: |
+          if [ -n "$STATIC_WEB_APP_NAME" ]; then
+            host="$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+              --query defaultHostname -o tsv)"
+            echo "::add-mask::${host}"
+          fi
+          steps=infrastructure/scripts/release-steps.sh
+          bash "$steps" registry-login "$ACR_NAME"
+          current="$(bash "$steps" current-release "$ACR_NAME")"
+          if [ -z "$current" ]; then
+            echo "::error::Production has no release yet. The first deployment is bootstrap-production.sh and mode=bootstrap (docs/production-runbook.md)."
+            exit 1
+          fi
+          git checkout --quiet --detach "$current"
+          echo "Deploying the template of the current release ${current}"
       - name: Keep the running image
         run: |
           image=""
           if [ -n "${CONTAINER_APP_NAME:-}" ]; then
-            image="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
-              --query "properties.template.containers[0].image" -o tsv 2>/dev/null || true)"
+            # `list` answers empty when the app is absent and fails on a real error. A transient
+            # failure must not turn a hold into a quiet first-phase deployment that closes nothing.
+            image="$(az containerapp list --resource-group "$RESOURCE_GROUP" \
+              --query "[?name=='${CONTAINER_APP_NAME}'] | [0].properties.template.containers[0].image" -o tsv)"
           fi
           if [ -z "$image" ]; then
+            if [ "$ENVIRONMENT" = "prod" ] || [ "${RECOVERY_HOLD:-false}" = "true" ]; then
+              echo "::error::No running app found in ${ENVIRONMENT}: refusing a first-phase deployment here."
+              exit 1
+            fi
             echo "No Container App yet: first phase only (deployApplication=false)."
           else
             echo "Keeping image ${image}"
@@ -112,6 +152,11 @@ jobs:
             --template-file infrastructure/main.bicep \
             --parameters "infrastructure/parameters/${ENVIRONMENT}.bicepparam" \
             --query "properties.outputs" -o json > "${RUNNER_TEMP}/outputs.json"
+          # Public repository: production's hostnames and identifiers stay out of the summary.
+          if [ "$ENVIRONMENT" = "prod" ]; then
+            echo "### prod deployment succeeded" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           {
             echo "### ${ENVIRONMENT} deployment outputs"
             echo '```json'

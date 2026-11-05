@@ -12,6 +12,7 @@ from config.secrets import load_secrets
 
 from .base import *  # noqa: F403
 from .base import (
+    CURRENT_FISCAL_YEAR,
     DATABASES,
     LOGGING,
     MIDDLEWARE,
@@ -23,6 +24,7 @@ from .base import (
 
 MIN_SECRET_KEY_LENGTH = 50
 ENTRA_TOKEN_MAX_CONN_AGE = 1800  # seconds; below the lifetime of an Entra access token
+MIN_FISCAL_YEAR, MAX_FISCAL_YEAR = 2000, 2100
 
 
 def _require(name: str) -> str:
@@ -68,6 +70,13 @@ if "*" in ALLOWED_HOSTS:
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 if not CSRF_TRUSTED_ORIGINS:
     raise ImproperlyConfigured("CSRF_TRUSTED_ORIGINS must be set in production.")
+
+# --- Fiscal year: a business decision, set by the deployment, never inferred or defaulted -------
+_require("CURRENT_FISCAL_YEAR")
+if not MIN_FISCAL_YEAR <= CURRENT_FISCAL_YEAR <= MAX_FISCAL_YEAR:
+    raise ImproperlyConfigured(
+        f"CURRENT_FISCAL_YEAR must be between {MIN_FISCAL_YEAR} and {MAX_FISCAL_YEAR}."
+    )
 
 # --- Microsoft Entra External ID (OIDC BFF, §27) ------------------------------------------------
 ENTRA_AUTHORITY = _require("ENTRA_AUTHORITY")

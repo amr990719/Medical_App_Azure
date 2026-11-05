@@ -6,7 +6,7 @@ Syndicates treatment project (اتحاد نقابات المهن الطبية �
 Arabic (right-to-left), upload their ID documents (optional server-side OCR pre-fills the form),
 add up to 10 family beneficiaries, see the fee calculated by the server, upload the payment
 receipt and submit. Administrators review, confirm payments, request corrections, approve or
-reject, and print. Everything runs on Microsoft Azure.
+reject. Everything runs on Microsoft Azure.
 
 - Specification: [`PROMPT.md`](PROMPT.md). Conventions and non-negotiable rules: [`CLAUDE.md`](CLAUDE.md).
 - Final report (architecture, schema, endpoints, security, tests, open questions): [`docs/final-report.md`](docs/final-report.md).
@@ -19,9 +19,11 @@ reject, and print. Everything runs on Microsoft Azure.
 > External ID sign-in (user created, re-sign-in matched by `oid`/`tid`), `grant_admin`, CI deploys
 > with migrations (latest: PR #4, `f23b710`), and Application Insights ingestion with national IDs
 > masked. **Still NOT VERIFIED:** the full doctor → admin flow on Azure (draft, blob uploads,
-> review, payment confirmation, approval, print), admin sign-in with MFA, OCR with Azure OpenAI,
-> private networking, staging and prod, and a backup restore drill. Details:
-> [`docs/azure-deployment.md`](docs/azure-deployment.md) §"Verification status".
+> review, payment confirmation, approval), admin sign-in with MFA, OCR with Azure OpenAI,
+> private networking, production, and a backup restore drill. Environments are dev and prod only.
+> **Production has not been deployed:** [`docs/production-runbook.md`](docs/production-runbook.md)
+> is how, and it is ready only when [`docs/production-acceptance.md`](docs/production-acceptance.md)
+> has passed. Details: [`docs/azure-deployment.md`](docs/azure-deployment.md) §"Verification status".
 
 ## Contents
 
@@ -97,8 +99,8 @@ frontend/           React 19 + TypeScript (strict) + Vite + Tailwind 4, React Ro
   src/i18n/ar.ts    every UI string
   e2e/              Playwright specs
   public/staticwebapp.config.json   SWA routes, CSP and security headers
-infrastructure/     main.bicep, 14 modules, parameters/{dev,staging,prod}.bicepparam, scripts/
-.github/workflows/  frontend.yml, backend.yml, infrastructure.yml, e2e.yml, reusable-*.yml
+infrastructure/     main.bicep, modules/, parameters/{dev,prod}.bicepparam (staging is inactive), scripts/, tests/
+.github/workflows/  frontend.yml, backend.yml, infrastructure.yml, e2e.yml, release-production.yml, ci-gate.yml, security-scan.yml, reusable-*.yml
 docs/               architecture, database, api, business rules, deployment, Entra, GitHub, security, OCR, local dev
 docker-compose.yml  PostgreSQL 16 + Azurite + Django (development settings)
 package.json, Makefile   the same local shortcuts (npm run <x> / make <x>)
@@ -118,7 +120,7 @@ Bash:
 git clone <repository-url> medical-syndicates && cd medical-syndicates
 docker compose up -d --build                  # PostgreSQL 16, Azurite, Django :8000 (migrates + seeds on start)
 docker compose ps                              # postgres, azurite, backend: (healthy)
-curl http://localhost:8000/api/ready/          # {"status": "ok", "database": "ok"}
+curl http://localhost:8000/api/ready/          # {"status": "ok", "database": "ok", "schema": "ok"}
 cd frontend && npm ci && npm run dev           # http://localhost:5173
 ```
 
@@ -209,7 +211,7 @@ Production settings **refuse to start** when a required value is missing or unsa
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CURRENT_FISCAL_YEAR` | 2026 | fiscal year of new applications and fee quotes |
+| `CURRENT_FISCAL_YEAR` | 2026; **required in production**, set by Bicep | fiscal year of new applications and fee quotes; never inferred from the calendar |
 | `MAX_BENEFICIARIES` | 10 | beneficiaries per application |
 | `CHILD_NATIONAL_ID_AGE` | 16 | children from this age need both national-ID sides instead of only a birth certificate |
 | `PHOTO_EXEMPT_CHILD_AGE` | 3 | first-time child beneficiaries younger than this need no personal photo |
@@ -292,7 +294,7 @@ With the stack up (`npm run up`):
 |---|---|---|
 | Backend: ruff, system check, migration check, pytest on PostgreSQL (+ Azurite) | `npm run lint:backend` and `npm run test:backend` | ruff clean; **964 passed, 1 skipped** (the skipped test reads the repository-root `.env.example`, which the container does not mount; it passes on the host and in CI) |
 | Frontend: ESLint, `tsc`, Vitest, `rtl_check.py`, production build | `cd frontend && npm run ci` | **281 passed**; RTL 0 errors / 0 warnings |
-| End-to-end (Playwright: doctor submit, admin approve, correction loop, A4 print, 390 px phone) | `cd frontend && npx playwright install chromium` (once), then `npx playwright test` | **11 passed, 5 skipped** (each spec runs in its own viewport project) |
+| End-to-end (Playwright: doctor submit, admin approve, correction loop, 390 px phone) | `cd frontend && npx playwright install chromium` (once), then `npx playwright test` | **11 passed, 5 skipped** (each spec runs in its own viewport project) |
 | Everything except e2e | `npm run ci` | |
 
 PowerShell: identical commands; replace `&&` with `;` (Windows PowerShell 5.1), e.g.
@@ -310,11 +312,11 @@ migration run, image build, Bicep, actionlint, gitleaks, dependency audits) is i
 | Image / stage | Use |
 |---|---|
 | `backend/Dockerfile` target `dev` | docker compose (`runserver`, code mounted) |
-| `backend/Dockerfile` target `runtime` | Container Apps: Python 3.12 slim, multi-stage, non-root uid 10001, Gunicorn, `collectstatic` at build, health check on `/api/health/`, no state |
+| `backend/Dockerfile` target `runtime` | Container Apps: Python 3.12 slim pinned by digest, hash-locked dependencies (`backend/requirements/*.in` → `*.txt`, `backend/requirements/lock.sh`), multi-stage, non-root uid 10001, Gunicorn, `collectstatic` at build, health check on `/api/health/`, no state |
 
 ```bash
 docker build --target runtime -t medical-backend:runtime backend/
-# entrypoint modes (same image for the app and both jobs):
+# entrypoint modes (same image for the app and its jobs):
 docker run -d --name medical-prod --network medical-syndicates_default --env-file prodlike.env -p 8010:8000   medical-backend:runtime                                             # web: Gunicorn, never migrates
 docker run --rm --network medical-syndicates_default --env-file prodlike.env medical-backend:runtime migrate
 docker run --rm --network medical-syndicates_default --env-file prodlike.env medical-backend:runtime cleanup --dry-run
@@ -333,7 +335,7 @@ production image locally*. The frontend is not containerized: it is a static bui
   target resource group, and whose Azure Policy allows the chosen region **and** a Static Web
   Apps region (`westeurope`, `centralus`, `eastus2`, `westus2`, `eastasia`).
 - An **Entra External ID** (external) tenant for sign-in, separate from the workforce tenant.
-- The legal decision on the data region (L3) and on OCR (L2) — [`docs/security.md`](docs/security.md) §6.
+- The owner's choice of data region; OCR stays off in production (L3, L2, [`docs/security.md`](docs/security.md) §6).
 - Resource providers registered once per subscription:
 
 ```bash
@@ -380,6 +382,10 @@ step 4 and step 6. Add `--local` / `-Local` for a dev registration that also acc
 Access policy (`docs/entra-setup.md` §4).
 
 ## 11. Azure infrastructure deployment
+
+**Production does not use these commands:** it follows "Bootstrap" in
+[`docs/production-runbook.md`](docs/production-runbook.md). This section and §12 are for dev, if it
+ever had to be rebuilt.
 
 Two phases, because Container Apps resolve Key Vault references when they are created: first
 everything except the application, then secrets, Entra and the database role, then the app.
@@ -474,7 +480,7 @@ APP=$(out containerAppName); MIGRATE=$(out migrateJobName)
 EXEC=$(az containerapp job start -n "$MIGRATE" -g "$RG" --query name -o tsv)
 until s=$(az containerapp job execution show -n "$MIGRATE" -g "$RG" --job-execution-name "$EXEC" --query properties.status -o tsv); \
       [ "$s" = Succeeded ] || [ "$s" = Failed ]; do sleep 10; done; echo "migrate: $s"
-curl -fsS "https://$(out containerAppFqdn)/api/ready/"
+# After the frontend below, check https://<SWA host>/api/ready/ (the app's own address answers 401)
 
 cd frontend && npm ci && npm run build && cd ..
 TOKEN=$(az staticwebapp secrets list -n "$(out staticWebAppName)" -g "$RG" --query properties.apiKey -o tsv)
@@ -492,7 +498,7 @@ $APP = Get-Out containerAppName; $MIGRATE = Get-Out migrateJobName
 $Exec = az containerapp job start -n $MIGRATE -g $RG --query name -o tsv
 do { Start-Sleep -Seconds 10; $s = az containerapp job execution show -n $MIGRATE -g $RG --job-execution-name $Exec --query properties.status -o tsv } while ($s -notin 'Succeeded','Failed')
 "migrate: $s"
-curl.exe -fsS "https://$(Get-Out containerAppFqdn)/api/ready/"
+# After the frontend below, check https://<SWA host>/api/ready/ (the app's own address answers 401)
 
 Set-Location frontend; npm ci; npm run build; Set-Location ..
 $Token = az staticwebapp secrets list -n (Get-Out staticWebAppName) -g $RG --query properties.apiKey -o tsv
@@ -501,20 +507,24 @@ npx --yes @azure/static-web-apps-cli@2 deploy frontend/dist --deployment-token $
 
 Open `https://$SWA_HOST/`, sign in once, then grant the first administrator (§14).
 
-From then on, **every push to `main`** deploys through GitHub Actions: `backend.yml` builds the
-image once, pushes it to each environment's registry, runs the `migrate` job, updates the cleanup
-job, creates a new revision and smoke-tests it; `frontend.yml` builds and deploys the SPA;
-`infrastructure.yml` runs what-if and deploys Bicep (prod waits for a reviewer). Setup (GitHub
-environments, OIDC identities, variables, branch protection): [`docs/github-setup.md`](docs/github-setup.md).
+From then on, **every push to `main`** deploys **dev** through GitHub Actions: `backend.yml` builds
+the image once, pushes it to the dev registry, runs the `migrate` job, updates the cleanup and notify
+jobs, creates a new revision and smoke-tests it; `frontend.yml` builds, stores and deploys the SPA;
+`infrastructure.yml` runs what-if and deploys Bicep. **Production** changes only through an explicit,
+reviewed release of those same artifacts: `release-production.yml`
+([`docs/production-runbook.md`](docs/production-runbook.md)). Setup (GitHub environments, OIDC
+identities, variables, branch protection): [`docs/github-setup.md`](docs/github-setup.md).
 
-Rollback: `az containerapp update -n "$APP" -g "$RG" --image <previous-image>` (migrations are
-expand/contract, so the previous image runs on the newer schema). Backups and restore:
-[`docs/azure-deployment.md`](docs/azure-deployment.md) *Backups and recovery*.
+Rollback on dev: `az containerapp update -n "$APP" -g "$RG" --image <previous-image>` (migrations are
+expand/contract, so the previous image runs on the newer schema). On production: `mode=rollback` in
+the runbook. Backups and restore: [`docs/production-runbook.md`](docs/production-runbook.md),
+"Recovery".
 
 ## 13. Enabling OCR
 
-Only after the legal decisions L2 (identity documents processed by an AI service) and L3
-(region). Locally the mock provider is always on.
+Off in production: `prod.bicepparam` pins it (owner, D150), and turning it on would be a reviewed
+change, with L2 (identity documents processed by an AI service) and L3 (region) answered first. These
+commands are for dev. Locally the mock provider is always on.
 
 ```bash
 export ENABLE_OCR=true                     # GitHub: environment variable ENABLE_OCR=true
@@ -583,10 +593,13 @@ More: [`docs/azure-deployment.md`](docs/azure-deployment.md), [`docs/entra-setup
 | [`docs/business-rules.md`](docs/business-rules.md) | fees, national ID, kinships, documents, statuses, open business questions |
 | [`docs/deployment-path.md`](docs/deployment-path.md) | end-to-end Azure and GitHub deployment map |
 | [`docs/azure-deployment.md`](docs/azure-deployment.md) | deployment steps, verification status, one-off commands, telemetry checks, retired-identity cleanup, migrations, rollback, backups and restore, cost |
-| [`docs/staging-checklist.md`](docs/staging-checklist.md) | ordered checklist to create staging and when to set `DEPLOY_STAGING=true` |
+| [`docs/production-runbook.md`](docs/production-runbook.md) | bootstrap, release, domain cutover, rollback, recovery, notifications, monitoring, fiscal-year rollover, inventory |
+| [`docs/production-acceptance.md`](docs/production-acceptance.md) | production acceptance record: what must pass before production is called ready |
+| [`docs/production-cost-estimate-2026-11-05.md`](docs/production-cost-estimate-2026-11-05.md) | current monthly cost estimate for production |
+| [`docs/staging-checklist.md`](docs/staging-checklist.md) | note: staging was retired on 2026-11-05 |
 | [`docs/entra-setup.md`](docs/entra-setup.md) | External ID tenant, user flow, app registration, admin MFA |
 | [`docs/github-setup.md`](docs/github-setup.md) | GitHub environments, OIDC, variables, branch protection |
-| [`docs/security.md`](docs/security.md) | controls, legal decisions, security review |
+| [`docs/security.md`](docs/security.md) | controls, legal questions and the owner's decisions, security review |
 | [`docs/ocr.md`](docs/ocr.md) | OCR flow, provider, privacy |
 | [`docs/local-development.md`](docs/local-development.md) | local stack, scripts, e2e, production image locally |
 | [`docs/verification.md`](docs/verification.md) | PROMPT.md §55 checklist with evidence |

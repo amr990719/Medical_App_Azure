@@ -1596,6 +1596,76 @@ Docs only; nothing was changed on Azure, AWS or Cloudflare, and no email was sen
   Bounce handling and allowlist suppression on Azure are still unproven. Dev stays in `allowlist`
   with only the owner's address listed.
 
+### Session 25 — 2026-11-05 — Production deployment path, dev and prod only (D212–D219)
+
+Scope set by the user: a production path with dev and prod only, skipping staging, from
+`docs/production-readiness-2026-11-05.md`, preserving the owner's decisions. Local work only: **no
+cloud write, no push, no real send, no DNS change.** Read-only checks of Azure and GitHub only.
+
+- **Releases.** New `release-production.yml`: verify → export → preview (approval 1, what-if) → deploy
+  (approval 2). It promotes the artifacts dev ran, copied by digest. `infrastructure/scripts/release_gate.py`
+  refuses a commit not on main, missing evidence, or an older release, and maps path-filtered workflows
+  to commits. `deploy-staging` and `deploy-prod` are gone from the three workflows: a merge deploys dev
+  only. E2E also runs on pushes to main. New `ci-gate.yml` (`ci gate`, `release tooling`) so branch
+  protection can require checks without deadlocking path-filtered pull requests. Logs mask the
+  subscription and tenant (this repository is public; closes the open item on the subscription ID).
+- **Bootstrap.** `deployWebApp=false` creates only the migrate job, so the schema exists before anything
+  serves; `mode=bootstrap` does this through the reviewed workflow. `bootstrap-production.sh` holds the
+  stages only a person can do; it only shows what it would do without `--execute`.
+- **Configuration.** `prod.bicepparam` reads the notification settings, including `ALERT_EMAIL`, off by
+  default. `currentFiscalYear` is explicit and has no default; production refuses to start without it.
+- **Readiness.** `/api/ready/` also reports `schema`, and fails while a migration this image knows is
+  unapplied; an older image on a newer schema stays ready. `release_check` covers schema, cache, fiscal
+  year, fee schedule, reference data, documents and sign-in discovery.
+- **Recovery.** `RECOVERY_HOLD` (closes ingress, stops both schedules and sending, on every deployment
+  until cleared) and `POSTGRES_SERVER_NAME_OVERRIDE` (survives later deployments), both Bicep parameters
+  read from GitHub variables. `recovery.sh`, `reconcile_notifications`, `reconcile_documents`.
+- **Cutover.** `cutover-domain.sh` with its rollback; `docs/production-runbook.md` has the order.
+- **Acceptance.** `docs/production-acceptance.md` (machine-read by `acceptance_record.py`, every row
+  PENDING) and `acceptance_smoke.py`.
+- **Monitoring.** `modules/service-alerts.bicep`: availability, 5xx, latency, database, restarts, cleanup,
+  and `manage.py alert_test` as the controlled proof that an alert reaches a person. Cleanup now emits
+  `cleanup_run` and `cleanup_run_failed`.
+- **Reproducibility and scanning.** `backend/requirements/*.in` → hash-locked `*.txt` (`lock.sh`, checked
+  in CI), base image pinned by digest, `security-scan.yml`, `dependabot.yml`.
+- **Vulnerabilities found by the new scans and fixed:** Pillow 12.3.0 → 13.0.0 (39 advisories, 5
+  Critical, in the library decoding uploads; the old `<13` cap held it back), `opentelemetry-api` 1.44.0
+  → 1.45.2 (unauthenticated CPU denial of service through a header), `zod` → 4.6.6. **Dev runs the
+  vulnerable versions until this merges.**
+- **Cost.** `docs/production-cost-estimate-2026-11-05.md`: expected about $324 a month in UAE North
+  (low $250, busy $571), $73 more if the Environment Management Hour meter applies.
+- **Review.** An independent reviewer found 14 problems, 6 high, all fixed with tests: rollback after a
+  part-failed release; the cutover rollback's `gh variable delete --yes` (no such flag, it would have
+  stopped halfway through an outage); no way forward when a restore predates a migration;
+  `reconcile --apply` able to hit the original server; a restore defaulting geo-redundancy to off; manual
+  prod runs deploying unreleased Bicep and a transient failure passing as a first-phase deployment.
+
+**Verified locally (executed 2026-11-05):**
+
+| Check | Result |
+|---|---|
+| Backend, full suite on PostgreSQL 16 with Azurite, on the locked versions | 2042 passed |
+| `ruff check`, `ruff format --check`, `makemigrations --check`, `manage.py check` | clean |
+| `check --deploy` with production settings; refusal without `CURRENT_FISCAL_YEAR` | no issues; refused |
+| OpenAPI `spectacular --validate --fail-on-warn` | exit 0 |
+| Frontend lint, type check, Vitest, RTL check, build | 403 passed; clean |
+| Playwright on a fresh compose stack with the locks | 10 passed, 4 skipped by design |
+| Azurite-marked backend tests in the container | 2 passed |
+| Runtime image from the locks | builds; `app:app`; refuses replica migrations |
+| Release tooling tests (`infrastructure/tests`) | 115 passed |
+| Promotion against two real local registries, only `az` stubbed | 21 checks passed; digests identical |
+| Bicep build, lint (only API-age warnings), `build-params` for all, `check-template-security` + self-test | clean; 20/20 |
+| actionlint, shellcheck | clean |
+| pip-audit, npm audit (production), grype (critical with a fix) | none |
+
+A vitest timeout under heavy machine load, and 3 Playwright failures on a reused database under load,
+did not recur alone or on a fresh stack; both were re-run rather than assumed.
+
+**NOT VERIFIED — requires Azure credentials:** everything on real Azure, Entra, GitHub Actions and AWS.
+In particular the workflows have never run, `run-job-command.sh` in script form, the service alerts'
+acceptance by ARM, a restored server accepted by Bicep, and the ingress restriction closing the Static
+Web App's calls. Region facts for `uaenorth` were read from Azure (SKU, geo backup, quota).
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -2269,6 +2339,29 @@ Docs only; nothing was changed on Azure, AWS or Cloudflare, and no email was sen
   The simulator needs `aws:RequestedRegion=eu-north-1` in its context: without it the project's
   managed SCP gives `explicitDeny` even for the allowed case.
 
+- **D212 — Dev and prod only (owner, 2026-11-05):** staging is out of the active path; temporary copies
+  carry restore drills. `staging.bicepparam` stays as inactive reference. The empty GitHub `staging`
+  environment and the unused `DEPLOY_STAGING` variable can be removed by the owner.
+- **D213 — Two approvals on `prod`, no preview environment:** a what-if needs the write-capable identity
+  (D145), so a no-reviewer environment would hand out a write token. The first approval only releases the
+  preview. Costs one extra click per release.
+- **D214 — Artifacts move by digest through the registries:** the frontend is stored as a scratch image
+  (`medical-frontend`), so it has a digest and outlives GitHub's retention. The record of each release is
+  `medical-release:<sha>`, with `:current` and `:previous`. A commit with no build of its own takes the
+  evidence of the last commit that changed each component.
+- **D215 — A manual prod infrastructure run deploys the template of the current release:** the hold,
+  select-db and cutover need configuration changes between releases, and must not bring unreleased Bicep.
+- **D216 — The hold and restored server are Bicep parameters from GitHub variables, not manual edits:**
+  every later deployment keeps them. The ingress is closed by an allow rule nothing can match (TEST-NET-1),
+  because the CLI has no job suspend and `max-replicas 0` was not trustworthy.
+- **D217 — After a restore, in-flight notifications end `SUPERSEDED`, not sent:** some doctors may miss one;
+  chosen over telling everyone twice, and an admin can resend. `RESTORE_RECONCILED` is the error code.
+- **D218 — Availability results in their own Application Insights component, with local auth on:** Microsoft
+  does not document Standard tests writing to an Entra-only component. It holds synthetic results only.
+  Three locations every 15 minutes is a cost choice; Microsoft recommends five.
+- **D219 — Security findings do not block a release by themselves:** the reviewer sees them in the preview,
+  because a fix may be what is being released. The weekly `security-scan` run is what fails.
+
 ## Deviations from PROMPT.md
 
 | # | PROMPT.md says | What we did | Why |
@@ -2346,6 +2439,7 @@ Docs only; nothing was changed on Azure, AWS or Cloudflare, and no email was sen
 | 71 | PROMPT.md §42 / §55 "print view renders to an A4 PDF within two pages" | check removed with the feature; the print URLs are asserted not found | owner requirement 2026-10-28 (application printing retired; PROMPT.md updated) |
 | 72 | PROMPT.md §17.1 / §16 snapshots "never re-priced" (D161); CLAUDE.md "expand/contract only" | `fees.0008` re-prices every FY 2026 snapshot on v3 and deletes v2; `doctors.0002` contracts in the same release | owner requirement 2026-10-29 ("don't preserve previously submitted fee snapshots and historical totals"; PROMPT.md updated); D177, D181 |
 | 73 | CLAUDE.md and architecture: everything on Microsoft Azure; PROMPT.md has no notifications | WhatsApp through Meta and email through Amazon SES; the design document is the requirement | owner decision (spec header, D193); L3/L4 sign-off pending |
+| 74 | PROMPT.md and CLAUDE.md mention staging and three environments | dev and prod only; production through an explicit reviewed release instead of automatic promotion | owner requirement 2026-11-05 (D212) |
 
 ## Open questions
 
@@ -2540,7 +2634,31 @@ confirmed by the organization). Technical/environment questions for the user:
   the receiver status is `Enabled`. Cause unknown; do not keep retrying it. Whether an alert email
   reaches the configured receiver stays NOT VERIFIED until an alert fires.
 
+- **Q-P1 — Payment wording:** `payment.instructions` is still the placeholder (Q-B19); the cutover
+  preflight refuses until it is final.
+- **Q-P2 — Data region: answered.** The owner confirmed `uaenorth` on 2026-11-05.
+- **Q-P3 — Printing: answered.** The owner confirmed on 2026-11-05 that it stays retired (D171); `PRN-1`
+  checks that.
+- **Q-P4 — Whole-region recovery:** Blob ZRS stays in one region, so a regional loss does not bring
+  documents back. Promise it only by choosing GZRS, paying for it and drilling it.
+- **Q-P5 — Retention periods:** not decided, and nothing new is deleted (`docs/production-runbook.md`).
+- **Q-P6 — Bounce handling:** the app has no bounce feedback, and the owner declined the AWS alarms. `NOTE-5`
+  writes down what happens to a bounce; nothing is built.
+- **Q-P7 — The FY 2027 schedule:** the amounts are a business input; none exists.
+
 ## Next session starts with
+
+**Session 25 finished the production path locally, on branch `feat/production-deploy-path`. Nothing is
+pushed. Production does not exist, and is not ready until `docs/production-acceptance.md` passes.** Next,
+each needing the owner's explicit approval: (1) push and open the pull request; merging also takes dev off
+the vulnerable Pillow; (2) `ENABLE_SERVICE_ALERTS=true` on dev, once; (3) the bootstrap stages in
+`docs/production-runbook.md`; (4) `mode=bootstrap`; (5) acceptance; (6) cutover; (7) notifications. On that
+first merge, if the backend deploy outruns `infrastructure`, its migrate job refuses to start without
+`CURRENT_FISCAL_YEAR`; the running revision is untouched, so re-run it. Inputs only the owner can give:
+Q-P1, a production SES sender, and the cutover date with an acceptable outage. Given on 2026-11-05 and
+kept out of Git: the first administrator, and the alert address. Older items below still apply, except that formal legal sign-off and the AWS alarms were
+declined (they are not gates).
+
 
 **Notifications run on dev in `allowlist` mode (email only, only the owner's address listed), deployed
 2026-11-04 (run `41849338442`, image `c5958d0`); see "Session 24 (cont.)" and "(cont. 2)". The owner's

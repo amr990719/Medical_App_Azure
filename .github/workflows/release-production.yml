@@ -1,0 +1,566 @@
+# The only way to production (docs/production-runbook.md): an explicit, reviewed release of one
+# commit from protected main, promoting the artifacts dev already ran. Dev and prod only.
+#
+#   verify   the commit is on main and each component's checks and dev deployment succeeded
+#   export   copy the backend and frontend artifacts out of the dev registry, digests unchanged
+#   preview  APPROVAL 1, what-if and the new migrations, shown before anything changes
+#   deploy   APPROVAL 2, one job, in this order:
+#            infrastructure -> migrate -> release_check -> jobs -> revision -> frontend -> smoke
+#            -> release record. The previous revision serves until the new one is healthy.
+#
+# Modes: `release` (normal), `bootstrap` (first deployment: the migrate job runs before any web app
+# exists), `rollback` (re-promote an earlier release from the production registry; no infrastructure
+# change, no migration, no preview).
+#
+# The workflow runs from main, and its tools come from main (`.tooling`); only the Bicep comes from
+# the selected commit (`candidate`). Public repository: logs and summaries are public, so nothing
+# here prints a secret, and identifiers are masked.
+#
+# GitHub `prod` variables and secrets: docs/production-runbook.md, inventory.
+name: release production
+run-name: "${{ inputs.mode }} ${{ inputs.sha }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full commit SHA on main
+        required: true
+        type: string
+      mode:
+        description: release, bootstrap (first deployment) or rollback
+        required: true
+        type: choice
+        options: [release, bootstrap, rollback]
+        default: release
+      dev_acceptance:
+        description: Where the dev acceptance of this commit is recorded (a link, no personal data), or the rollback reason
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  SHA: ${{ inputs.sha }}
+  MODE: ${{ inputs.mode }}
+  TOOLS: .tooling/infrastructure/scripts
+
+jobs:
+  verify:
+    name: verify the commit and its evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      source_sha: ${{ steps.gate.outputs.source_sha }}
+      backend_build_sha: ${{ steps.gate.outputs.backend_build_sha }}
+      frontend_build_sha: ${{ steps.gate.outputs.frontend_build_sha }}
+    steps:
+      - name: Refuse anything but main, and an empty acceptance record
+        env:
+          DEV_ACCEPTANCE: ${{ inputs.dev_acceptance }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Dispatch this workflow from main, not ${GITHUB_REF}."
+            exit 1
+          fi
+          if [ "${#DEV_ACCEPTANCE}" -lt 8 ]; then
+            echo "::error::dev_acceptance must say where the acceptance is recorded, or why this is a rollback."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .tooling
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the commit and its evidence
+        id: gate
+        working-directory: candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # The main checkout above has every branch; only then is the candidate's SHA checked out.
+          python3 "../${TOOLS}/release_gate.py" verify --sha "$SHA" --mode "$MODE" \
+            --main-ref origin/main --evidence-file "${RUNNER_TEMP}/evidence.json"
+          git checkout --quiet --detach "$SHA"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-evidence
+          path: ${{ runner.temp }}/evidence.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
+      # A rollback deploys no template, and a guard tightened since must not block it in an incident.
+      - name: Build the selected commit's template and check its security properties
+        if: inputs.mode != 'rollback'
+        run: |
+          az bicep install
+          out="${RUNNER_TEMP}/bicep"
+          mkdir -p "$out"
+          az bicep build --file candidate/infrastructure/main.bicep --outdir "$out"
+          az bicep build-params --file candidate/infrastructure/parameters/prod.bicepparam \
+            --outfile "${out}/prod.json"
+          python3 "${TOOLS}/check-template-security.py" "${out}/main.json"
+      # A finding is shown to the reviewer rather than blocking: a fix may be the very thing being
+      # released. The weekly security-scan workflow is the gate that nags.
+      - name: Dependency audit, for the reviewer
+        continue-on-error: true
+        run: |
+          {
+            echo "### Dependency audit of ${SHA}"
+            echo '```text'
+            pipx run --spec pip-audit==2.10.0 pip-audit --no-deps --disable-pip \
+              --requirement candidate/backend/requirements/prod.txt --require-hashes 2>&1 || true
+            npm --prefix candidate/frontend audit --omit=dev --audit-level=high 2>&1 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  export:
+    name: export the artifacts dev ran
+    needs: verify
+    if: inputs.mode != 'rollback'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: dev
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      backend_digest: ${{ steps.copy.outputs.backend_digest }}
+      frontend_digest: ${{ steps.copy.outputs.frontend_digest }}
+    env:
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      BACKEND_BUILD_SHA: ${{ needs.verify.outputs.backend_build_sha }}
+      FRONTEND_BUILD_SHA: ${{ needs.verify.outputs.frontend_build_sha }}
+    steps:
+      - name: Mask identifiers
+        run: |
+          echo "::add-mask::${AZURE_SUBSCRIPTION_ID}"
+          echo "::add-mask::${AZURE_TENANT_ID}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .tooling
+          persist-credentials: false
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Copy the artifacts out of the dev registry
+        id: copy
+        run: |
+          steps="${TOOLS}/release-steps.sh"
+          bash "$steps" registry-login "$ACR_NAME"
+          out="${RUNNER_TEMP}/artifacts"
+          backend="$(bash "$steps" export-artifact "$ACR_NAME" medical-backend "$BACKEND_BUILD_SHA" "${out}/backend")"
+          frontend="$(bash "$steps" export-artifact "$ACR_NAME" medical-frontend "$FRONTEND_BUILD_SHA" "${out}/frontend")"
+          echo "backend_digest=${backend}" >> "$GITHUB_OUTPUT"
+          echo "frontend_digest=${frontend}" >> "$GITHUB_OUTPUT"
+          echo "Backend ${BACKEND_BUILD_SHA} ${backend}"
+          echo "Frontend ${FRONTEND_BUILD_SHA} ${frontend}"
+      # Only for the trip to the next job: the backend's source is public and the image holds no
+      # secret, and the production registry keeps the lasting copies.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifacts
+          path: ${{ runner.temp }}/artifacts
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  preview:
+    name: preview, review before approving the deployment
+    needs: [verify, export]
+    if: inputs.mode != 'rollback'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # A what-if needs the write-capable identity (D145), so this first approval only releases the
+    # preview. The second, on the deploy job, is the one that changes production.
+    environment:
+      name: prod
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+      STATIC_WEB_APP_NAME: ${{ vars.STATIC_WEB_APP_NAME }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      BACKEND_DIGEST: ${{ needs.export.outputs.backend_digest }}
+    steps:
+      - name: Mask identifiers
+        run: |
+          echo "::add-mask::${AZURE_SUBSCRIPTION_ID}"
+          echo "::add-mask::${AZURE_TENANT_ID}"
+          if [ -z "$RESOURCE_GROUP" ] || [ -z "$ACR_NAME" ] || [ -z "$STATIC_WEB_APP_NAME" ]; then
+            echo "::error::The GitHub environment 'prod' is not set up (docs/production-runbook.md, inventory)."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .tooling
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: candidate
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export the parameter-file variables
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+        run: bash "${TOOLS}/release-steps.sh" export-params
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Compare with the current release
+        id: current
+        run: |
+          # The app's hostnames appear in the what-if. It is not open to people yet.
+          host="$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+            --query defaultHostname -o tsv)"
+          echo "::add-mask::${host}"
+          echo "SITE_HOST=${host}" >> "$GITHUB_ENV"
+          bash "${TOOLS}/release-steps.sh" registry-login "$ACR_NAME"
+          current="$(bash "${TOOLS}/release-steps.sh" current-release "$ACR_NAME")"
+          echo "sha=${current}" >> "$GITHUB_OUTPUT"
+          echo "Current release: ${current:-none}"
+          (cd candidate && python3 "../${TOOLS}/release_gate.py" order --sha "$SHA" --current "$current" --mode "$MODE")
+      - name: what-if and the new migrations
+        env:
+          CURRENT_RELEASE: ${{ steps.current.outputs.sha }}
+          REDACT_VALUES: |
+            ${{ vars.AZURE_SUBSCRIPTION_ID }}
+            ${{ vars.AZURE_TENANT_ID }}
+        run: |
+          login_server="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)"
+          image=""
+          if [ -n "${CONTAINER_APP_NAME:-}" ]; then
+            image="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+              --query "properties.template.containers[0].image" -o tsv 2>/dev/null || true)"
+          fi
+          if [ "$MODE" = "bootstrap" ] && [ -z "$image" ]; then
+            # The first deployment step of a bootstrap: the migrate job and nothing that serves.
+            export DEPLOY_WEB_APP=false
+            image="${login_server}/medical-backend@${BACKEND_DIGEST}"
+          fi
+          [ -n "$image" ] || { echo "::error::No running app; a first deployment uses mode 'bootstrap'."; exit 1; }
+          export CONTAINER_IMAGE="$image"
+          report="${RUNNER_TEMP}/preview.txt"
+          # Keep going after a failure: an error must be read, in redacted form, before exiting.
+          status=0
+          {
+            (cd candidate && python3 "../${TOOLS}/release_gate.py" migrations --sha "$SHA" --current "$CURRENT_RELEASE")
+            echo
+            az deployment group what-if \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "main-prod" \
+              --template-file candidate/infrastructure/main.bicep \
+              --parameters candidate/infrastructure/parameters/prod.bicepparam \
+              --exclude-change-types Ignore NoChange
+          } > "$report" 2>&1 || status=$?
+          REDACT_VALUES="${REDACT_VALUES}
+          ${SITE_HOST}" bash "${TOOLS}/release-steps.sh" redact "$report"
+          cat "$report"
+          {
+            echo "### Preview of ${MODE} ${SHA}"
+            echo
+            echo "Current release: \`${CURRENT_RELEASE:-none}\`. Backend digest: \`${BACKEND_DIGEST}\`."
+            echo "Dev acceptance: see the \`dev_acceptance\` input of this run."
+            echo
+            echo '```text'
+            cat "$report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            echo "::error::The preview failed (exit ${status}); see above."
+            exit "$status"
+          fi
+
+  deploy:
+    name: deploy to prod
+    needs: [verify, export, preview]
+    # Skipped needs propagate, so a rollback must say so explicitly. This never runs after a failure:
+    # each need is either a success or, in a rollback only, deliberately skipped.
+    if: >-
+      ${{ !cancelled() && needs.verify.result == 'success' && (inputs.mode == 'rollback' ||
+      (needs.export.result == 'success' && needs.preview.result == 'success')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment:
+      name: prod
+    # Shared with infrastructure.yml's prod runs, so a Bicep deployment and a release never
+    # interleave. The order check below runs only once this is held.
+    concurrency:
+      group: deploy-azure-app-prod
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
+      MIGRATE_JOB_NAME: ${{ vars.MIGRATE_JOB_NAME }}
+      CLEANUP_JOB_NAME: ${{ vars.CLEANUP_JOB_NAME }}
+      NOTIFY_JOB_NAME: ${{ vars.NOTIFY_JOB_NAME }}
+      STATIC_WEB_APP_NAME: ${{ vars.STATIC_WEB_APP_NAME }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+      RECOVERY_HOLD: ${{ vars.RECOVERY_HOLD }}
+      NOTIFICATIONS_ENABLED: ${{ vars.ENABLE_NOTIFICATIONS }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      BACKEND_BUILD_SHA: ${{ needs.verify.outputs.backend_build_sha }}
+      FRONTEND_BUILD_SHA: ${{ needs.verify.outputs.frontend_build_sha }}
+      EXPORTED_BACKEND_DIGEST: ${{ needs.export.outputs.backend_digest }}
+      EXPORTED_FRONTEND_DIGEST: ${{ needs.export.outputs.frontend_digest }}
+    steps:
+      - name: Mask identifiers and check the environment
+        run: |
+          echo "::add-mask::${AZURE_SUBSCRIPTION_ID}"
+          echo "::add-mask::${AZURE_TENANT_ID}"
+          # A rollback changes no schema or infrastructure, and may be how a recovery gets an image
+          # that matches the restored schema. A release during a hold would touch what is restored.
+          if [ "$RECOVERY_HOLD" = "true" ] && [ "$MODE" != "rollback" ]; then
+            echo "::error::A recovery hold is on (RECOVERY_HOLD). Finish the recovery first; a release would touch what is being restored."
+            exit 1
+          fi
+          for name in RESOURCE_GROUP ACR_NAME CONTAINER_APP_NAME MIGRATE_JOB_NAME CLEANUP_JOB_NAME STATIC_WEB_APP_NAME; do
+            if [ -z "${!name}" ]; then
+              echo "::error::GitHub environment 'prod' is missing ${name} (docs/production-runbook.md, inventory)"
+              exit 1
+            fi
+          done
+          if [ -z "$ALERT_EMAIL" ]; then
+            echo "::error::The prod environment secret ALERT_EMAIL is missing: production must have a person behind its alerts."
+            exit 1
+          fi
+          # Otherwise the sender would silently stay on an older image after this release.
+          if [ "$NOTIFICATIONS_ENABLED" = "true" ] && [ -z "$NOTIFY_JOB_NAME" ]; then
+            echo "::error::ENABLE_NOTIFICATIONS is true but NOTIFY_JOB_NAME is not set (deployment output notifyJobName)."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .tooling
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: candidate
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-evidence
+          path: ${{ runner.temp }}/evidence
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: inputs.mode != 'rollback'
+        with:
+          name: release-artifacts
+          path: ${{ runner.temp }}/artifacts
+      - name: Export the parameter-file variables
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+        run: bash "${TOOLS}/release-steps.sh" export-params
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Refuse an older release
+        run: |
+          steps="${TOOLS}/release-steps.sh"
+          bash "$steps" registry-login "$ACR_NAME"
+          current="$(bash "$steps" current-release "$ACR_NAME")"
+          echo "PREVIOUS_SHA=${current}" >> "$GITHUB_ENV"
+          (cd candidate && python3 "../${TOOLS}/release_gate.py" order --sha "$SHA" --current "$current" --mode "$MODE")
+
+      - name: Put the artifacts in the production registry
+        run: |
+          steps="${TOOLS}/release-steps.sh"
+          login_server="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)"
+          if [ "$MODE" = "rollback" ]; then
+            backend="$(bash "$steps" released-digest "$ACR_NAME" "$SHA" backend)"
+            frontend="$(bash "$steps" released-digest "$ACR_NAME" "$SHA" frontend)"
+            if [ -z "$backend" ] || [ -z "$frontend" ]; then
+              echo "::error::${SHA} was never released to production, so there is nothing to roll back to."
+              exit 1
+            fi
+          else
+            backend="$EXPORTED_BACKEND_DIGEST"
+            frontend="$EXPORTED_FRONTEND_DIGEST"
+            bash "$steps" import-artifact "$ACR_NAME" medical-backend "$BACKEND_BUILD_SHA" \
+              "${RUNNER_TEMP}/artifacts/backend" "$backend"
+            bash "$steps" import-artifact "$ACR_NAME" medical-frontend "$FRONTEND_BUILD_SHA" \
+              "${RUNNER_TEMP}/artifacts/frontend" "$frontend"
+          fi
+          {
+            echo "IMAGE=${login_server}/medical-backend@${backend}"
+            echo "BACKEND_DIGEST=${backend}"
+            echo "FRONTEND_DIGEST=${frontend}"
+          } >> "$GITHUB_ENV"
+
+      - name: "Bootstrap: create only the migrate job, then apply the schema"
+        if: inputs.mode == 'bootstrap'
+        run: |
+          app="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+            --query name -o tsv 2>/dev/null || true)"
+          if [ -z "$app" ]; then
+            CONTAINER_IMAGE="$IMAGE" DEPLOY_WEB_APP=false az deployment group create \
+              --resource-group "$RESOURCE_GROUP" --name "main-prod" \
+              --template-file candidate/infrastructure/main.bicep \
+              --parameters candidate/infrastructure/parameters/prod.bicepparam --output none
+          fi
+          bash "${TOOLS}/release-steps.sh" run-migrations "$MIGRATE_JOB_NAME" "$RESOURCE_GROUP" "$IMAGE"
+          bash "${TOOLS}/run-job-command.sh" --job "$MIGRATE_JOB_NAME" --resource-group "$RESOURCE_GROUP" \
+            -- python manage.py release_check
+
+      - name: Deploy the infrastructure, keeping the running image
+        if: inputs.mode != 'rollback'
+        run: |
+          if [ "$MODE" = "bootstrap" ]; then
+            # The schema exists now, so the app, its schedules and the link can be created.
+            image="$IMAGE"
+          else
+            image="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+              --query "properties.template.containers[0].image" -o tsv)"
+            if [ -z "$image" ]; then
+              echo "::error::${CONTAINER_APP_NAME} has no image. A first deployment uses mode 'bootstrap'."
+              exit 1
+            fi
+          fi
+          CONTAINER_IMAGE="$image" az deployment group create \
+            --resource-group "$RESOURCE_GROUP" --name "main-prod" \
+            --template-file candidate/infrastructure/main.bicep \
+            --parameters candidate/infrastructure/parameters/prod.bicepparam \
+            --query "properties.provisioningState" -o tsv
+
+      # The ARM token from azure/login cannot refresh, and the steps above can take most of an hour.
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run the migration job once
+        if: inputs.mode == 'release'
+        run: bash "${TOOLS}/release-steps.sh" run-migrations "$MIGRATE_JOB_NAME" "$RESOURCE_GROUP" "$IMAGE"
+
+      - name: Check what SELECT 1 cannot (schema, cache, fee schedule, documents, sign-in)
+        if: inputs.mode != 'rollback'
+        run: |
+          bash "${TOOLS}/run-job-command.sh" --job "$MIGRATE_JOB_NAME" --resource-group "$RESOURCE_GROUP" \
+            -- python manage.py release_check
+
+      - name: Point the jobs at the new image
+        run: |
+          steps="${TOOLS}/release-steps.sh"
+          bash "$steps" update-job-image "$CLEANUP_JOB_NAME" "$RESOURCE_GROUP" "$IMAGE"
+          if [ -n "$NOTIFY_JOB_NAME" ]; then
+            bash "$steps" update-job-image "$NOTIFY_JOB_NAME" "$RESOURCE_GROUP" "$IMAGE"
+          fi
+          if [ "$MODE" = "rollback" ]; then
+            bash "$steps" update-job-image "$MIGRATE_JOB_NAME" "$RESOURCE_GROUP" "$IMAGE"
+          fi
+
+      - name: Create the new revision
+        if: inputs.mode != 'bootstrap'
+        run: |
+          suffix="r${SHA:0:10}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          bash "${TOOLS}/release-steps.sh" create-revision "$CONTAINER_APP_NAME" "$RESOURCE_GROUP" "$IMAGE" "$suffix"
+
+      - name: Unpack the frontend
+        run: |
+          steps="${TOOLS}/release-steps.sh"
+          artifact="${RUNNER_TEMP}/artifacts/frontend"
+          if [ "$MODE" = "rollback" ]; then
+            login_server="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)"
+            mkdir -p "$artifact"
+            skopeo copy --quiet --preserve-digests --multi-arch all \
+              "docker://${login_server}/medical-frontend@${FRONTEND_DIGEST}" "dir:${artifact}"
+          fi
+          content="$(bash "$steps" unpack-frontend "$artifact" "${GITHUB_WORKSPACE}/site")"
+          echo "FRONTEND_CONTENT=${content}" >> "$GITHUB_ENV"
+      - name: Read the deployment token
+        run: |
+          token="$(az staticwebapp secrets list --name "$STATIC_WEB_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" --query properties.apiKey -o tsv)"
+          echo "::add-mask::${token}"
+          echo "SWA_DEPLOYMENT_TOKEN=${token}" >> "$GITHUB_ENV"
+      - name: Upload to Static Web Apps
+        uses: Azure/static-web-apps-deploy@1a947af9992250f3bc2e68ad0754c0b0c11566c9 # v1
+        with:
+          action: upload
+          azure_static_web_apps_api_token: ${{ env.SWA_DEPLOYMENT_TOKEN }}
+          app_location: site
+          output_location: ""
+          skip_app_build: true
+
+      # A hold refuses every caller, so this would only report the hold itself.
+      - name: Smoke test through the public host
+        if: vars.RECOVERY_HOLD != 'true'
+        env:
+          ENTRA_CLIENT_ID_EXPECTED: ${{ vars.ENTRA_CLIENT_ID }}
+        run: |
+          default_host="$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+            --query defaultHostname -o tsv)"
+          host="${PUBLIC_HOSTNAME:-$default_host}"
+          fqdn="$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn -o tsv)"
+          echo "::add-mask::${default_host}"
+          echo "::add-mask::${fqdn}"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS -o /dev/null "https://${host}/api/ready/"; then break; fi
+            echo "Waiting for https://${host}/api/ready/ (${attempt})"
+            sleep 15
+          done
+          python3 "${TOOLS}/acceptance_smoke.py" --base-url "https://${host}" \
+            --expect-client-id "$ENTRA_CLIENT_ID_EXPECTED" --direct-backend-url "https://${fqdn}"
+
+      - name: Record the release
+        env:
+          DEV_ACCEPTANCE: ${{ inputs.dev_acceptance }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          manifest="${RUNNER_TEMP}/release-manifest.json"
+          python3 "${TOOLS}/release_gate.py" manifest --sha "$SHA" --mode "$MODE" \
+            --backend-digest "$BACKEND_DIGEST" --frontend-digest "$FRONTEND_DIGEST" \
+            --frontend-content-sha256 "$FRONTEND_CONTENT" --previous "${PREVIOUS_SHA:-}" \
+            --dev-acceptance="$DEV_ACCEPTANCE" \
+            --evidence-file "${RUNNER_TEMP}/evidence/evidence.json" \
+            --run-url "$RUN_URL" --actor "$GITHUB_ACTOR" --output "$manifest"
+          bash "${TOOLS}/release-steps.sh" store-manifest "$ACR_NAME" "$manifest" "$SHA"
+          {
+            echo "### ${MODE} of ${SHA} deployed"
+            echo
+            echo "This proves the deployment worked. Production is ready only when"
+            echo "docs/production-acceptance.md has passed."
+            echo
+            echo '```json'
+            cat "$manifest"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-manifest
+          path: ${{ runner.temp }}/release-manifest.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90

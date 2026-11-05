@@ -1,8 +1,8 @@
 # Frontend CI/CD (PROMPT.md §36):
 #   npm ci → lint → type check → unit tests → rtl_check.py → build → Azure Static Web Apps
-# One build artifact is promoted dev → staging → prod (prod waits for the environment's
-# required reviewers). The SPA has no environment-specific build settings: it calls /api on
-# its own origin (Static Web Apps linked backend).
+# A merge to main deploys dev only. Production takes this same build, by digest, through the
+# explicit release-production.yml. The SPA has no environment-specific build settings: it calls
+# /api on its own origin (Static Web Apps linked backend).
 name: frontend
 
 on:
@@ -70,23 +70,3 @@ jobs:
     uses: ./.github/workflows/reusable-deploy-frontend.yml
     with:
       environment: dev
-
-  deploy-staging:
-    needs: deploy-dev
-    # Off until staging exists (repository variable; docs/deployment-path.md §17).
-    if: vars.DEPLOY_STAGING == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/reusable-deploy-frontend.yml
-    with:
-      environment: staging
-
-  deploy-prod:
-    needs: deploy-staging
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/reusable-deploy-frontend.yml
-    with:
-      environment: prod

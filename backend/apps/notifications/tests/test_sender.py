@@ -26,6 +26,7 @@ from apps.notifications.providers import (
 )
 from apps.notifications.tests.test_claim import opted_in_dues
 from apps.reference.constants import NotificationEvent
+from config import telemetry
 
 pytestmark = pytest.mark.django_db
 
@@ -373,7 +374,7 @@ def test_command_logs_notify_run_failed_and_exits_1_without_a_traceback(monkeypa
 
     monkeypatch.setattr(command, "run_once", boom)
     flushed = []
-    monkeypatch.setattr(command, "_flush_telemetry", lambda: flushed.append(True))
+    monkeypatch.setattr(command, "flush_telemetry", lambda: flushed.append(True))
     with (
         caplog.at_level(logging.INFO, logger="apps.notifications"),
         pytest.raises(SystemExit) as ei,
@@ -393,13 +394,13 @@ def test_command_flushes_telemetry_on_exit(monkeypatch):
         def force_flush(self):
             flushed.append(True)
 
-    monkeypatch.setattr(command, "get_logger_provider", lambda: Provider())
+    monkeypatch.setattr(telemetry, "get_logger_provider", lambda: Provider())
     call_command("send_notifications")
     assert flushed == [True]
 
 
 def test_command_tolerates_a_provider_without_force_flush(monkeypatch):
-    monkeypatch.setattr(command, "get_logger_provider", lambda: object())
+    monkeypatch.setattr(telemetry, "get_logger_provider", lambda: object())
     call_command("send_notifications")
 
 
@@ -408,7 +409,7 @@ def test_command_flush_never_raises(monkeypatch):
         def force_flush(self):
             raise RuntimeError("exporter down")
 
-    monkeypatch.setattr(command, "get_logger_provider", lambda: Provider())
+    monkeypatch.setattr(telemetry, "get_logger_provider", lambda: Provider())
     call_command("send_notifications")
 
 

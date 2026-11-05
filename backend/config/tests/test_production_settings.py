@@ -18,6 +18,7 @@ VALID_ENV = {
     "ENTRA_CLIENT_ID": "00000000-0000-0000-0000-0000000000c1",
     "ENTRA_CLIENT_SECRET": "entra-secret-from-key-vault-reference",
     "ENTRA_REDIRECT_URI": "https://app.example.test/api/v1/auth/callback/",
+    "CURRENT_FISCAL_YEAR": "2026",
 }
 
 # Dummy values only: the real-provider settings a production notification mode needs.
@@ -53,7 +54,7 @@ def load_production(monkeypatch, **overrides):
         "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_API_VERSION",
         "ENTRA_AUTHORITY", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "ENTRA_REDIRECT_URI",
         "SECURE_HSTS_PRELOAD", "NOTIFICATIONS_MODE", "NOTIFICATION_PROVIDERS",
-        "NOTIFICATIONS_ALLOWLIST", *REAL_PROVIDER_SETTINGS,
+        "NOTIFICATIONS_ALLOWLIST", "CURRENT_FISCAL_YEAR", *REAL_PROVIDER_SETTINGS,
     )  # fmt: skip
     for key in inherited:
         monkeypatch.delenv(key, raising=False)
@@ -103,11 +104,22 @@ def test_production_refuses_debug(monkeypatch):
     [
         "DJANGO_SECRET_KEY", "ALLOWED_HOSTS", "CSRF_TRUSTED_ORIGINS", "DATABASE_URL",
         "ENTRA_AUTHORITY", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "ENTRA_REDIRECT_URI",
+        "CURRENT_FISCAL_YEAR",
     ],
 )  # fmt: skip
 def test_production_requires_setting(monkeypatch, missing):
     with pytest.raises(ImproperlyConfigured, match=missing):
         load_production(monkeypatch, **{missing: None})
+
+
+def test_production_uses_the_configured_fiscal_year(monkeypatch):
+    assert load_production(monkeypatch, CURRENT_FISCAL_YEAR="2027").CURRENT_FISCAL_YEAR == 2027
+
+
+@pytest.mark.parametrize("value", ["", "1999", "2101", "twenty", "2026.5"])
+def test_production_refuses_a_bad_fiscal_year(monkeypatch, value):
+    with pytest.raises(ImproperlyConfigured, match="CURRENT_FISCAL_YEAR"):
+        load_production(monkeypatch, CURRENT_FISCAL_YEAR=value)
 
 
 def test_production_refuses_wildcard_hosts(monkeypatch):

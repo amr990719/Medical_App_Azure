@@ -8,7 +8,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from apps.applications.access import lock_application
@@ -44,8 +44,10 @@ ALLOWED_TRANSITIONS = frozenset(
         (S.SENDING, S.SENT),
         (S.SENDING, S.PENDING),
         (S.SENDING, S.FAILED),
+        (S.SENDING, S.SUPERSEDED),  # only `reconcile_after_restore`
         (S.SENT, S.DELIVERED),
         (S.SENT, S.FAILED),
+        (S.SENT, S.SUPERSEDED),  # only `reconcile_after_restore`
         (S.FAILED, S.DELIVERED),
     }
 )
@@ -55,6 +57,7 @@ WHATSAPP_ONLY_TRANSITIONS = frozenset(
         (S.PENDING, S.FAILED),
         (S.SENT, S.DELIVERED),
         (S.SENT, S.FAILED),
+        (S.SENT, S.SUPERSEDED),
         (S.FAILED, S.DELIVERED),
     }
 )
@@ -469,6 +472,7 @@ SWEEP_LIMIT = 500
 STUCK_AFTER = timedelta(minutes=10)
 SEND_INTERRUPTED = "SEND_INTERRUPTED"
 NO_DELIVERY_RECEIPT = "NO_DELIVERY_RECEIPT"
+RESTORE_RECONCILED = "RESTORE_RECONCILED"
 
 
 def _sweep(queryset, *, to_status: str, limit: int, now: datetime, error_code: str = "") -> int:
@@ -508,6 +512,47 @@ def apply_delivery_timeout(*, now: datetime, limit: int = SWEEP_LIMIT) -> int:
         status=S.SENT, channel=NotificationChannel.WHATSAPP, sent_at__lte=cutoff
     ).order_by("sent_at")
     return _sweep(rows, to_status=S.FAILED, limit=limit, now=now, error_code=NO_DELIVERY_RECEIPT)
+
+
+def _in_flight():
+    """Rows that could still produce a message: waiting or mid-send, plus WhatsApp rows awaiting a
+    receipt, whose delivery timeout would create an email."""
+    return Notification.objects.filter(
+        Q(status__in=[S.PENDING, S.SENDING])
+        | Q(status=S.SENT, channel=NotificationChannel.WHATSAPP)
+    )
+
+
+def in_flight_counts() -> list[dict]:
+    """`{status, event, count}` rows for the operator; no recipient, no notification ID."""
+    rows = _in_flight().values("status", "event").order_by("status", "event")
+    return list(rows.annotate(count=Count("pk")))
+
+
+@transaction.atomic
+def reconcile_after_restore() -> int:
+    """After a database restore these rows may already have gone out, so none of them may send.
+
+    Every in-flight row ends SUPERSEDED with `RESTORE_RECONCILED`, all or none: no email fallback,
+    no `notification_failed` or `notification_expired` (these are not provider failures). An admin
+    can still resend a row deliberately. Returns the number of rows changed; running it again
+    finds nothing.
+    """
+    rows = _in_flight().select_for_update().order_by("pk")
+    changed = 0
+    for pk, status, attempts in rows.values_list("pk", "status", "attempts"):
+        row = apply_transition(
+            pk,
+            to_status=S.SUPERSEDED,
+            expected_status=status,
+            expected_attempts=attempts,
+            error_code=RESTORE_RECONCILED,
+        )
+        changed += row is not None
+    transaction.on_commit(
+        lambda: logger.info("notification_restore_reconciled", extra={"reconciled": changed})
+    )
+    return changed
 
 
 def oldest_due_age_seconds(*, now: datetime) -> int | None:

@@ -1,10 +1,18 @@
 # End-to-end tests (PROMPT.md §36, optional job): a fresh docker compose stack (PostgreSQL,
 # Azurite, Django with development settings, DEV_AUTH_ENABLED and the mock OCR provider) +
 # the Vite dev server (Playwright's webServer) + Playwright. A new stack per run, so reference
-# numbers and e2e users never accumulate (Q-T12). No Azure access, no secrets.
+# numbers and e2e users never accumulate (Q-T12). No Azure access, no secrets. Pushes to main run
+# it too: a production release requires this run for the exact commit it promotes.
 name: e2e
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/e2e.yml"
   pull_request:
     branches: [main]
     paths:
@@ -18,8 +26,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: e2e-${{ github.ref }}
-  cancel-in-progress: true
+  # By commit on main: GitHub replaces a pending run in the same group even without
+  # cancel-in-progress, and a commit without its run could never be released.
+  group: e2e-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   playwright:

@@ -7,6 +7,7 @@ and override what differs. Values come from environment variables only; no secre
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -94,8 +95,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # --- Business configuration (docs/business-rules.md §10) ---------------------------------------
 
-# The fiscal year is a deliberate setting, not derived from the clock (decision D4).
-CURRENT_FISCAL_YEAR: int = env.int("CURRENT_FISCAL_YEAR", default=2026)
+# The fiscal year is a deliberate setting, not derived from the clock (decision D4). The default is
+# for local work: production settings require the variable, and blank counts as unset there.
+try:
+    CURRENT_FISCAL_YEAR: int = int(env("CURRENT_FISCAL_YEAR", default="") or 2026)
+except ValueError:
+    raise ImproperlyConfigured("CURRENT_FISCAL_YEAR must be a whole year.") from None
 MAX_BENEFICIARIES: int = env.int("MAX_BENEFICIARIES", default=10)
 # The member photo is required for FIRST_TIME applications only (document_rules.py); there
 # is deliberately no global switch that could contradict it.
