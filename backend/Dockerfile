@@ -11,7 +11,7 @@
 # Public). Docker Hub's anonymous pull limit (PR #2) and ECR Public's anonymous data limit
 # (PR #7, "toomanyrequests: Data limit exceeded") both blocked the GitHub-hosted runners.
 # Pinned by digest so a rebuild starts from the same bytes; Dependabot proposes updates.
-FROM mirror.gcr.io/library/python:3.12-slim@sha256:e695ab189fa2d082b1c61c69a6b888a5adeca61ceeccad107b1ed2a125721a9e AS base
+FROM mirror.gcr.io/library/python:3.13-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
