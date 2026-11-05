@@ -142,6 +142,27 @@ class ProductionParameters(unittest.TestCase):
         self.assertEqual(params["postgresServerNameOverride"], "psql-restored")
         self.assertTrue(params["recoveryHold"])
 
+    def test_an_empty_switch_means_its_default_and_never_breaks_compilation(self):
+        # The first production release failed here: a workflow passed an unset GitHub variable as
+        # RECOVERY_HOLD='' and bool('') does not compile. Empty must mean the default.
+        switches = {
+            "RECOVERY_HOLD": ("recoveryHold", False),
+            "ENABLE_NOTIFICATIONS": ("enableNotifications", False),
+            "SES_ACCESS_KEY_FROM_KEY_VAULT": ("sesAccessKeyFromKeyVault", False),
+            "DEPLOY_WEB_APP": ("deployWebApp", True),
+        }
+        for environment in ("dev", "prod"):
+            params = compile_params(environment, **{name: "" for name in switches})
+            for name, (param, default) in switches.items():
+                self.assertEqual(params[param], default, f"{environment} {name}=''")
+        dev = compile_params("dev", ENABLE_SERVICE_ALERTS="", ENABLE_OCR="")
+        self.assertFalse(dev["enableServiceAlerts"])
+        self.assertFalse(dev["enableOcr"])
+
+    def test_a_switch_is_read_without_regard_to_case(self):
+        self.assertTrue(compile_params("prod", RECOVERY_HOLD="True")["recoveryHold"])
+        self.assertFalse(compile_params("prod", DEPLOY_WEB_APP="FALSE")["deployWebApp"])
+
     def test_service_alerts_are_for_production_only(self):
         self.assertTrue(compile_params("prod")["enableServiceAlerts"])
         self.assertFalse(compile_params("dev").get("enableServiceAlerts", False))

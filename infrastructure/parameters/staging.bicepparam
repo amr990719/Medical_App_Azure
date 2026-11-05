@@ -2,6 +2,9 @@
 // migrations before prod. Values that identify tenants/principals come from environment variables.
 using '../main.bicep'
 
+// Switches compare text rather than call bool(): an unset GitHub variable reaches a workflow
+// as '', which bool() refuses (the first production release failed on it, 2026-11-05).
+
 var image = readEnvironmentVariable('CONTAINER_IMAGE', '')
 
 param environmentName = 'staging'
@@ -13,7 +16,7 @@ param deployApplication = !empty(image)
 param publicHostname = readEnvironmentVariable('PUBLIC_HOSTNAME', '')
 param currentFiscalYear = 2026
 
-param enableOcr = bool(readEnvironmentVariable('ENABLE_OCR', 'false'))
+param enableOcr = toLower(readEnvironmentVariable('ENABLE_OCR', 'false')) == 'true'
 param enablePrivateNetworking = false
 param enableDiagnostics = true
 

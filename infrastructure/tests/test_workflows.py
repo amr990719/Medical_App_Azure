@@ -107,7 +107,22 @@ class ReleaseWorkflow(unittest.TestCase):
         self.assertIn("group: deploy-azure-app-${{ inputs.environment }}", read("reusable-infrastructure.yml"))
 
     def test_only_a_rollback_may_run_during_a_recovery_hold(self):
-        self.assertIn('[ "$RECOVERY_HOLD" = "true" ] && [ "$MODE" != "rollback" ]', job(self.text, "deploy"))
+        self.assertIn('[ "$HOLD_REQUESTED" = "true" ] && [ "$MODE" != "rollback" ]', job(self.text, "deploy"))
+
+    def test_no_job_puts_a_name_the_parameter_file_reads_into_its_environment(self):
+        # An unset GitHub variable arrives as '', which overrides the parameter file's default.
+        read = set(
+            re.findall(
+                r"readEnvironmentVariable\('([A-Z0-9_]+)'",
+                (PARAMETERS / "prod.bicepparam").read_text(encoding="utf-8"),
+            )
+        )
+        allowed = {"ALERT_EMAIL"}  # a string; empty means "no alerts", as intended
+        for name in ("verify", "export", "preview", "deploy"):
+            body = job(self.text, name)
+            env = body[body.index("    env:\n") :] if "    env:\n" in body else ""
+            declared = set(re.findall(r"^      ([A-Z0-9_]+): \$\{\{ vars\.", env, re.MULTILINE))
+            self.assertEqual(declared & read - allowed, set(), name)
 
     def test_a_smoke_test_is_not_expected_to_pass_through_a_closed_ingress(self):
         deploy = job(self.text, "deploy")
