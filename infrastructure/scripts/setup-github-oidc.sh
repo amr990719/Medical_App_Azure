@@ -185,14 +185,23 @@ assign() { # principal-id role label [condition]
         az role assignment delete --ids "$existing" --output none
     fi
     echo "Assigning ${label}"
-    if [ -n "$condition" ]; then
-        az role assignment create --assignee-object-id "$principal" \
-            --assignee-principal-type ServicePrincipal --role "$role" --scope "$rg_id" \
-            --condition "$condition" --condition-version "2.0" --output none
-    else
-        az role assignment create --assignee-object-id "$principal" \
-            --assignee-principal-type ServicePrincipal --role "$role" --scope "$rg_id" --output none
-    fi
+    # A custom role created a moment ago can be listed before it can be assigned ("doesn't
+    # exist"; seen on the first production run), so retry for about a minute.
+    local attempt
+    for attempt in 1 2 3 4 5 6; do
+        if [ -n "$condition" ]; then
+            az role assignment create --assignee-object-id "$principal" \
+                --assignee-principal-type ServicePrincipal --role "$role" --scope "$rg_id" \
+                --condition "$condition" --condition-version "2.0" --output none && return 0
+        else
+            az role assignment create --assignee-object-id "$principal" \
+                --assignee-principal-type ServicePrincipal --role "$role" --scope "$rg_id" \
+                --output none && return 0
+        fi
+        echo "Assignment not accepted yet (attempt ${attempt}); waiting for the role to replicate" >&2
+        sleep 10
+    done
+    return 1
 }
 
 # --- App identity (same name as main.bicep: id-<base>-<env-short>) ---------------------------

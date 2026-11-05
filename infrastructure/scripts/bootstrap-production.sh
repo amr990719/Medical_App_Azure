@@ -67,6 +67,13 @@ if [ -z "$env_file" ] || [ ! -f "$env_file" ]; then
 fi
 # shellcheck disable=SC1090
 set -a && . "$env_file" && set +a
+# An empty line in the file means "use the default". Exported as empty, Bicep's
+# readEnvironmentVariable would see '' rather than fall back to its default.
+while IFS='=' read -r name _; do
+    case "$name" in
+        [A-Z]*) if [ -z "${!name:-}" ]; then unset "$name"; fi ;;
+    esac
+done <"$env_file"
 
 require() {
     local name missing=0
@@ -263,8 +270,12 @@ stage_entra() {
         echo "  would store entra-client-secret in ${vault}; --local is refused for prod."
         return
     fi
-    az login --tenant "$EXTERNAL_TENANT_ID" --allow-no-subscriptions --output none
+    # Reuse a sign-in already made in a terminal (it needs a browser and MFA); otherwise ask for one.
+    if [ "$(az account list --all --query "[?tenantId=='${EXTERNAL_TENANT_ID}'] | length(@)" -o tsv)" = "0" ]; then
+        az login --tenant "$EXTERNAL_TENANT_ID" --allow-no-subscriptions --output none
+    fi
     az account set --subscription "$EXTERNAL_TENANT_ID"
+    # The workforce sign-in made the subscription current; the external one may have replaced it.
     current="$(mktemp)"
     trap 'rm -f "$current"' RETURN
     bash "${SCRIPT_DIR}/create-entra-app.sh" --environment "$ENVIRONMENT" --tenant-id "$EXTERNAL_TENANT_ID" \

@@ -3,6 +3,9 @@
 // telemetry ingestion. Scale-up path in docs/azure-deployment.md (cost section).
 using '../main.bicep'
 
+// Switches compare text rather than call bool(): an unset GitHub variable reaches a workflow
+// as '', which bool() refuses (the first production release failed on it, 2026-11-05).
+
 var image = readEnvironmentVariable('CONTAINER_IMAGE', '')
 
 param environmentName = 'prod'
@@ -11,7 +14,7 @@ param staticWebAppLocation = readEnvironmentVariable('STATIC_WEB_APP_LOCATION', 
 
 param containerImage = image
 param deployApplication = !empty(image)
-param deployWebApp = bool(readEnvironmentVariable('DEPLOY_WEB_APP', 'true'))
+param deployWebApp = toLower(readEnvironmentVariable('DEPLOY_WEB_APP', 'true')) != 'false'
 param publicHostname = readEnvironmentVariable('PUBLIC_HOSTNAME', '')
 
 // Reviewed commit, never inferred from the calendar (docs/production-runbook.md, rollover).
@@ -19,15 +22,15 @@ param currentFiscalYear = 2026
 
 // Recovery (docs/production-runbook.md): set while restoring, and kept so the next deployment
 // neither reopens the service nor points the app back at the damaged server.
-param recoveryHold = bool(readEnvironmentVariable('RECOVERY_HOLD', 'false'))
+param recoveryHold = toLower(readEnvironmentVariable('RECOVERY_HOLD', 'false')) == 'true'
 param postgresServerNameOverride = readEnvironmentVariable('POSTGRES_SERVER_NAME_OVERRIDE', '')
 
 // Doctor notifications: off until the prod GitHub environment sets the variables, then an
 // allowlist trial, then live as a separate decision (docs/production-runbook.md). ALERT_EMAIL comes
 // from an environment secret, never a variable. WhatsApp stays parked (no value here).
-param enableNotifications = bool(readEnvironmentVariable('ENABLE_NOTIFICATIONS', 'false'))
+param enableNotifications = toLower(readEnvironmentVariable('ENABLE_NOTIFICATIONS', 'false')) == 'true'
 param notificationsMode = readEnvironmentVariable('NOTIFICATIONS_MODE', 'off')
-param sesAccessKeyFromKeyVault = bool(readEnvironmentVariable('SES_ACCESS_KEY_FROM_KEY_VAULT', 'false'))
+param sesAccessKeyFromKeyVault = toLower(readEnvironmentVariable('SES_ACCESS_KEY_FROM_KEY_VAULT', 'false')) == 'true'
 param sesRegion = readEnvironmentVariable('SES_REGION', '')
 param sesFromAddress = readEnvironmentVariable('SES_FROM_ADDRESS', '')
 param alertEmail = readEnvironmentVariable('ALERT_EMAIL', '')

@@ -3,6 +3,9 @@
 // come from environment variables (GitHub environment variables in CI, your shell locally).
 using '../main.bicep'
 
+// Switches compare text rather than call bool(): an unset GitHub variable reaches a workflow
+// as '', which bool() refuses (the first production release failed on it, 2026-11-05).
+
 var image = readEnvironmentVariable('CONTAINER_IMAGE', '')
 
 param environmentName = 'dev'
@@ -12,26 +15,26 @@ param staticWebAppLocation = readEnvironmentVariable('STATIC_WEB_APP_LOCATION', 
 // No image yet = first phase (no Container App / jobs / SWA link). See docs/azure-deployment.md.
 param containerImage = image
 param deployApplication = !empty(image)
-param deployWebApp = bool(readEnvironmentVariable('DEPLOY_WEB_APP', 'true'))
+param deployWebApp = toLower(readEnvironmentVariable('DEPLOY_WEB_APP', 'true')) != 'false'
 param publicHostname = readEnvironmentVariable('PUBLIC_HOSTNAME', '')
 
 // Reviewed commit, never inferred from the calendar (docs/production-runbook.md, rollover).
 param currentFiscalYear = 2026
 // Recovery rehearsals only (docs/production-runbook.md, recovery).
-param recoveryHold = bool(readEnvironmentVariable('RECOVERY_HOLD', 'false'))
+param recoveryHold = toLower(readEnvironmentVariable('RECOVERY_HOLD', 'false')) == 'true'
 param postgresServerNameOverride = readEnvironmentVariable('POSTGRES_SERVER_NAME_OVERRIDE', '')
 // Off: billed, and needs nothing on dev day to day. On once, to prove the module deploys before
 // production's first deployment does it for real (docs/production-runbook.md, bootstrap).
-param enableServiceAlerts = bool(readEnvironmentVariable('ENABLE_SERVICE_ALERTS', 'false'))
+param enableServiceAlerts = toLower(readEnvironmentVariable('ENABLE_SERVICE_ALERTS', 'false')) == 'true'
 
-param enableOcr = bool(readEnvironmentVariable('ENABLE_OCR', 'false'))
+param enableOcr = toLower(readEnvironmentVariable('ENABLE_OCR', 'false')) == 'true'
 
 // Doctor notifications (docs/azure-deployment.md section 11). Off unless the dev GitHub
 // environment sets the variables, so a CI redeploy keeps whatever was chosen there. ALERT_EMAIL
 // comes from an environment secret, never a variable. WhatsApp stays parked (no value here).
-param enableNotifications = bool(readEnvironmentVariable('ENABLE_NOTIFICATIONS', 'false'))
+param enableNotifications = toLower(readEnvironmentVariable('ENABLE_NOTIFICATIONS', 'false')) == 'true'
 param notificationsMode = readEnvironmentVariable('NOTIFICATIONS_MODE', 'off')
-param sesAccessKeyFromKeyVault = bool(readEnvironmentVariable('SES_ACCESS_KEY_FROM_KEY_VAULT', 'false'))
+param sesAccessKeyFromKeyVault = toLower(readEnvironmentVariable('SES_ACCESS_KEY_FROM_KEY_VAULT', 'false')) == 'true'
 param sesRegion = readEnvironmentVariable('SES_REGION', '')
 param sesFromAddress = readEnvironmentVariable('SES_FROM_ADDRESS', '')
 param alertEmail = readEnvironmentVariable('ALERT_EMAIL', '')

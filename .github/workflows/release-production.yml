@@ -321,7 +321,8 @@ jobs:
       NOTIFY_JOB_NAME: ${{ vars.NOTIFY_JOB_NAME }}
       STATIC_WEB_APP_NAME: ${{ vars.STATIC_WEB_APP_NAME }}
       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
-      RECOVERY_HOLD: ${{ vars.RECOVERY_HOLD }}
+      # Not named RECOVERY_HOLD: the parameter file reads that name, and an unset variable is ''.
+      HOLD_REQUESTED: ${{ vars.RECOVERY_HOLD }}
       NOTIFICATIONS_ENABLED: ${{ vars.ENABLE_NOTIFICATIONS }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
@@ -336,7 +337,7 @@ jobs:
           echo "::add-mask::${AZURE_TENANT_ID}"
           # A rollback changes no schema or infrastructure, and may be how a recovery gets an image
           # that matches the restored schema. A release during a hold would touch what is restored.
-          if [ "$RECOVERY_HOLD" = "true" ] && [ "$MODE" != "rollback" ]; then
+          if [ "$HOLD_REQUESTED" = "true" ] && [ "$MODE" != "rollback" ]; then
             echo "::error::A recovery hold is on (RECOVERY_HOLD). Finish the recovery first; a release would touch what is being restored."
             exit 1
           fi
