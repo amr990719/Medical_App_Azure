@@ -6,8 +6,8 @@ import sys
 
 
 def _starts_telemetry(argv: list[str]) -> bool:
-    """True for the commands that run as a scheduled job and must reach Application Insights."""
-    return len(argv) > 1 and argv[1] == "send_notifications"
+    """True for the commands whose traces must reach Application Insights from a job."""
+    return len(argv) > 1 and argv[1] in {"send_notifications", "cleanup_blobs", "alert_test"}
 
 
 def main() -> None:

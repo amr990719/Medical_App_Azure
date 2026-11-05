@@ -3,8 +3,9 @@
 `configure_telemetry()` runs in `config/wsgi.py` in every Gunicorn worker (no `--preload`, so
 after the fork) BEFORE Django loads, so the Django middleware instrumentation is in place;
 it is a no-op without `APPLICATIONINSIGHTS_CONNECTION_STRING` (local development, tests,
-other management commands). `manage.py` also calls it for `send_notifications`, before Django
-loads, so the job's warnings reach Application Insights. Requests, dependencies (psycopg,
+other management commands). `manage.py` also calls it for `send_notifications` and
+`cleanup_blobs`, before Django loads, so the jobs' logs reach Application Insights; they call
+`flush_telemetry()` before exiting. Requests, dependencies (psycopg,
 requests/httpx, Azure SDK) and exceptions are exported.
 
 National IDs, phone numbers and e-mail addresses must never reach Application Insights, so
@@ -27,6 +28,7 @@ import copy
 import logging
 import os
 
+from opentelemetry._logs import get_logger_provider
 from opentelemetry.sdk._logs import LogRecordProcessor, ReadWriteLogRecord
 from opentelemetry.sdk.trace import Event, ReadableSpan, SpanProcessor
 
@@ -109,7 +111,6 @@ class TelemetryLogHandler(logging.Handler):
 
     def __init__(self, level=logging.NOTSET, logger_provider=None) -> None:
         super().__init__(level)
-        from opentelemetry._logs import get_logger_provider
         from opentelemetry.instrumentation.logging.handler import LoggingHandler
         from opentelemetry.sdk._logs import LoggerProvider
 
@@ -131,6 +132,16 @@ class TelemetryLogHandler(logging.Handler):
     def flush(self) -> None:
         if self._delegate is not None:
             self._delegate.flush()
+
+
+def flush_telemetry() -> None:
+    """Push buffered logs out before a job's container exits. Never raises."""
+    try:
+        flush = getattr(get_logger_provider(), "force_flush", None)
+        if callable(flush):
+            flush()
+    except Exception:  # noqa: S110 - a telemetry failure must not fail the job
+        pass
 
 
 def _instrument_psycopg() -> None:

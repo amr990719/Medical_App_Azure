@@ -52,6 +52,10 @@ def _jwks_client(uri: str) -> jwt.PyJWKClient:
     return jwt.PyJWKClient(uri, cache_keys=True, lifespan=3600)
 
 
+def discovery_document() -> dict:
+    return _discovery(settings.ENTRA_AUTHORITY)
+
+
 def expected_issuer() -> str:
     return settings.ENTRA_ISSUER or _discovery(settings.ENTRA_AUTHORITY)["issuer"]
 

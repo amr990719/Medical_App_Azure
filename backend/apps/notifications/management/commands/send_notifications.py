@@ -3,21 +3,11 @@
 import logging
 
 from django.core.management.base import BaseCommand
-from opentelemetry._logs import get_logger_provider
 
 from apps.notifications.sender import run_once
+from config.telemetry import flush_telemetry
 
 logger = logging.getLogger("apps.notifications")
-
-
-def _flush_telemetry() -> None:
-    """Push buffered logs out before the container exits. Never raises."""
-    try:
-        flush = getattr(get_logger_provider(), "force_flush", None)
-        if callable(flush):
-            flush()
-    except Exception:  # noqa: S110 - a telemetry failure must not fail the job
-        pass
 
 
 class Command(BaseCommand):
@@ -32,4 +22,4 @@ class Command(BaseCommand):
             # Exit 1 so the job shows as failed, without a traceback that could hold a recipient.
             raise SystemExit(1) from None
         finally:
-            _flush_telemetry()
+            flush_telemetry()

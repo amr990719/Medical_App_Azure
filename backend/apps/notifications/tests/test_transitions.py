@@ -27,8 +27,10 @@ ALLOWED = [
     ("SENDING", "SENT"),
     ("SENDING", "PENDING"),
     ("SENDING", "FAILED"),
+    ("SENDING", "SUPERSEDED"),
     ("SENT", "DELIVERED"),
     ("SENT", "FAILED"),
+    ("SENT", "SUPERSEDED"),
     ("FAILED", "DELIVERED"),
 ]
 REFUSED = [p for p in itertools.product(NotificationStatus.values, repeat=2) if p not in ALLOWED]
@@ -36,6 +38,7 @@ WHATSAPP_ONLY = [
     ("PENDING", "FAILED"),
     ("SENT", "DELIVERED"),
     ("SENT", "FAILED"),
+    ("SENT", "SUPERSEDED"),
     ("FAILED", "DELIVERED"),
 ]
 

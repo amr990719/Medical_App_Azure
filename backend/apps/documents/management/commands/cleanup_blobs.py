@@ -4,10 +4,12 @@ Container Apps job.
 1. Documents soft-deleted more than `--grace-hours` ago: delete the blob, stamp `blob_purged_at`.
 2. Orphan blobs under `applications/` with no metadata row at all (upload crashed before the
    database commit) and older than the grace period: delete.
+
+Each run logs `cleanup_run` or `cleanup_run_failed`: the production alerts read those traces.
 """
 
+import logging
 from datetime import timedelta
-from itertools import islice
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -15,15 +17,32 @@ from django.utils import timezone
 
 from apps.documents.models import Document
 from apps.documents.naming import BLOB_PREFIX
+from apps.documents.reconcile import unknown_blob_names
 from apps.documents.storage import get_storage
+from config.telemetry import flush_telemetry
 
-BATCH = 500
+logger = logging.getLogger("apps.documents")
 
 
-def _batches(iterable, size):
-    iterator = iter(iterable)
-    while batch := list(islice(iterator, size)):
-        yield batch
+def _run(*, hours: int, dry_run: bool) -> tuple[int, int]:
+    cutoff = timezone.now() - timedelta(hours=hours)
+    storage = get_storage()
+
+    purged = 0
+    expired = Document.all_objects.filter(deleted_at__lt=cutoff, blob_purged_at__isnull=True)
+    for document in expired.only("pk", "blob_name").iterator():
+        purged += 1
+        if not dry_run:
+            storage.delete(document.blob_name)
+            Document.all_objects.filter(pk=document.pk).update(blob_purged_at=timezone.now())
+
+    orphans = 0
+    old_blobs = (b.name for b in storage.list(BLOB_PREFIX) if b.last_modified < cutoff)
+    for name in unknown_blob_names(old_blobs):
+        orphans += 1
+        if not dry_run:
+            storage.delete(name)
+    return purged, orphans
 
 
 class Command(BaseCommand):
@@ -35,28 +54,18 @@ class Command(BaseCommand):
 
     def handle(self, *args, grace_hours=None, dry_run=False, **options):
         hours = settings.BLOB_CLEANUP_GRACE_HOURS if grace_hours is None else grace_hours
-        cutoff = timezone.now() - timedelta(hours=hours)
-        storage = get_storage()
-
-        purged = 0
-        expired = Document.all_objects.filter(deleted_at__lt=cutoff, blob_purged_at__isnull=True)
-        for document in expired.only("pk", "blob_name").iterator():
-            purged += 1
-            if not dry_run:
-                storage.delete(document.blob_name)
-                Document.all_objects.filter(pk=document.pk).update(blob_purged_at=timezone.now())
-
-        orphans = 0
-        old_blobs = (b.name for b in storage.list(BLOB_PREFIX) if b.last_modified < cutoff)
-        for names in _batches(old_blobs, BATCH):
-            known = set(
-                Document.all_objects.filter(blob_name__in=names).values_list("blob_name", flat=True)
+        try:
+            purged, orphans = _run(hours=hours, dry_run=dry_run)
+        except Exception as exc:
+            # Class name only: a message could hold a blob name, which holds an application ID.
+            logger.error("cleanup_run_failed", extra={"error_type": type(exc).__name__})
+            # Exit 1 so the job shows as failed.
+            raise SystemExit(1) from None
+        else:
+            logger.info(
+                "cleanup_run", extra={"purged": purged, "orphans": orphans, "dry_run": dry_run}
             )
-            for name in names:
-                if name not in known:
-                    orphans += 1
-                    if not dry_run:
-                        storage.delete(name)
-
-        mode = " (dry run)" if dry_run else ""
-        self.stdout.write(f"cleanup_blobs{mode}: purged={purged} orphans={orphans}")
+            mode = " (dry run)" if dry_run else ""
+            self.stdout.write(f"cleanup_blobs{mode}: purged={purged} orphans={orphans}")
+        finally:
+            flush_telemetry()
