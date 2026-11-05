@@ -33,10 +33,10 @@ while [ $# -gt 0 ]; do
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
-[ -n "$job" ] && [ -n "$resource_group" ] && [ $# -gt 0 ] || {
+if [ -z "$job" ] || [ -z "$resource_group" ] || [ $# -eq 0 ]; then
     echo "--job, --resource-group and a command after -- are required" >&2
     exit 2
-}
+fi
 
 python="$(command -v python3 >/dev/null 2>&1 && echo python3 || echo python)"
 api="api-version=2025-01-01"

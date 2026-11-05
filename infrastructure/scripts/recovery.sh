@@ -58,10 +58,10 @@ case "$environment" in
     dev | prod) ;;
     *) echo "--environment must be dev or prod" >&2; exit 2 ;;
 esac
-[ -n "$repo" ] && [ -n "$resource_group" ] && [ -n "$step" ] || {
+if [ -z "$repo" ] || [ -z "$resource_group" ] || [ -z "$step" ]; then
     echo "--repo, --resource-group and a step are required (--help)" >&2
     exit 2
-}
+fi
 
 act() {
     if [ "$execute" = true ]; then

@@ -61,10 +61,10 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "$stage" ] || usage 2
-[ -n "$env_file" ] && [ -f "$env_file" ] || {
+if [ -z "$env_file" ] || [ ! -f "$env_file" ]; then
     echo "--env-file must name your filled-in copy of infrastructure/production-bootstrap.env.example" >&2
     exit 2
-}
+fi
 # shellcheck disable=SC1090
 set -a && . "$env_file" && set +a
 
@@ -145,10 +145,10 @@ stage_preflight() {
     local reviewers protected
     protected="$(gh api "repos/${REPOSITORY}/environments/${ENVIRONMENT}" --jq '.deployment_branch_policy.protected_branches // false')"
     reviewers="$(gh api "repos/${REPOSITORY}/environments/${ENVIRONMENT}" --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length')"
-    [ "$protected" = "true" ] && [ "$reviewers" != "0" ] || {
+    if [ "$protected" != "true" ] || [ "$reviewers" = "0" ]; then
         echo "GitHub environment prod needs protected branches and required reviewers." >&2
         exit 1
-    }
+    fi
     echo "GitHub environment prod: protected branches only, ${reviewers} reviewer rule(s)."
 
     echo "PostgreSQL in ${LOCATION}:"

@@ -73,7 +73,9 @@ jobs:
       - name: Check the deployment scripts
         run: |
           for script in infrastructure/scripts/*.sh; do bash -n "$script"; done
-          shellcheck infrastructure/scripts/*.sh backend/entrypoint.sh backend/requirements/lock.sh
+          # Pinned: the runner's own shellcheck is older and judges the same script differently.
+          pipx run --spec shellcheck-py==0.11.0.1 shellcheck \
+            infrastructure/scripts/*.sh infrastructure/tests/*.sh backend/entrypoint.sh backend/requirements/lock.sh
       - name: Test the release tooling
         run: |
           git config --global user.email "ci@example.test"

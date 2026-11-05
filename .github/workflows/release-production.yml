@@ -118,7 +118,7 @@ jobs:
             echo '```text'
             pipx run --spec pip-audit==2.10.0 pip-audit --no-deps --disable-pip \
               --requirement candidate/backend/requirements/prod.txt --require-hashes 2>&1 || true
-            (cd candidate/frontend && npm audit --omit=dev --audit-level=high 2>&1 || true)
+            npm --prefix candidate/frontend audit --omit=dev --audit-level=high 2>&1 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

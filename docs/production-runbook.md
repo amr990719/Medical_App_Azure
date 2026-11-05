@@ -459,7 +459,9 @@ schedule exists yet**: the amounts are a business input.
 `security-scan.yml` audits dependencies and the image weekly and on relevant pull requests; the release
 preview shows the audit to the reviewer. A finding does not block a release by itself, because a fix may
 be the very thing being released. A weekly red run is the signal to act. Secret scanning and push
-protection come with the public repository; confirm they stay on.
+protection come with the public repository; confirm they stay on. The repository's dependency graph
+was off on 2026-11-05, so GitHub's dependency review and Dependabot alerts do not run; the scans above
+cover the same ground. To turn them on: Settings → Advanced Security → Dependency graph.
 
 ## Who owns what
 

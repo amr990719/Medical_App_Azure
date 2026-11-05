@@ -46,10 +46,10 @@ while [ $# -gt 0 ]; do
         *) step="$1"; shift ;;
     esac
 done
-[ -n "$repo" ] && [ -n "$dev_group" ] && [ -n "$prod_group" ] && [ -n "$step" ] || {
+if [ -z "$repo" ] || [ -z "$dev_group" ] || [ -z "$prod_group" ] || [ -z "$step" ]; then
     echo "--repo, --dev-group, --prod-group and a step are required (--help)" >&2
     exit 2
-}
+fi
 [ "$dev_group" != "$prod_group" ] || { echo "dev and production must be different groups" >&2; exit 2; }
 
 act() {
@@ -72,10 +72,10 @@ deploy() { # environment
 }
 
 add_entra_urls() { # environment url
-    [ -n "$entra_tenant" ] && [ -n "$subscription" ] || {
+    if [ -z "$entra_tenant" ] || [ -z "$subscription" ]; then
         echo "--entra-tenant and --subscription are required for Entra steps" >&2
         exit 2
-    }
+    fi
     echo "This needs both sign-ins already made: az login --tenant <workforce-id>, and"
     echo "az login --tenant <external-id> --allow-no-subscriptions"
     # create-entra-app.sh insists the external tenant is current; everything else here needs the

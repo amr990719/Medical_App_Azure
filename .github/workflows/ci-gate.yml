@@ -29,14 +29,15 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      # shellcheck first: actionlint uses whichever it finds, and the runner's own is older.
+      - name: Check the scripts
+        run: |
+          python -m pip install "shellcheck-py==0.11.0.1"
+          shellcheck infrastructure/scripts/*.sh infrastructure/tests/*.sh backend/requirements/lock.sh backend/entrypoint.sh
       - name: Lint the workflows
         run: |
           python -m pip install "actionlint-py==1.7.12.25"
           actionlint -color
-      - name: Check the scripts
-        run: |
-          python -m pip install "shellcheck-py==0.11.0.1"
-          shellcheck infrastructure/scripts/*.sh backend/requirements/lock.sh backend/entrypoint.sh
       - name: Test the release tooling
         run: |
           az bicep install
