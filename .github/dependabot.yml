@@ -1,0 +1,23 @@
+# Proposals only: every update is a pull request through the normal checks, and reaches production
+# only in a later release. Python pins are refreshed with backend/requirements/lock.sh --upgrade
+# (docs/production-runbook.md, dependency updates); Dependabot alerts still watch those files.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: monthly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: monthly

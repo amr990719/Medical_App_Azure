@@ -1,12 +1,12 @@
 # Infrastructure CI/CD (PROMPT.md §33, §36):
-#   bicep build + lint (pull requests and main) → deploy on main
-#   dev → staging → prod (staging only when DEPLOY_STAGING is true; prod waits for the
-#   environment's required reviewers; every deploy job prints its own what-if before
-#   `az deployment group create`).
-# Manual runs (main only): choose an environment and whether to stop after what-if.
+#   bicep build + lint (pull requests and main) → deploy dev on main (every deploy job prints its
+#   own what-if before `az deployment group create`).
+# Production infrastructure ships with an application release (release-production.yml). A manual
+# run (main only, waits for the prod reviewers) changes prod configuration between releases, such
+# as the notifications mode or a recovery hold, and keeps the running image.
 # Trust: pull requests get no Azure credential. ARM what-if needs write permission on every
 # resource in the template, so there is no read-only preview identity (D145); the deploying
-# environments `dev`/`staging`/`prod` accept only the protected main branch (docs/github-setup.md).
+# environments `dev` and `prod` accept only the protected main branch (docs/github-setup.md).
 name: infrastructure
 
 on:
@@ -27,7 +27,7 @@ on:
         description: Environment
         required: true
         type: choice
-        options: [dev, staging, prod]
+        options: [dev, prod]
       what_if_only:
         description: Stop after what-if
         required: true
@@ -73,7 +73,12 @@ jobs:
       - name: Check the deployment scripts
         run: |
           for script in infrastructure/scripts/*.sh; do bash -n "$script"; done
-          shellcheck infrastructure/scripts/*.sh backend/entrypoint.sh
+          shellcheck infrastructure/scripts/*.sh backend/entrypoint.sh backend/requirements/lock.sh
+      - name: Test the release tooling
+        run: |
+          git config --global user.email "ci@example.test"
+          git config --global user.name "ci"
+          python3 -m unittest discover -s infrastructure/tests -v
 
   manual:
     name: manual run
@@ -100,30 +105,4 @@ jobs:
     secrets: inherit
     with:
       environment: dev
-      what_if_only: false
-
-  deploy-staging:
-    needs: deploy-dev
-    # Off until staging exists (repository variable; docs/deployment-path.md §17).
-    if: vars.DEPLOY_STAGING == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/reusable-infrastructure.yml
-    # The reusable workflow's secrets come only from the caller: without this, ALERT_EMAIL resolves to ''.
-    secrets: inherit
-    with:
-      environment: staging
-      what_if_only: false
-
-  deploy-prod:
-    needs: deploy-staging
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/reusable-infrastructure.yml
-    # The reusable workflow's secrets come only from the caller: without this, ALERT_EMAIL resolves to ''.
-    secrets: inherit
-    with:
-      environment: prod
       what_if_only: false

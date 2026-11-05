@@ -1,16 +1,18 @@
-# Deploys the `frontend-dist` artifact of the calling run to one environment's Static Web App.
+# Deploys the `frontend-dist` artifact of the calling run to one environment's Static Web App, and
+# stores that build in the environment's registry by digest, so a production release can promote
+# exactly what ran here, long after GitHub's artifact retention ends.
 # Azure access is GitHub OIDC only (no stored passwords); the Static Web Apps deployment token
 # is read at run time with that identity, masked, and never stored as a GitHub secret.
 #
 # GitHub environment variables used: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
-# AZURE_RESOURCE_GROUP, STATIC_WEB_APP_NAME (docs/github-setup.md).
+# AZURE_RESOURCE_GROUP, STATIC_WEB_APP_NAME, ACR_NAME (docs/github-setup.md).
 name: deploy frontend
 
 on:
   workflow_call:
     inputs:
       environment:
-        description: dev, staging or prod
+        description: The environment to deploy (dev; production goes through release-production.yml)
         required: true
         type: string
 
@@ -31,10 +33,23 @@ jobs:
     env:
       RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       STATIC_WEB_APP_NAME: ${{ vars.STATIC_WEB_APP_NAME }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
     steps:
+      # Public repository: run logs are public.
+      - name: Mask identifiers
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        run: |
+          echo "::add-mask::${AZURE_SUBSCRIPTION_ID}"
+          echo "::add-mask::${AZURE_TENANT_ID}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .tooling
+          persist-credentials: false
       - name: Check environment variables
         run: |
-          for name in RESOURCE_GROUP STATIC_WEB_APP_NAME; do
+          for name in RESOURCE_GROUP STATIC_WEB_APP_NAME ACR_NAME; do
             if [ -z "${!name}" ]; then
               echo "::error::GitHub environment '${{ inputs.environment }}' is missing a variable for ${name} (docs/github-setup.md)"
               exit 1
@@ -49,6 +64,12 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Store the build in the registry
+        run: |
+          steps=.tooling/infrastructure/scripts/release-steps.sh
+          bash "$steps" registry-login "$ACR_NAME"
+          digest="$(bash "$steps" store-frontend "$ACR_NAME" dist "$GITHUB_SHA")"
+          echo "medical-frontend:${GITHUB_SHA} is ${digest}"
       - name: Read the deployment token
         run: |
           token="$(az staticwebapp secrets list --name "$STATIC_WEB_APP_NAME" \

@@ -1,8 +1,8 @@
 # Backend CI/CD (PROMPT.md §36, §37):
-#   ruff → pytest (PostgreSQL service container) → build Docker image → push to ACR
+#   ruff → pytest (PostgreSQL service container) → build Docker image → push to the dev ACR
 #        → run the migration job once → update the Container App revision
-# The image is built once per commit and promoted dev → staging → prod (each environment has
-# its own registry; prod waits for the environment's required reviewers).
+# A merge to main deploys dev only. Production takes this same image, by digest, through the
+# explicit release-production.yml.
 name: backend
 
 on:
@@ -62,7 +62,11 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements/*.txt
-      - run: python -m pip install -r requirements/dev.txt -r requirements/prod.txt
+      - run: python -m pip install --require-hashes -r requirements/dev.txt
+      - name: The dependency locks match their inputs
+        run: |
+          python -m pip install --no-deps "uv==0.13.6"
+          bash requirements/lock.sh --check
       - run: ruff check .
       - run: ruff format --check .
       - run: python manage.py check
@@ -87,6 +91,7 @@ jobs:
           context: backend
           target: runtime
           tags: medical-backend:${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           push: false
           provenance: false
           outputs: type=docker,dest=${{ runner.temp }}/medical-backend.tar
@@ -118,23 +123,3 @@ jobs:
     uses: ./.github/workflows/reusable-deploy-backend.yml
     with:
       environment: dev
-
-  deploy-staging:
-    needs: deploy-dev
-    # Off until staging exists (repository variable; docs/deployment-path.md §17).
-    if: vars.DEPLOY_STAGING == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/reusable-deploy-backend.yml
-    with:
-      environment: staging
-
-  deploy-prod:
-    needs: deploy-staging
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/reusable-deploy-backend.yml
-    with:
-      environment: prod

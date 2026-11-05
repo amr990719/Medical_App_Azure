@@ -1,5 +1,7 @@
 # Deploys the `backend-image` artifact of the calling run to one environment (PROMPT.md §37):
-#   1. push the image to the environment's registry (OIDC login, AcrPush);
+#   1. push the image to the environment's registry (OIDC login, AcrPush), once per commit: a tag
+#      is never overwritten, and everything below uses the digest, so a production release can
+#      promote exactly what ran here;
 #   2. point the migrate job at the new image and run it ONCE; stop on failure
 #      (the running revision keeps serving: migrations are expand/contract);
 #   3. point the cleanup job, and the notify job when NOTIFY_JOB_NAME is set, at the new image;
@@ -18,7 +20,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: dev, staging or prod
+        description: The environment to deploy (dev; production goes through release-production.yml)
         required: true
         type: string
 
@@ -49,6 +51,17 @@ jobs:
       NOTIFY_JOB_NAME: ${{ vars.NOTIFY_JOB_NAME }}
       STATIC_WEB_APP_NAME: ${{ vars.STATIC_WEB_APP_NAME }}
     steps:
+      # Public repository: run logs are public.
+      - name: Mask identifiers
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        run: |
+          echo "::add-mask::${AZURE_SUBSCRIPTION_ID}"
+          echo "::add-mask::${AZURE_TENANT_ID}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Check environment variables
         run: |
           for name in RESOURCE_GROUP ACR_NAME CONTAINER_APP_NAME MIGRATE_JOB_NAME CLEANUP_JOB_NAME \
@@ -70,13 +83,19 @@ jobs:
 
       - name: Push the image to the registry
         run: |
+          steps=infrastructure/scripts/release-steps.sh
+          bash "$steps" registry-login "$ACR_NAME"
           login_server="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)"
-          image="${login_server}/medical-backend:${GITHUB_SHA}"
-          docker load --input "${RUNNER_TEMP}/medical-backend.tar"
-          docker tag "medical-backend:${GITHUB_SHA}" "$image"
-          az acr login --name "$ACR_NAME"
-          docker push "$image"
-          echo "IMAGE=${image}" >> "$GITHUB_ENV"
+          digest="$(bash "$steps" digest-of "$ACR_NAME" medical-backend "$GITHUB_SHA")"
+          if [ -n "$digest" ]; then
+            echo "medical-backend:${GITHUB_SHA} already exists (a re-run): keeping ${digest}"
+          else
+            docker load --input "${RUNNER_TEMP}/medical-backend.tar"
+            docker tag "medical-backend:${GITHUB_SHA}" "${login_server}/medical-backend:${GITHUB_SHA}"
+            docker push "${login_server}/medical-backend:${GITHUB_SHA}"
+            digest="$(bash "$steps" digest-of "$ACR_NAME" medical-backend "$GITHUB_SHA")"
+          fi
+          echo "IMAGE=${login_server}/medical-backend@${digest}" >> "$GITHUB_ENV"
 
       - name: Run the migration job once
         run: |

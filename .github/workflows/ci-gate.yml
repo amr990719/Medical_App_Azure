@@ -1,0 +1,72 @@
+# One check that runs on every pull request, so branch protection can require it. The backend,
+# frontend, infrastructure and e2e workflows are path filtered, and a required check whose workflow
+# never starts blocks a pull request forever. This gate works out which of them the change
+# triggers and waits for exactly those (infrastructure/scripts/release_gate.py).
+# It also checks the release tooling, which those path filters do not cover.
+name: ci gate
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tooling:
+    name: release tooling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Lint the workflows
+        run: |
+          python -m pip install "actionlint-py==1.7.12.25"
+          actionlint -color
+      - name: Check the scripts
+        run: |
+          python -m pip install "shellcheck-py==0.11.0.1"
+          shellcheck infrastructure/scripts/*.sh backend/requirements/lock.sh backend/entrypoint.sh
+      - name: Test the release tooling
+        run: |
+          az bicep install
+          git config --global user.email "ci@example.test"
+          git config --global user.name "ci"
+          python -m unittest discover -s infrastructure/tests -v
+      - name: Test artifact promotion against real registries
+        run: |
+          docker build --target runtime --tag medical-backend:lock-check backend
+          bash infrastructure/tests/promotion_integration.sh
+
+  # Deliberately no `needs`: a job skipped because its need failed reports success to branch
+  # protection, which would turn a failed check into a passed gate. Require both checks.
+  gate:
+    name: ci gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Wait for the workflows this change triggers
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 infrastructure/scripts/release_gate.py pr-gate --base "$BASE_SHA" --head "$HEAD_SHA"

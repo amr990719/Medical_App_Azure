@@ -1,0 +1,77 @@
+# Known vulnerabilities in what production would run: Python and npm dependencies and the image.
+# Weekly, because advisories appear without any change here, and on changes to what is scanned.
+# Updates: Dependabot for GitHub Actions, npm and the base image; Python pins by
+# backend/requirements/lock.sh --upgrade (docs/production-runbook.md, dependency updates).
+# No Azure access, no secrets.
+name: security scan
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/requirements/**"
+      - "backend/Dockerfile"
+      - "frontend/package-lock.json"
+      - ".github/workflows/security-scan.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependencies:
+    name: dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Python packages in the production image
+        run: |
+          python -m pip install "pip-audit==2.10.0"
+          pip-audit --no-deps --disable-pip --require-hashes --requirement backend/requirements/prod.txt
+      - name: npm packages in the production bundle
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+  image:
+    name: image scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the runtime image
+        run: docker build --target runtime --tag medical-backend:scan backend
+      # Fails on a critical finding that has a fix; anything else is listed, not blocking, since an
+      # unfixable finding in the base image cannot be acted on here.
+      - uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: medical-backend:scan
+          fail-build: true
+          severity-cutoff: critical
+          only-fixed: true
+          output-format: table
+
+  review:
+    name: dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
