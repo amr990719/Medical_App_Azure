@@ -120,6 +120,15 @@ tenant_id="$(az account show --query tenantId -o tsv)"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
+# Git Bash paths mean nothing to `az`, a Windows program. On Linux this changes nothing.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
 ensure_identity() { # name purpose → prints principal id
     local name="$1" purpose="$2"
     if ! az identity show -g "$resource_group" -n "$name" --output none 2>/dev/null; then
@@ -148,7 +157,7 @@ ensure_custom_role() { # role-name definition-file (create or update, then wait 
     id="$(az role definition list --custom-role-only true --name "$name" --query "[0].name" -o tsv)"
     if [ -z "$id" ]; then
         echo "Creating custom role ${name}"
-        az role definition create --role-definition "@${file}" --output none
+        az role definition create --role-definition "@$(native_path "$file")" --output none
         for _ in 1 2 3 4 5 6; do
             [ -n "$(az role definition list --custom-role-only true --name "$name" --query "[0].name" -o tsv)" ] && break
             sleep 10
@@ -156,7 +165,7 @@ ensure_custom_role() { # role-name definition-file (create or update, then wait 
     else
         echo "Updating custom role ${name}"
         # `az role definition update` finds the definition by its Name within AssignableScopes.
-        az role definition update --role-definition "@${file}" --output none
+        az role definition update --role-definition "@$(native_path "$file")" --output none
     fi
 }
 

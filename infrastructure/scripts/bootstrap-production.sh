@@ -27,10 +27,19 @@ set -euo pipefail
 
 export MSYS_NO_PATHCONV=1
 
+# Git Bash paths mean nothing to `az`, a Windows program. On Linux this changes nothing.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-PARAM_FILE="${REPO_ROOT}/infrastructure/parameters/prod.bicepparam"
-TEMPLATE="${REPO_ROOT}/infrastructure/main.bicep"
+PARAM_FILE="$(native_path "${REPO_ROOT}/infrastructure/parameters/prod.bicepparam")"
+TEMPLATE="$(native_path "${REPO_ROOT}/infrastructure/main.bicep")"
 DEPLOYMENT=main-prod
 ENVIRONMENT=prod
 
@@ -115,7 +124,7 @@ secret_exists() {
 set_secret_from_file() { # vault name file
     local vault="$1" name="$2" file="$3"
     [ -f "$file" ] || { echo "No such file for ${name}." >&2; exit 2; }
-    act az keyvault secret set --vault-name "$vault" --name "$name" --file "$file" \
+    act az keyvault secret set --vault-name "$vault" --name "$name" --file "$(native_path "$file")" \
         --encoding utf-8 --content-type "text/plain" --output none
 }
 
@@ -231,8 +240,8 @@ stage_django_secret() {
     file="$(mktemp)"
     chmod 600 "$file"
     trap 'rm -f "$file"' RETURN
-    python -c "import secrets, sys; open(sys.argv[1], 'w').write(secrets.token_urlsafe(64))" "$file"
-    az keyvault secret set --vault-name "$vault" --name django-secret-key --file "$file" \
+    python -c "import secrets, sys; open(sys.argv[1], 'w').write(secrets.token_urlsafe(64))" "$(native_path "$file")"
+    az keyvault secret set --vault-name "$vault" --name django-secret-key --file "$(native_path "$file")" \
         --encoding utf-8 --content-type "text/plain" --output none
     echo "Stored django-secret-key (value not shown)."
 }

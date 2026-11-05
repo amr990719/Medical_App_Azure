@@ -70,6 +70,15 @@ if [ "$environment" = "prod" ] && [ "$include_local" = true ]; then
 fi
 command -v az >/dev/null || { echo "Azure CLI (az) is required" >&2; exit 1; }
 
+# Git Bash paths mean nothing to `az`, a Windows program. On Linux this changes nothing.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
 current_tenant="$(az account show --query tenantId -o tsv)"
 if [ "$current_tenant" != "$tenant_id" ]; then
     echo "The current az account is in tenant $current_tenant, not $tenant_id." >&2
@@ -125,7 +134,7 @@ trap 'rm -f "$claims_file"' EXIT
 cat >"$claims_file" <<'JSON'
 {"idToken": [{"name": "email", "essential": false}]}
 JSON
-az ad app update --id "$app_id" --optional-claims "@${claims_file}"
+az ad app update --id "$app_id" --optional-claims "@$(native_path "$claims_file")"
 
 # Delegated Microsoft Graph permissions: openid, profile, email (nothing else). Set as the
 # complete list (`permission add` appends duplicates on every re-run).
@@ -135,7 +144,7 @@ cat >"$claims_file" <<'JSON'
   {"id": "14dad69e-099b-42c9-810b-d002981feec1", "type": "Scope"},
   {"id": "64a6cdd6-aab1-4aaf-94b8-3cc8405e90d0", "type": "Scope"}]}]
 JSON
-az ad app update --id "$app_id" --required-resource-accesses "@${claims_file}"
+az ad app update --id "$app_id" --required-resource-accesses "@$(native_path "$claims_file")"
 
 if [ -z "$(az ad sp list --filter "appId eq '$app_id'" --query "[0].id" -o tsv)" ]; then
     az ad sp create --id "$app_id" --only-show-errors >/dev/null
@@ -172,7 +181,7 @@ if [ -n "$key_vault" ]; then
         expires="$(date -u -d "+${secret_years} year" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null ||
             date -u -v "+${secret_years}y" +%Y-%m-%dT%H:%M:%SZ)"
         az keyvault secret set --vault-name "$key_vault" --subscription "$subscription" \
-            --name entra-client-secret --file "$secret_file" --encoding utf-8 \
+            --name entra-client-secret --file "$(native_path "$secret_file")" --encoding utf-8 \
             --content-type "text/plain" --expires "$expires" --output none
         rm -f "$secret_file"
         echo "Stored a new client secret in Key Vault $key_vault (entra-client-secret, expires $expires)"
