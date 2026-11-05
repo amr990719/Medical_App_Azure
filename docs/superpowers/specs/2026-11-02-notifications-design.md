@@ -449,8 +449,9 @@ against logging payloads stays.
 
 **Monitored mailbox:** SES forwards bounce and complaint feedback by email, so
 `notifications@neqabacare.com` must reach a person. Forward it to a mailbox the owner chooses with
-Cloudflare Email Routing (`NOT VERIFIED`; check it does not conflict with existing MX records). This
-is the operational signal for sender reputation, not per-notification tracking.
+Cloudflare Email Routing (owner-observed on 2026-11-05: an email sent to this address reached the
+owner's inbox; the MX records were not inspected separately). This is the operational signal for
+sender reputation, not per-notification tracking.
 
 **Credentials from Azure to AWS:** the job's managed identity assumes the IAM role through OIDC
 federation, so no AWS secret exists. `AWS_ROLE_ARN` alone is not enough: boto3 also needs a source

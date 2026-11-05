@@ -33,8 +33,11 @@ logs: `docs/progress.md` Sessions 11–13. **staging and prod have never been de
 | §11 Doctor notifications: deploy, env wiring, `notify` job | verified (2026-11-04) | run `41849338442` (image `c5958d0`, `allowlist`, email only) succeeded 14:44 UTC; health 200; app and `notify` job carry the 8 notification env names and no `WHATSAPP_*`; migrate and cleanup carry none; job cron `*/5 * * * *`; first two scheduled executions (14:45, 14:50 UTC) Succeeded |
 | §11 `notify_run` telemetry from the job | verified for an empty run | one `notify_run` trace per execution (role `medical-notify`, two seen) with every count 0 (before the real test) reached Application Insights and the job console, so the telemetry start in `manage.py` works on Azure |
 | §11 Real send through SES | verified (2026-11-04) | the owner's real email test on dev worked and the emails reached the owner's inbox; the job's `notify_run` telemetry recorded 4 sent and no `notification_failed` traces |
-| §11 Bounce handling, allowlist suppression on Azure, DKIM / SPF / DMARC results from raw headers, failure and expiry paths | **NOT VERIFIED** | not exercised or not inspected yet |
-| §11 Alert rules and action group | **NOT VERIFIED** | not deployed: `ALERT_EMAIL` was empty in the deploy because `infrastructure.yml` did not pass the secret to the reusable workflow. Fix (`secrets: inherit`) awaits merge and proof by a deploy; each alert actually firing is also unproven |
+| §11 Email authentication (SPF, DKIM, DMARC) | verified (2026-11-04) | owner-observed: the owner's real test emails arrived and all three results were PASS |
+| §11 `notifications@neqabacare.com` forward (Cloudflare) | verified (2026-11-05) | owner-observed: an email sent to that address reached the owner's inbox |
+| §11 Bounce handling, allowlist suppression on Azure, failure and expiry paths | **NOT VERIFIED** | not exercised yet |
+| §11 Alert rules and action group deployed | verified (2026-11-05) | read-only `az` checks: the four `alert-medsyn-dev-notify-*` rules are enabled and send to `ag-medsyn-dev-notify`, whose receiver status is `Enabled`; the rules were created 2026-11-04 15:49 UTC, during run `41861057067` (merge of the `secrets: inherit` fix, `419f68a`) |
+| §11 Each alert actually firing, an alert email arriving | **NOT VERIFIED** | as of 2026-11-05 no alert has fired and no alert email has been seen. The test-email API rejected all 4 attempts on 2026-11-05 with "There are no valid receivers in the request" (CLI and REST); cause unknown (Q-N17 in `docs/progress.md`) |
 | §11 Meta / WhatsApp | parked | `enableWhatsApp` stays off |
 
 Static checks still apply to every environment: Bicep builds and lints with zero warnings (strict

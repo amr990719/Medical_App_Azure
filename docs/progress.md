@@ -1572,12 +1572,29 @@ Deployed to dev by `infrastructure.yml` (run `41849338442`, image `c5958d0`, 14:
 - **Open:** (1) `ALERT_EMAIL` wiring: `infrastructure.yml` calls the reusable workflow without passing
   the environment secret, so no `scheduledQueryRules` or action group exist on dev. Fix: `secrets: inherit`
   on the four calling jobs (PR `fix/notification-alert-secret`), **awaiting merge and proof by a deploy**
-  (the what-if must show the action group and four alert rules as creates).
+  (the what-if must show the action group and four alert rules as creates). Superseded: merged and
+  deployed the same day, see the 2026-11-05 entry below.
   (2) The Azure subscription ID is printed in public workflow logs (from before this work); decide
   how to mask or stop printing it. (3) `notify_run` carries no `suppressed` count; the oldest-due age property
   `oldest_due_age_seconds` appears only while a row is waiting (it is null otherwise); the counts are expired, recovered, timed_out, attempted, sent, retried, failed, unknown,
   skipped_channels. Check the alert queries against those names.
 - A push touching `infrastructure/**` redeploys these same settings; that is intended.
+
+### Session 24 (cont. 2) — 2026-11-05 — Notifications: owner confirmations and alert state
+
+Docs only; nothing was changed on Azure, AWS or Cloudflare, and no email was sent for this note.
+
+- **Proven, owner-observed:** on 2026-11-04 the owner's real test emails arrived and SPF, DKIM and
+  DMARC all PASS; on 2026-11-05 an email sent to `notifications@neqabacare.com` reached the owner's
+  inbox, so the Cloudflare forward works.
+- **Proven, read-only checks on 2026-11-05:** PR #16 is merged (`419f68a`) and its `infrastructure`
+  run `41861057067` succeeded. The four `alert-medsyn-dev-notify-*` rules exist (created 2026-11-04
+  15:49 UTC, during that run), are enabled and send to `ag-medsyn-dev-notify`, whose receiver status
+  is `Enabled`. So `ALERT_EMAIL` reached the deploy and open item (1) above is closed.
+- **Not proven:** no alert has fired (the Azure alerts list returned none for the last 30 days) and
+  no alert email has been seen. The test-email API rejected all 4 attempts on 2026-11-05 (Q-N17).
+  Bounce handling and allowlist suppression on Azure are still unproven. Dev stays in `allowlist`
+  with only the owner's address listed.
 
 ## Decisions
 
@@ -2481,16 +2498,17 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-N3 — Stop requests made outside WhatsApp:** Meta's policy also covers a phone call or an
   email. The doctor has the profile checkbox, staff have no control. Decide whether they need one.
 - **Q-N4 — Cloudflare Email Routing:** `notifications@neqabacare.com` must reach a person, because
-  SES bounce and complaint feedback arrives there. Which mailbox, and whether Email Routing's MX
-  records conflict with the existing ones, are NOT VERIFIED.
+  SES bounce and complaint feedback arrives there. Proven 2026-11-05 (owner-observed): an email sent
+  to this address reached the owner's inbox, so the forward works. Not checked: SES feedback actually
+  arriving there, and the MX records themselves.
 - **Q-N5 — Consent wording:** the opt-in text on the profile and the status-page prompt need the
   owner's (and legal) review before phase 4.
 - **Q-N6 — NOT VERIFIED against Meta:** the mapping of Meta error codes (any permanent 4xx goes to
   email), whether free-text stop and help replies are accepted in the customer-service window, the
   footer length limit on templates, and the maximum webhook payload.
-- **Q-N7 — Alert rules NOT VERIFIED:** the four rules in `notification-alerts.bicep` build, but were
-  never deployed or fired; the `Microsoft.Insights/scheduledQueryRules` API version used
-  (`2026-03-01`) was not checked against Azure. Phase 3 must prove each alert end to end.
+- **Q-N7 — Alert firing NOT VERIFIED:** the four rules in `notification-alerts.bicep` are deployed on
+  dev and enabled (read-only check 2026-11-05, run `41861057067`), but none has fired and no alert
+  email has been seen. Phase 3 must prove each alert end to end.
 - **Q-N8 — No browser check of the new screens:** the panel, the opt-in and the prompt were tested in
   jsdom and with `rtl:check` only; no RTL layout or 375 px check.
 - **Q-N9 — Owner and legal gates:** L3 and L4 sign-off for Meta and AWS before `live`; retention
@@ -2517,20 +2535,28 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-N16 — Email suppression and bounces:** with email as the only channel, the SES suppression
   list, bounce and complaint handling and the CloudWatch reputation alarms matter more (Q-N on
   alarms is still open).
+- **Q-N17 — Alert test email rejected:** on 2026-11-05 the test-email API of `ag-medsyn-dev-notify`
+  rejected all 4 attempts with "There are no valid receivers in the request" (CLI and REST), although
+  the receiver status is `Enabled`. Cause unknown; do not keep retrying it. Whether an alert email
+  reaches the configured receiver stays NOT VERIFIED until an alert fires.
 
 ## Next session starts with
 
-**Notifications run on dev in `allowlist` mode (email only), deployed 2026-11-04 (run
-`41849338442`, image `c5958d0`); see "Session 24 (cont.)". The owner's real email test on dev on
-2026-11-04 worked: the emails reached the owner's inbox, and the job's `notify_run` telemetry recorded
-4 sent and no `notification_failed` traces. Still unproven: bounce handling, allowlist suppression on
-Azure, DKIM, SPF and DMARC results from the raw headers, and each alert actually firing. The
-`ALERT_EMAIL` fix (`secrets: inherit`) is awaiting merge and proof by a deploy.** The `notify` job runs every 5 minutes
-and its `notify_run` trace reaches Application Insights. Next, in order: (1) merge the `ALERT_EMAIL`
-fix PR and confirm by the deploy's what-if (action group and four alert rules as creates, no delete or replace) (a push touching `infrastructure/**` redeploys the
+**Notifications run on dev in `allowlist` mode (email only, only the owner's address listed), deployed
+2026-11-04 (run `41849338442`, image `c5958d0`); see "Session 24 (cont.)" and "(cont. 2)". The owner's
+real email test on dev on 2026-11-04 worked: the emails reached the owner's inbox, the job's
+`notify_run` telemetry recorded 4 sent and no `notification_failed` traces, and the owner confirmed
+SPF, DKIM and DMARC all PASS. On 2026-11-05 the owner confirmed the `notifications@neqabacare.com`
+forward. Still unproven: bounce handling, allowlist suppression on Azure, and each alert actually
+firing. The four alert rules are enabled and send to `ag-medsyn-dev-notify` (read-only check
+2026-11-05), but none has fired, no alert email has been seen and the test-email API rejected all 4
+attempts on 2026-11-05 (Q-N17).** The `notify` job runs every 5 minutes
+and its `notify_run` trace reaches Application Insights. Next, in order: (1) done 2026-11-04: the
+`ALERT_EMAIL` fix merged (PR #16) and deployed (run `41861057067`) (a push touching `infrastructure/**` redeploys the
 same settings, as intended); (2) done 2026-11-04: the owner's real test sent 4 emails to the inbox (see above); (3) stop the public logs
 printing the Azure subscription ID; (4) the gates in the paragraph below (the sub-points about
-allowlist and deploy are now done). Nothing from this note is pushed: this branch is local.
+allowlist and deploy are now done); (5) prove an alert firing, bounce handling and allowlist
+suppression on Azure, with the owner's confirmation for anything that changes dev.
 
 **Email is the only notification channel in use; WhatsApp is parked** (Session 24, D208–D210).
 The branch `feat/notifications-2026-11-02` holds the work (Sessions 23 and 24); nothing is pushed, no
@@ -2546,14 +2572,14 @@ deploy with `enableNotifications=true`, `sesAccessKeyFromKeyVault=true` and
 `notificationsMode=allowlist` for the dev trial (owner's address only); SES reputation alarms; the
 phase 0 spike on AWS federation (Task 14, which removes the stored key); `live` only after L3 and L4
 sign-off. Later, when the Meta business profile is complete: the WhatsApp steps in
-`docs/azure-deployment.md` section 11 ("Later: turning WhatsApp on"). Open items: Q-N1–Q-N16.
+`docs/azure-deployment.md` section 11 ("Later: turning WhatsApp on"). Open items: Q-N1–Q-N17.
 
 Owner answers on 2026-11-03: the selected AWS Region is `eu-north-1`; NeqabaCare owns the WhatsApp
 business; the consent wording is approved; staff get no stop button. The Meta app, a WhatsApp test
 number, the alert email and the mailbox behind `notifications@` were supplied and are deliberately
 not recorded in Git. SES: production access granted (2026-11-04), the sending domain and custom MAIL
-FROM verified in `eu-north-1`, DMARC at `p=none`. The Cloudflare forward of `notifications@` is not
-yet tested with a real message.
+FROM verified in the selected Region, DMARC at `p=none`. The Cloudflare forward of `notifications@`
+works: on 2026-11-05 the owner confirmed that an email sent to that address reached their inbox.
 
 **Session 22 (D186–D192, additional syndicate dues) is merged (PR #14, `c056f3f`) and deployed to
 dev** (see "Session 22 (cont.)"); this deploy note is on the local branch
