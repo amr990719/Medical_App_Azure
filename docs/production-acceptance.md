@@ -77,7 +77,7 @@ item.
 | FEE-2 | before-cutover | A registration year of 1949 gives the invalid-quote message, not a number | PENDING | |
 | APP-1 | before-cutover | Submit gives a `MED-2026-` reference number; the fee snapshot is shown to the admin | PENDING | |
 | APP-2 | before-cutover | Admin requests a correction with a note; the doctor edits and resubmits; the reference number stays the same | PENDING | |
-| PAY-1 | before-cutover | Admin rejects a receipt; the doctor replaces it; admin confirms; `payment_status` follows each step | PENDING | |
+| PAY-1 | before-cutover | Admin rejects a receipt with a reason (an empty reason is refused); the application returns to the doctor as NEEDS_CORRECTION with the reason visible and the internal note hidden (D220); the doctor replaces the receipt and resubmits with the same reference number; admin confirms; `payment_status` follows each step | PENDING | |
 | PAY-2 | before-cutover | The payment page shows `برجاء مسح رمز QR ثم رفع إيصال الدفع.` and the fixed InstaPay QR (implemented 2026-11-06); a phone scan of the QR opens the owner's InstaPay address, the address under it matches, and its copy button copies it on a phone | PASS | Released `11b744e` (run 42263258715, smoke 12/12); production serves the wording, the QR image and the address. The owner checked it on production with a phone: the QR scan opens the confirmed InstaPay address, the address matches, and the copy button copies it (2026-11-06) |
 | DUES-1 | before-cutover | Admin requests additional dues; the doctor sees the amount and uploads a receipt | PENDING | |
 | DUES-2 | before-cutover | Admin rejects that receipt with a reason; the doctor re-uploads; admin confirms; the treatment fee, its receipt and `payment_status` did not change | PENDING | |
