@@ -198,12 +198,12 @@ C="infrastructure/scripts/cutover-domain.sh --repo <owner>/<repo> --dev-group Me
 
 | # | When | Step | What it does, and why here |
 |---|---|---|---|
-| 1 | days before | `$C preflight` | refuses while the payment text is a placeholder, or an acceptance row before cutover is open |
+| 1 | days before | `$C preflight` | refuses while the payment text is a placeholder, an acceptance row before cutover is open, or either site's `/api/ready/` does not answer (dev scales to zero, so curl retries its first, slow answer) |
 | 2 | days before | `$C prepare-dev --execute` | `dev.neqabacare.com` on dev (add the CNAME it prints first), and dev's Entra URIs. Nothing visible changes |
 | 3 | days before | `$C prepare-prod --execute` | adds `https://neqabacare.com/...` to the production Entra app. Existing URIs stay, so the temporary host keeps working |
 | 4 | start of window | `$C move-dev --execute` | dev's `PUBLIC_HOSTNAME`, so its sign-in, CSRF, links and hosts follow together. Wait for the run |
 | 5 | window | `$C detach-dev --execute` | **outage starts** |
-| 6 | window | `$C attach-prod --execute` | binds production, prints the exact Cloudflare changes. Make them, then wait for `Ready` |
+| 6 | window | `$C attach-prod --execute` | binds production, waits for its validation token (up to 5 minutes; a `--no-wait` binding has none at first) and prints the exact Cloudflare changes. Make them, then wait for `Ready` |
 | 7 | window | `$C switch-prod --execute` | production's `PUBLIC_HOSTNAME`: allowed hosts, CSRF origins, Entra URLs and notification links all change in one deployment. Refused until the binding is `Ready`. Wait for the run. **Outage ends** |
 | 8 | window | portal: Static Web App → Custom domains → `neqabacare.com` → **Set default** | no CLI exists. Makes the default host redirect, so a sign-in cannot start on the wrong origin (Q-T24) |
 | 9 | window | `$C verify`, then by hand | smoke check with the redirect, then a real sign-in, a real change and a sign-out. Record `CUT-1` to `CUT-7` |
@@ -226,8 +226,12 @@ $C rollback --execute
 ```
 
 It removes the binding from production, removes production's `PUBLIC_HOSTNAME` (back to its default
-host) and redeploys, prints the Cloudflare changes, rebinds dev and sets dev's `PUBLIC_HOSTNAME` back.
-It can be repeated, and skips what is already undone. The Entra URIs stay; they are harmless. Sessions
+host) and redeploys, rebinds dev, and sets dev's `PUBLIC_HOSTNAME` back. Rebinding dev issues a
+**new** validation token, so dev's old token is no use: the step waits for the new one (up to 5
+minutes) and prints it with the exact Cloudflare records, `TXT _dnsauth` and the apex and `www`
+CNAMEs to dev's default host. The apex SPF TXT, MX, DMARC and DKIM records stay as they are. If
+no token comes in time, it still finishes, prints the command that reads the token, and exits
+non-zero. It can be repeated, and skips what is already undone. The Entra URIs stay; they are harmless. Sessions
 do not survive either way: cookies are per host.
 If production was already set as the default domain, Azure may refuse to remove the binding until
 it is unset in the portal (NOT VERIFIED); check that first when the time matters.
