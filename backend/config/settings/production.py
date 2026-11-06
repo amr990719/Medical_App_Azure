@@ -12,6 +12,7 @@ from config.secrets import load_secrets
 
 from .base import *  # noqa: F403
 from .base import (
+    CACHES,
     CURRENT_FISCAL_YEAR,
     DATABASES,
     LOGGING,
@@ -169,6 +170,18 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # SWA linked backend -> Container Apps ingress -> Django (Q-T13: NOT VERIFIED on Azure).
 TRUSTED_PROXY_COUNT = env.int("TRUSTED_PROXY_COUNT", default=2)
 REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": TRUSTED_PROXY_COUNT}
+# Throttle counters must be shared by every Gunicorn worker and replica (Q-T6, D114). Without
+# CACHE_URL the base default is a per-process LocMemCache: each worker would count on its own.
+_PER_PROCESS_CACHES = {
+    "django.core.cache.backends.locmem.LocMemCache",
+    "django.core.cache.backends.dummy.DummyCache",
+    "django.core.cache.backends.filebased.FileBasedCache",
+}
+if not env("CACHE_URL", default="") or CACHES["default"]["BACKEND"] in _PER_PROCESS_CACHES:
+    raise ImproperlyConfigured(
+        "CACHE_URL must name a cache shared by every worker and replica in production "
+        "(dbcache://django_cache)."
+    )
 SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
 SECURE_HSTS_SECONDS = 31536000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True

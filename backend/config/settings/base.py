@@ -154,7 +154,8 @@ CSRF_USE_SESSIONS = False
 
 # --- Cache (throttling). Production overrides with a cache shared by every replica. -----------
 
-CACHES = {"default": env.cache("CACHE_URL", default="locmemcache://")}
+# A blank CACHE_URL counts as unset (production then refuses to start: settings/production.py).
+CACHES = {"default": env.cache_url_config(env("CACHE_URL", default="") or "locmemcache://")}
 
 # --- Django REST Framework ----------------------------------------------------------------------
 

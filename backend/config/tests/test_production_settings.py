@@ -19,6 +19,7 @@ VALID_ENV = {
     "ENTRA_CLIENT_SECRET": "entra-secret-from-key-vault-reference",
     "ENTRA_REDIRECT_URI": "https://app.example.test/api/v1/auth/callback/",
     "CURRENT_FISCAL_YEAR": "2026",
+    "CACHE_URL": "dbcache://django_cache",  # what main.bicep sets (shared throttle counters)
 }
 
 # Dummy values only: the real-provider settings a production notification mode needs.
@@ -54,7 +55,8 @@ def load_production(monkeypatch, **overrides):
         "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_API_VERSION",
         "ENTRA_AUTHORITY", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET", "ENTRA_REDIRECT_URI",
         "SECURE_HSTS_PRELOAD", "NOTIFICATIONS_MODE", "NOTIFICATION_PROVIDERS",
-        "NOTIFICATIONS_ALLOWLIST", "CURRENT_FISCAL_YEAR", *REAL_PROVIDER_SETTINGS,
+        "NOTIFICATIONS_ALLOWLIST", "CURRENT_FISCAL_YEAR", "CACHE_URL", "PROXY_DIAGNOSTICS_ENABLED",
+        *REAL_PROVIDER_SETTINGS,
     )  # fmt: skip
     for key in inherited:
         monkeypatch.delenv(key, raising=False)
@@ -334,6 +336,24 @@ def test_trusted_proxy_count_is_configurable(monkeypatch):
     monkeypatch.setenv("TRUSTED_PROXY_COUNT", "1")
     prod = load_production(monkeypatch)
     assert prod.REST_FRAMEWORK["NUM_PROXIES"] == 1
+
+
+# --- Throttle cache (PROXY-1): counters must be shared by every Gunicorn worker and replica ----
+
+
+def test_production_uses_the_shared_database_cache(monkeypatch):
+    prod = load_production(monkeypatch)
+    assert prod.CACHES["default"]["BACKEND"] == "django.core.cache.backends.db.DatabaseCache"
+
+
+@pytest.mark.parametrize(
+    "cache_url", [None, "", "locmemcache://", "dummycache://", "filecache:///tmp/throttle"]
+)
+def test_production_refuses_a_per_process_throttle_cache(monkeypatch, cache_url):
+    # Without CACHE_URL each of the 3 Gunicorn workers would count on its own (LocMemCache),
+    # so a 20/min limit would really allow about 60/min per replica.
+    with pytest.raises(ImproperlyConfigured, match="CACHE_URL"):
+        load_production(monkeypatch, CACHE_URL=cache_url)
 
 
 # --- Notifications (spec section 6) --------------------------------------------------------------
