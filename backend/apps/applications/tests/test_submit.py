@@ -235,7 +235,7 @@ def test_mark_receipt_uploaded_requires_editable_application():
 @pytest.mark.parametrize("target", [P.CONFIRMED, P.REJECTED])
 def test_admin_sets_payment_status(target):
     app = build_submittable_application(status=S.SUBMITTED, reference_number="MED-2026-000001")
-    result = set_payment_status(app, status=target, actor=AdminUserFactory())
+    result = set_payment_status(app, status=target, actor=AdminUserFactory(), reason="سبب")
     assert result.payment_status == target
     assert AuditLog.objects.filter(action=AuditAction.PAYMENT_STATUS_CHANGED).count() == 1
 

@@ -86,7 +86,7 @@ application detail requested with `?reveal_national_id=1` (audited `NATIONAL_ID_
 | GET | `/admin/applications/` | filters `status`, `payment_status`, `fiscal_year`, `governorate`, `syndicate_type`, `sub_syndicate`, `submitted_from`, `submitted_to`; `search` (name, reference, phone, full or masked national ID, Arabic digits OK); `ordering` (`submitted_at`, `reference_number`, `status`, `total`, prefix `-`); `page`, `page_size` ≤ 100 |
 | GET | `/admin/applications/{id}/` | full detail, `allowed_transitions`, `beneficiary_warnings`, `dues_requests` (with `allowed_actions`, receipts and reviewers), `can_request_dues`, `outstanding_dues_count`; audited |
 | POST | `/admin/applications/{id}/transition/` | `{to_status, review_notes}` through the single transition service |
-| POST | `/admin/applications/{id}/payment/` | `{payment_status: CONFIRMED|REJECTED, note?}` |
+| POST | `/admin/applications/{id}/payment/` | `{payment_status: CONFIRMED|REJECTED, reason?, note?}`; `reason` (shown to the member) is required to reject, and a rejection of a SUBMITTED / UNDER_REVIEW application moves it to NEEDS_CORRECTION (D220); `note` is internal (D52) |
 | POST | `/admin/applications/{id}/dues-requests/` | `{amount, reason}` — additional syndicate dues; amount as a string or number, Arabic digits and `٫` accepted, > 0, ≤ 2 decimals. 201 with the detail. 409 unless SUBMITTED / UNDER_REVIEW / NEEDS_CORRECTION |
 | POST | `/admin/applications/{id}/dues-requests/{dues_id}/review/` | `{receipt_id, decision: CONFIRMED|REJECTED, reason}` — the receipt waiting for review; `reason` required to reject (shown to the member) |
 | POST | `/admin/applications/{id}/dues-requests/{dues_id}/cancel/` | `{reason}` (required, admin-only) — any unresolved request |

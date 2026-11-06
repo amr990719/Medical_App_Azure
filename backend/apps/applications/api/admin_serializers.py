@@ -144,7 +144,17 @@ class TransitionSerializer(serializers.Serializer):
 
 
 class PaymentReviewSerializer(serializers.Serializer):
+    """`reason` is required to reject (shown to the member, D220; the service checks it);
+    `note` is an optional internal note (D52)."""
+
     payment_status = serializers.ChoiceField(choices=PaymentStatus.choices)
+    reason = serializers.CharField(
+        allow_blank=True,
+        required=False,
+        default="",
+        max_length=4000,
+        help_text="Required when payment_status is REJECTED; shown to the member.",
+    )
     note = serializers.CharField(allow_blank=True, required=False, default="", max_length=4000)
 
 

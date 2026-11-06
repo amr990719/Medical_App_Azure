@@ -166,10 +166,90 @@ describe("AdminApplicationDetailPage (PROMPT.md §44)", () => {
     await user.type(within(dialog).getByRole("textbox"), "مطابق لكشف البنك");
     await user.click(within(dialog).getByRole("button", { name: "تأكيد" }));
 
-    await waitFor(() => expect(body).toEqual({ payment_status: "CONFIRMED", note: "مطابق لكشف البنك" }));
+    await waitFor(() => expect(body).toEqual({ payment_status: "CONFIRMED", reason: "", note: "مطابق لكشف البنك" }));
     expect(await screen.findByText("تم تحديث حالة الدفع إلى: مؤكد")).toBeInTheDocument();
     expect(within(payment).queryByRole("button", { name: "تأكيد الدفع" })).not.toBeInTheDocument();
     expect(within(payment).getByRole("button", { name: "رفض الإيصال" })).toBeInTheDocument();
+  });
+
+  it("rejects the receipt only with a reason for the member, and shows both new statuses (D220)", async () => {
+    const reason = "المبلغ في الإيصال لا يطابق قيمة الاشتراك";
+    let body: unknown;
+    let calls = 0;
+    serve(base, [
+      http.post(`${API}/admin/applications/${ADMIN_APP_ID}/payment/`, async ({ request }) => {
+        calls += 1;
+        body = await request.json();
+        return HttpResponse.json({
+          ...base,
+          status: "NEEDS_CORRECTION",
+          payment_status: "REJECTED",
+          review_notes: reason,
+          allowed_transitions: [],
+        });
+      }),
+    ]);
+    const { user } = await open();
+    const payment = screen.getByRole("region", { name: "إيصال الدفع" });
+    await user.click(within(payment).getByRole("button", { name: "رفض الإيصال" }));
+    const dialog = await screen.findByRole("dialog", { name: "رفض إيصال الدفع" });
+    expect(dialog).toHaveTextContent("سيُعاد الطلب إلى العضو للتصحيح، ويظهر له هذا السبب");
+    const reasonBox = within(dialog).getByRole("textbox", { name: /سبب الرفض \(يظهر للعضو\)/ });
+    const noteBox = within(dialog).getByRole("textbox", { name: "ملاحظة داخلية (اختيارية، لا تظهر للعضو)" });
+    expect(reasonBox).toBeRequired();
+
+    // Only the internal note: refused in place, nothing sent.
+    await user.type(noteBox, "راجعت كشف الحساب");
+    await user.click(within(dialog).getByRole("button", { name: "تأكيد" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("يرجى كتابة سبب رفض الإيصال");
+    expect(reasonBox).toHaveAttribute("aria-invalid", "true");
+    await user.type(reasonBox, "   ");
+    await user.click(within(dialog).getByRole("button", { name: "تأكيد" }));
+    expect(calls).toBe(0);
+
+    await user.clear(reasonBox);
+    await user.type(reasonBox, reason);
+    await user.click(within(dialog).getByRole("button", { name: "تأكيد" }));
+    await waitFor(() =>
+      expect(body).toEqual({ payment_status: "REJECTED", reason, note: "راجعت كشف الحساب" }),
+    );
+    expect(await screen.findByText("تم رفض الإيصال. حالة الطلب الآن: يحتاج تصحيح")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(payment).getByText("مرفوض")).toBeInTheDocument();
+    expect(document.querySelector('[data-status="NEEDS_CORRECTION"]')).not.toBeNull();
+  });
+
+  it("shows the server's refusal of a rejection inside the dialog", async () => {
+    serve(base, [
+      http.post(`${API}/admin/applications/${ADMIN_APP_ID}/payment/`, () =>
+        HttpResponse.json(
+          { error: { code: "VALIDATION_ERROR", message: "يرجى كتابة سبب رفض الإيصال", fields: { reason: ["يرجى كتابة سبب رفض الإيصال"] } } },
+          { status: 400 },
+        ),
+      ),
+    ]);
+    const { user } = await open();
+    const payment = screen.getByRole("region", { name: "إيصال الدفع" });
+    await user.click(within(payment).getByRole("button", { name: "رفض الإيصال" }));
+    const dialog = await screen.findByRole("dialog", { name: "رفض إيصال الدفع" });
+    await user.type(within(dialog).getByRole("textbox", { name: /سبب الرفض/ }), "سبب");
+    await user.click(within(dialog).getByRole("button", { name: "تأكيد" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("يرجى كتابة سبب رفض الإيصال");
+  });
+
+  it("offers the rejection again for a rejected receipt that was never returned to the member", async () => {
+    serve({ ...base, status: "SUBMITTED", payment_status: "REJECTED" });
+    await open();
+    const payment = screen.getByRole("region", { name: "إيصال الدفع" });
+    expect(within(payment).getByRole("button", { name: "رفض الإيصال" })).toBeInTheDocument();
+    expect(within(payment).getByRole("button", { name: "تأكيد الدفع" })).toBeInTheDocument();
+  });
+
+  it("does not offer a second rejection once the application is back with the member", async () => {
+    serve({ ...base, status: "NEEDS_CORRECTION", payment_status: "REJECTED", allowed_transitions: [] });
+    await open();
+    const payment = screen.getByRole("region", { name: "إيصال الدفع" });
+    expect(within(payment).queryByRole("button", { name: "رفض الإيصال" })).not.toBeInTheDocument();
   });
 
   it("opens the receipt in the viewer", async () => {

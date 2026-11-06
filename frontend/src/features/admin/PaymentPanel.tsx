@@ -8,13 +8,19 @@ import { ActionDialog } from "./ActionDialog";
 import { choiceLabel } from "./labels";
 import { PaymentBadge } from "./PaymentBadge";
 import { usePaymentReview } from "./queries";
+import { RejectPaymentDialog } from "./RejectPaymentDialog";
 
 /** Statuses in which the server accepts a payment decision (D23). */
 const PAYMENT_REVIEWABLE = new Set<ApplicationStatus>(["SUBMITTED", "UNDER_REVIEW", "NEEDS_CORRECTION"]);
+/** Statuses that a rejection returns to the member for correction (D220). */
+const RETURNED_ON_REJECTION = new Set<ApplicationStatus>(["SUBMITTED", "UNDER_REVIEW"]);
 
 type Decision = "CONFIRMED" | "REJECTED";
 
-/** Receipt + confirm/reject (PROMPT.md §44). A note goes to the internal notes (D52). */
+/**
+ * Receipt + confirm/reject (PROMPT.md §44). Rejecting needs a reason the member sees and returns
+ * the application for correction (D220); the optional note goes to the internal notes (D52).
+ */
 export function PaymentPanel({
   application,
   reference,
@@ -32,6 +38,10 @@ export function PaymentPanel({
   const receipt = application.documents.find((doc) => doc.documentType === "PAYMENT_RECEIPT" && !doc.beneficiaryId);
   const reviewable = Boolean(receipt) && PAYMENT_REVIEWABLE.has(application.status);
   const label = (status: string) => choiceLabel(reference?.paymentStatuses, status);
+  const statusLabel = (status: string) => choiceLabel(reference?.statuses, status);
+  // A receipt already REJECTED on a SUBMITTED / UNDER_REVIEW application (data from before D220)
+  // can be rejected again with a reason, which returns it to the member.
+  const canReject = application.paymentStatus !== "REJECTED" || RETURNED_ON_REJECTION.has(application.status);
   const total = application.feeSnapshot?.total;
 
   const close = () => {
@@ -62,7 +72,7 @@ export function PaymentPanel({
           {application.paymentStatus !== "CONFIRMED" ? (
             <Button onClick={() => setDecision("CONFIRMED")}>{ar.admin.payment.confirm}</Button>
           ) : null}
-          {application.paymentStatus !== "REJECTED" ? (
+          {canReject ? (
             <Button variant="outline" onClick={() => setDecision("REJECTED")}>
               {ar.admin.payment.reject}
             </Button>
@@ -72,26 +82,39 @@ export function PaymentPanel({
         <p className="text-xs text-muted">{ar.admin.payment.locked}</p>
       ) : null}
 
-      {decision ? (
+      {decision === "CONFIRMED" ? (
         <ActionDialog
-          title={decision === "CONFIRMED" ? ar.admin.payment.confirm : ar.admin.payment.rejectTitle}
-          body={
-            decision === "CONFIRMED"
-              ? t(ar.admin.payment.confirmBody, { total: total === undefined ? "" : formatMoney(total) })
-              : ar.admin.payment.rejectBody
-          }
+          title={ar.admin.payment.confirm}
+          body={t(ar.admin.payment.confirmBody, { total: total === undefined ? "" : formatMoney(total) })}
           notesLabel={ar.admin.payment.noteLabel}
-          confirmVariant={decision === "REJECTED" ? "danger" : "primary"}
           busy={review.isPending}
           error={review.error?.message ?? null}
           onClose={close}
           onConfirm={(note) =>
             review.mutate(
-              { paymentStatus: decision, note },
+              { paymentStatus: "CONFIRMED", note },
               {
                 onSuccess: (detail) => {
                   close();
                   onDone(t(ar.admin.payment.done, { status: label(detail.paymentStatus) }));
+                },
+              },
+            )
+          }
+        />
+      ) : null}
+      {decision === "REJECTED" ? (
+        <RejectPaymentDialog
+          busy={review.isPending}
+          error={review.error?.message ?? null}
+          onClose={close}
+          onConfirm={({ reason, note }) =>
+            review.mutate(
+              { paymentStatus: "REJECTED", reason, note },
+              {
+                onSuccess: (detail) => {
+                  close();
+                  onDone(t(ar.admin.payment.rejectDone, { status: statusLabel(detail.status) }));
                 },
               },
             )

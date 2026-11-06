@@ -1700,6 +1700,31 @@ retired confirmed; the owner's own account is the first administrator.
   - The restore drills.
 - **Still not on `neqabacare.com`:** it serves dev until the cutover.
 
+### Session 26 — 2026-11-06 — Fix PAY-1: a rejected receipt returns the application (D220)
+
+Branch `fix/pay-1-receipt-rejection` from `origin/main` (`533ac4e`), committed locally, not pushed.
+
+- **Root cause (reproduced by a test on PostgreSQL first):** `review_payment` only set
+  `payment_status=REJECTED` and turned the dialog text into an internal `AdminNote`. The application
+  stayed SUBMITTED / UNDER_REVIEW, so `is_editable` was false and the receipt upload answered 409
+  `APPLICATION_NOT_EDITABLE`, and `review_notes` stayed empty, so the member saw no reason. Nothing
+  made the "normally comes with a correction request" in the dialog text happen.
+- **Backend:** `set_payment_status` / `review_payment` take `reason`; `_reject_receipt` does the
+  combined action (D220); `transition` gained `notify` and an audit `cause`; validation adds
+  `RECEIPT_REJECTED`; `PaymentReviewSerializer.reason`. 32 new tests in
+  `apps/applications/tests/test_payment_rejection.py`; three existing callers now pass a reason.
+- **Frontend:** `RejectPaymentDialog` (required reason shown to the member + optional internal
+  note); `PaymentPanel` uses it and also offers a rejection for a REJECTED receipt still on a
+  SUBMITTED / UNDER_REVIEW application (data from before D220); the status page shows a
+  rejected-receipt banner linking to the payment page; the payment page shows the reason and keeps
+  "continue" disabled until a new receipt is uploaded. `schema.d.ts` regenerated (only `reason`
+  added). The Playwright specs cover confirming only, which did not change; no rejection e2e was
+  added (it needs the compose stack, not available in this session).
+- **Verified locally:** ruff, `manage.py check`, `makemigrations --check`, `spectacular --validate
+  --fail-on-warn`, pytest 2072 passed / 2 skipped (Azurite) on a throwaway PostgreSQL 18; frontend
+  lint, typecheck, 415 Vitest tests, `rtl:check`, build. Not verified on production: PAY-1 is
+  re-tested by the owner after release.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -2396,6 +2421,18 @@ retired confirmed; the owner's own account is the first administrator.
   Three locations every 15 minutes is a cost choice; Microsoft recommends five.
 - **D219 — Security findings do not block a release by themselves:** the reviewer sees them in the preview,
   because a fix may be what is being released. The weekly `security-scan` run is what fails.
+- **D220 — Rejecting a payment receipt requests a correction with a member-visible reason (owner,
+  2026-11-06; refines D52; fixes the production acceptance failure PAY-1):** the admin payment
+  endpoint takes `reason`, required to reject (blank → 400, `fields.reason`). In one transaction a
+  SUBMITTED / UNDER_REVIEW application gets `payment_status=REJECTED` and moves to NEEDS_CORRECTION
+  through `transition`, with the reason as `review_notes`; on an application already in
+  NEEDS_CORRECTION the reason is **appended** to `review_notes` (the open request may list other
+  items, so it is never replaced; the same reason is not repeated). The dialog's optional `note`
+  stays an internal `AdminNote`. The member gets **one** notification, `PAYMENT_RECEIPT_REJECTED`:
+  it names what was rejected, needs no new Meta template, and its relevance check stops it once
+  the member uploads a new receipt; the transition's generic `CORRECTION_NEEDED` is not sent
+  (`transition(notify=False)`). Resubmission is refused while the receipt is still the rejected
+  one (`RECEIPT_REJECTED`, step 4). Confirming is unchanged. No migration.
 
 ## Deviations from PROMPT.md
 
@@ -2689,6 +2726,11 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-P7 — The FY 2027 schedule:** the amounts are a business input; none exists.
 
 ## Next session starts with
+
+**PAY-1 fix (Session 26, D220) is on the local branch `fix/pay-1-receipt-rejection`, not pushed.**
+Next, each with the owner's approval: push, PR, release to production, then the owner re-runs PAY-1
+from `docs/production-acceptance-script.md`. An application left SUBMITTED / UNDER_REVIEW with a
+REJECTED receipt by the earlier test can be sent back by rejecting it again with a reason.
 
 **Session 25 finished the production path locally, on branch `feat/production-deploy-path`. Nothing is
 pushed. Production does not exist, and is not ready until `docs/production-acceptance.md` passes.** Next,

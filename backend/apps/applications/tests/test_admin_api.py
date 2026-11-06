@@ -327,7 +327,8 @@ def test_payment_confirm_then_approve(admin):
 def test_payment_reject_with_note_creates_internal_note(admin):
     app = submitted()
     response = admin.post(
-        app_url(app, "payment"), {"payment_status": "REJECTED", "note": "المبلغ غير مطابق"}
+        app_url(app, "payment"),
+        {"payment_status": "REJECTED", "reason": "الإيصال غير واضح", "note": "المبلغ غير مطابق"},
     )
     assert response.status_code == 200
     note = AdminNote.objects.get(application=app)

@@ -93,7 +93,9 @@ def _payment_confirmed(admin):
 
 def _payment_rejected(admin):
     app = app_in(S.SUBMITTED, P.PENDING_REVIEW)
-    return lambda: app_services.set_payment_status(app, status=P.REJECTED, actor=admin)
+    return lambda: app_services.set_payment_status(
+        app, status=P.REJECTED, actor=admin, reason="غير واضح"
+    )
 
 
 def _dues_requested(admin):

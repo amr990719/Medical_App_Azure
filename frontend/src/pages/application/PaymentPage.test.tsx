@@ -143,6 +143,57 @@ describe("PaymentPage (PROMPT.md §18)", () => {
   });
 });
 
+describe("PaymentPage after the receipt was rejected (D220)", () => {
+  const reason = "المبلغ في الإيصال لا يطابق قيمة الاشتراك";
+  const returned = apiApplication({
+    status: "NEEDS_CORRECTION",
+    is_editable: true,
+    reference_number: "MED-2026-000123",
+    payment_status: "REJECTED",
+    review_notes: reason,
+    documents: [receipt],
+  });
+
+  it("shows the reason and keeps the upload available, but not the way to the review", async () => {
+    await openPayment(returned);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("تم رفض إيصال الدفع");
+    expect(alert).toHaveTextContent(reason);
+    expect(alert).toHaveTextContent("ارفع إيصالاً جديداً بدلاً من الإيصال المرفوض، ثم أعد تقديم الطلب.");
+    const bar = screen.getByRole("group", { name: "الإيصال المرفوع" });
+    expect(await within(bar).findByText("حالة الدفع: مرفوض")).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: "استبدال" })).toBeEnabled();
+    expect(within(bar).getByRole("button", { name: "إزالة" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "متابعة للمراجعة" })).toBeDisabled();
+    expect(screen.getByText("ارفع إيصالاً جديداً للمتابعة.")).toBeInTheDocument();
+  });
+
+  it("replaces the rejected receipt and then allows continuing to the review", async () => {
+    let app = returned;
+    const fresh = apiDocument({
+      id: "d-r2",
+      document_type: "PAYMENT_RECEIPT",
+      original_filename: "new-receipt.jpg",
+      content_type: "image/jpeg",
+      file_size: 1_048_576,
+    });
+    server.use(
+      http.post(`${API}/applications/${APP_ID}/documents/`, () => {
+        app = { ...returned, payment_status: "PENDING_REVIEW", documents: [fresh] };
+        return HttpResponse.json(fresh, { status: 201 });
+      }),
+    );
+    const { user, router } = await openPayment(returned);
+    server.use(http.get(`${API}/applications/${APP_ID}/`, () => HttpResponse.json(app)));
+    await user.upload(screen.getByLabelText("إيصال الدفع"), new File(["x"], "new-receipt.jpg", { type: "image/jpeg" }));
+    expect(await screen.findByText("new-receipt.jpg")).toBeInTheDocument();
+    expect(screen.getByText("حالة الدفع: بانتظار التأكيد")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "متابعة للمراجعة" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/application/${APP_ID}/review`));
+  });
+});
+
 describe("PaymentPage when not editable", () => {
   it("redirects to the status page", async () => {
     serve(apiApplication({ status: "SUBMITTED", is_editable: false, reference_number: "MED-2026-000001" }));

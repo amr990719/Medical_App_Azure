@@ -66,8 +66,12 @@ Made-up member details (they pass the format checks and belong to nobody):
 
 | ID | Do | Expect |
 |---|---|---|
-| PAY-1 | open B's application; reject the receipt with a reason | B sees the rejection and can upload a new receipt |
-| PAY-1 | as B, upload a new receipt; as A, confirm payment | payment shows as confirmed |
+| PAY-1 | open B's application; choose `رفض الإيصال` and try to confirm with the reason (`سبب الرفض (يظهر للعضو)`) left empty | refused in the dialog: `يرجى كتابة سبب رفض الإيصال` |
+| PAY-1 | write a reason, and optionally an internal note; confirm | payment `مرفوض` and the application `يحتاج تصحيح` on the admin page |
+| PAY-1 | as B, open the application's status page | `تم رفض إيصال الدفع`, the reason under `ملاحظات المراجعة`, a `رفع إيصال جديد` button; the internal note is not shown anywhere |
+| PAY-1 | as B, press `رفع إيصال جديد` and upload a new receipt over the old one (or remove it and upload) | the reason is shown on the payment page; after the upload the payment shows `بانتظار التأكيد` |
+| PAY-1 | as B, continue to the review and resubmit | submitted, with the **same** reference number as before |
+| PAY-1 | as A, open the application and confirm the payment | payment `مؤكد` |
 | DUES-1 | as A, request additional dues (for example 250) with a reason | B sees the amount and can upload a dues receipt |
 | DUES-2 | as B, upload a dues receipt; as A, reject it with a reason; as B, upload again; as A, confirm | each step shows; the treatment fee and its receipt did not change |
 | APR-1 | before confirming the dues, try to approve | refused with a message about dues |

@@ -220,6 +220,7 @@ export function PaymentPage() {
   const validation = useValidation(id);
   const fees = useFeeQuote(id);
   const methodTitleId = useId();
+  const rejectedTitleId = useId();
 
   if (application.error) {
     return <FullPageStatus isError message={application.error.message} onRetry={() => void application.refetch()} />;
@@ -229,6 +230,9 @@ export function PaymentPage() {
   if (!app.isEditable) return <Navigate to={`/application/${id}/status`} replace />;
 
   const receipt = app.documents.find((doc) => doc.documentType === "PAYMENT_RECEIPT");
+  // D220: the administration rejected the receipt; the reason is the review notes. Uploading a
+  // new receipt sets the payment status back to PENDING_REVIEW (server side).
+  const rejected = app.paymentStatus === "REJECTED";
 
   return (
     <WizardFrame fiscalYear={app.fiscalYear} step={4} completed={completedSteps(validation.data?.stepsComplete)}>
@@ -241,6 +245,26 @@ export function PaymentPage() {
           {P.back}
         </Link>
         <h1 className="text-2xl font-extrabold text-charcoal">{P.title}</h1>
+        {rejected ? (
+          <section
+            role="alert"
+            aria-labelledby={rejectedTitleId}
+            className="rounded-xl border-s-4 border-danger bg-danger-light p-4"
+          >
+            <h2 id={rejectedTitleId} className="font-extrabold text-danger">
+              {P.rejectedTitle}
+            </h2>
+            {app.reviewNotes ? (
+              <div className="mt-1">
+                <p className="text-sm font-bold text-charcoal">{P.rejectedReason}</p>
+                <p className="whitespace-pre-line text-charcoal" dir="auto">
+                  {app.reviewNotes}
+                </p>
+              </div>
+            ) : null}
+            <p className="mt-2 text-charcoal">{P.rejectedAction}</p>
+          </section>
+        ) : null}
         <FeeSummaryPanel quote={fees.data} isLoading={fees.isLoading} error={fees.error} accent="banana" />
         <section aria-labelledby={methodTitleId} className="rounded-xl border border-border bg-white p-5">
           <h2 id={methodTitleId} className="font-extrabold text-charcoal">
@@ -260,11 +284,12 @@ export function PaymentPage() {
         </section>
         <ReceiptUpload applicationId={id} receipt={receipt} paymentStatus={app.paymentStatus} />
         {!receipt ? <p className="text-sm text-muted">{P.needReceipt}</p> : null}
+        {receipt && rejected ? <p className="text-sm text-muted">{P.needNewReceipt}</p> : null}
       </div>
       <StickyActionBar
         label={ar.form.actionsLabel}
         end={
-          <Button disabled={!receipt} onClick={() => navigate(`/application/${id}/review`)}>
+          <Button disabled={!receipt || rejected} onClick={() => navigate(`/application/${id}/review`)}>
             {P.continue}
             <Icon name="arrow" mirror className="size-4" />
           </Button>

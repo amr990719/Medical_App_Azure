@@ -77,16 +77,20 @@ export async function transitionApplication(
   );
 }
 
-/** Confirm or reject the receipt; a non-empty note becomes an internal note (D52). */
+/**
+ * Confirm or reject the receipt. Rejecting needs `reason`, which the member sees, and returns
+ * the application for correction (D220); a non-empty `note` becomes an internal note (D52).
+ */
 export async function reviewPayment(
   id: string,
   paymentStatus: Extract<PaymentStatus, "CONFIRMED" | "REJECTED">,
-  note: string,
+  { reason = "", note = "" }: { reason?: string; note?: string } = {},
 ): Promise<AdminApplicationDetail> {
+  const body: Schemas["PaymentReviewRequest"] = { payment_status: paymentStatus, reason, note };
   return toCamel(
     await apiFetch<ApiAdminApplicationDetail>(`/admin/applications/${id}/payment/`, {
       method: "POST",
-      body: { payment_status: paymentStatus, note },
+      body,
     }),
   );
 }

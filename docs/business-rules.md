@@ -75,7 +75,28 @@ Allowed transitions (anything else is rejected with `INVALID_STATUS_TRANSITION`)
   member and beneficiary data (`submitted_snapshot`) for audit. (Application printing was retired
   on 2026-10-28: there is no doctor or admin print view.)
 - Payment status: `NOT_UPLOADED` → `PENDING_REVIEW` (automatically when a receipt is uploaded) →
-  `CONFIRMED` or `REJECTED` (admin only). A rejected receipt normally comes with `NEEDS_CORRECTION`.
+  `CONFIRMED` or `REJECTED` (admin only, while SUBMITTED, UNDER_REVIEW or NEEDS_CORRECTION; refused
+  after APPROVED or REJECTED). Removing the receipt sets `NOT_UPLOADED` again.
+- **Rejecting the receipt requests a correction (D220, owner 2026-11-06; refines D52).**
+  `POST /admin/applications/{id}/payment/` with `payment_status=REJECTED` needs a `reason` the
+  member sees (empty or blank → 400 `VALIDATION_ERROR`, `fields.reason`
+  `يرجى كتابة سبب رفض الإيصال`). In one transaction (`applications/services.py::set_payment_status`):
+  - SUBMITTED / UNDER_REVIEW: `payment_status=REJECTED`, then `NEEDS_CORRECTION` through `transition`
+    with the reason as `review_notes`. This also applies when the payment was already REJECTED on a
+    SUBMITTED / UNDER_REVIEW application (data from before D220).
+  - Already NEEDS_CORRECTION: the status stays and the reason is **appended** to `review_notes`
+    after a blank line (the open correction request may list other items still to fix, so it is
+    never replaced); the same reason twice is not repeated.
+  - The optional `note` stays an internal `AdminNote` (D52), never shown to the member.
+  - Audit: `PAYMENT_STATUS_CHANGED` (`reason: true`, plus `review_notes_updated: true` when only the
+    note changed) and `APPLICATION_STATUS_CHANGED` (`cause: PAYMENT_REJECTED`), both with the admin.
+    The free text is never in the audit metadata.
+  - One notification: `PAYMENT_RECEIPT_REJECTED`; the transition's `CORRECTION_NEEDED` is not sent.
+  - Confirming is unchanged (no status change, any `reason` ignored).
+- The member then replaces the receipt on the payment page (upload over it, or remove and upload;
+  each upload sets `PENDING_REVIEW`) and resubmits with the same reference number. Resubmission is
+  refused while the receipt is missing (`MISSING_RECEIPT`, `يرجى رفع إيصال الدفع`) or still the
+  rejected one (`RECEIPT_REJECTED`, step 4, `تم رفض إيصال الدفع، يرجى رفع إيصال جديد`).
 - Doctors can never set status, payment status, reference number, fee snapshot or reviewer fields.
 
 ## 4a. Additional syndicate dues [`apps/dues`] (owner, 2026-11-01)

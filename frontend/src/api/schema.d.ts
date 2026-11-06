@@ -1429,8 +1429,17 @@ export interface components {
             neighborhood?: string;
             address?: string;
         };
+        /**
+         * @description `reason` is required to reject (shown to the member, D220; the service checks it);
+         *     `note` is an optional internal note (D52).
+         */
         PaymentReviewRequest: {
             payment_status: components["schemas"]["PaymentStatusEnum"];
+            /**
+             * @description Required when payment_status is REJECTED; shown to the member.
+             * @default
+             */
+            reason: string;
             /** @default  */
             note: string;
         };

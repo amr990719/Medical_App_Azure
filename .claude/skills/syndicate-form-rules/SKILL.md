@@ -216,7 +216,12 @@ audit entry. `REJECTED` is final; the doctor may create a new application for th
 Partial unique: one application per doctor per fiscal year with status ≠ REJECTED → `ACTIVE_APPLICATION_EXISTS`.
 
 Payment status: `NOT_UPLOADED → PENDING_REVIEW` (set by server on receipt upload) → `CONFIRMED | REJECTED`
-(admin only; rejecting normally goes with `NEEDS_CORRECTION` + note). Doctors never write `status`,
+(admin only). Rejecting needs a member-visible `reason` (400 `fields.reason` without one) and, in the
+same transaction, moves SUBMITTED / UNDER_REVIEW to `NEEDS_CORRECTION` through `transition` with the
+reason as `review_notes` (already NEEDS_CORRECTION: reason appended); one `PAYMENT_RECEIPT_REJECTED`
+notification, no `CORRECTION_NEEDED`; the optional `note` stays internal (D220, refines D52).
+Resubmission is refused while the receipt is still the rejected one (`RECEIPT_REJECTED`,
+`تم رفض إيصال الدفع، يرجى رفع إيصال جديد`). Doctors never write `status`,
 `payment_status`, `reference_number`, `fee_snapshot`, `review_notes`, `reviewed_by`, `reviewed_at`.
 
 Reference number: `MED-{fiscal_year}-{6-digit sequence}` (e.g. `MED-2026-000123`) from a per-year
