@@ -623,6 +623,11 @@ export const ar = {
     // every applicant (frontend/src/assets/payment/instapay-qr.png).
     instructions: "برجاء مسح رمز QR ثم رفع إيصال الدفع.",
     qrAlt: "رمز QR للدفع عبر إنستاباي",
+    // The only copy of the address in code; it must match the QR image (owner confirmed 2026-11-06).
+    instapayAddress: "alaa.abdalrahman@instapay",
+    copyAddress: "نسخ العنوان",
+    copied: "تم نسخ العنوان",
+    copyFailed: "تعذّر النسخ، انسخ العنوان يدويًا",
     drop: "اسحب صورة الإيصال هنا",
     orClick: "أو اضغط للاختيار",
     accepted: "JPG, PNG, WEBP — حتى {max}، وبحد أدنى {width}×{height} بكسل",

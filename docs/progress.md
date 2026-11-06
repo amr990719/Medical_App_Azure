@@ -1838,8 +1838,8 @@ Web App's calls. Region facts for `uaenorth` were read from Azure (SKU, geo back
   replacement from an insertion before/after the existing character when a change carries several
   characters.
 - **D81 — Payment instructions are static text in `ar.ts`** until the organization provides them
-  (§18 says admin-configurable; see Q-B19). Provided 2026-11-06: the owner's wording and a fixed
-  InstaPay QR, both still static in the frontend.
+  (§18 says admin-configurable; see Q-B19). Provided 2026-11-06: the owner's wording, a fixed
+  InstaPay QR and its copyable address, all still static in the frontend.
 - **D82 — The e2e run gives its doctor a random valid national ID** after OCR: the mock provider
   always returns `28506150101234`, and `Doctor.national_id` is UNIQUE across runs.
 - **D83 — Session evidence (screenshots + A4 PDF) is committed** under `docs/screenshots/session-5/`;
@@ -2483,8 +2483,9 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B17** (business) The receipt minimum is applied as width ≥ 400 AND height ≥ 300 (prototype
   rule), so a portrait 300×400 photo is refused. Confirm, or relax to "either orientation".
 - **Q-B19** (business) **Answered 2026-11-06 (see Q-P1):** members pay by scanning one fixed
-  InstaPay QR shown on the payment page, then upload the receipt. The wording is in
-  `frontend/src/i18n/ar.ts` → `payment.instructions`; changing it or the QR is still a code change
+  InstaPay QR shown on the payment page (or the copyable address under it), then upload the receipt.
+  The wording is in `frontend/src/i18n/ar.ts` → `payment.instructions` and the address in
+  `payment.instapayAddress`; changing them or the QR (which must stay in step) is still a code change
   and a frontend deploy (no admin-editable setting).
 - **Q-T11** The e-mail row of the paper form has 26 boxes; longer Entra e-mails are shown with as
   many boxes as needed (wrapping), never truncated. Confirm this is acceptable on the printed form.
@@ -2638,7 +2639,9 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-P1 — Payment wording: answered, implemented 2026-11-06, not released.** The owner chose a fixed
   InstaPay QR for every applicant and the line "please scan the QR code and upload your receipt".
   `payment.instructions` now reads `برجاء مسح رمز QR ثم رفع إيصال الدفع.` and the payment page shows
-  the QR (`frontend/src/assets/payment/instapay-qr.png`) below it, on branch `feat/payment-qr`. The
+  the QR (`frontend/src/assets/payment/instapay-qr.png`) below it, then the InstaPay address as
+  selectable text with a copy button (`payment.instapayAddress`; the owner confirmed the account the
+  QR decodes to), on branch `feat/payment-qr`. The
   `PLACEHOLDER (D81` marker is gone, so the cutover preflight no longer refuses on it once merged;
   `PAY-2` stays PENDING until checked on production.
 - **Q-P2 — Data region: answered.** The owner confirmed `uaenorth` on 2026-11-05.

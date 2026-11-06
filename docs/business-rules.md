@@ -275,7 +275,7 @@ with the codes listed in SKILL.md §7. The UI never shows stack traces.
 | 5 | Maximum beneficiaries: 10 (prototype) or 11 (paper rows)? | 10 | `MAX_BENEFICIARIES` |
 | 6 | Must `SON_MINOR` be ≤18, and must spouse kinship match the member's gender? | Both enforced | `ENFORCE_SON_MINOR_AGE`, `ENFORCE_SPOUSE_GENDER` |
 | 7 | Can a rejected applicant re-apply in the same fiscal year? | Yes, a new application | partial unique constraint |
-| 8 | How do members pay (bank, Fawry, office)? What instructions to show? | Answered 2026-11-06: one fixed InstaPay QR for every applicant, shown on the payment page with `برجاء مسح رمز QR ثم رفع إيصال الدفع.` (Q-B19) | `frontend/src/i18n/ar.ts` → `payment.instructions`; image `frontend/src/assets/payment/instapay-qr.png` (an admin-editable setting would need a new model) |
+| 8 | How do members pay (bank, Fawry, office)? What instructions to show? | Answered 2026-11-06: one fixed InstaPay QR for every applicant, shown on the payment page with `برجاء مسح رمز QR ثم رفع إيصال الدفع.` and the copyable InstaPay address under it (Q-B19) | `frontend/src/i18n/ar.ts` → `payment.instructions`, `payment.instapayAddress`; image `frontend/src/assets/payment/instapay-qr.png` (an admin-editable setting would need a new model) |
 | 9 | Is the member photo mandatory? | Required for `FIRST_TIME`, optional otherwise (owner, 2026-10-28; no global switch) | `document_rules.py::member_document_requirements` |
 | 10 | Is `(syndicate_type, registration_number)` unique? | Indexed, not unique | `doctors/models.py` |
 | 11 | Is sending ID images to Azure OpenAI for OCR legally approved, and in which region? | OCR behind `OCR_ENABLED`, off in production until approved | settings / Bicep `enableOcr` |

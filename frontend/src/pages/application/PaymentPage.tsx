@@ -177,6 +177,41 @@ function ReceiptUpload({
   );
 }
 
+/** The InstaPay address under the QR: selectable text plus a copy button with a polite announcement. */
+function InstapayAddress() {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  const copy = async () => {
+    try {
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(P.instapayAddress);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
+
+  return (
+    <div className="mt-3 flex flex-col items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <code
+          dir="ltr"
+          className="select-all rounded-lg bg-smoke px-3 py-1.5 font-mono text-charcoal [overflow-wrap:anywhere]"
+        >
+          {P.instapayAddress}
+        </code>
+        <Button variant="outline" onClick={() => void copy()}>
+          {P.copyAddress}
+        </Button>
+      </div>
+      <p aria-live="polite" className="min-h-6 text-sm font-semibold">
+        {copyState === "copied" ? <span className="text-teal-deep">{P.copied}</span> : null}
+        {copyState === "failed" ? <span className="text-danger">{P.copyFailed}</span> : null}
+      </p>
+    </div>
+  );
+}
+
 /** `/application/:id/payment` — step 4: fee summary + payment receipt (PROMPT.md §18). */
 export function PaymentPage() {
   const { id = "" } = useParams();
@@ -221,6 +256,7 @@ export function PaymentPage() {
             decoding="async"
             className="mx-auto mt-4 h-auto w-full max-w-[280px]"
           />
+          <InstapayAddress />
         </section>
         <ReceiptUpload applicationId={id} receipt={receipt} paymentStatus={app.paymentStatus} />
         {!receipt ? <p className="text-sm text-muted">{P.needReceipt}</p> : null}

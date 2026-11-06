@@ -62,6 +62,32 @@ describe("PaymentPage (PROMPT.md §18)", () => {
     expect(qr.getAttribute("src")).toMatch(/instapay-qr\.png$/);
   });
 
+  it("shows the InstaPay address as left-to-right text under the QR", async () => {
+    await openPayment();
+    const method = screen.getByRole("region", { name: "طريقة الدفع" });
+    const address = within(method).getByText("alaa.abdalrahman@instapay");
+    expect(address).toHaveAttribute("dir", "ltr");
+  });
+
+  it("copies the exact InstaPay address and confirms it politely", async () => {
+    const { user } = await openPayment();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    await user.click(screen.getByRole("button", { name: "نسخ العنوان" }));
+    expect(writeText).toHaveBeenCalledWith("alaa.abdalrahman@instapay");
+    const message = await screen.findByText("تم نسخ العنوان");
+    expect(message.closest("[aria-live='polite']")).not.toBeNull();
+    writeText.mockRestore();
+  });
+
+  it("asks for a manual copy when the clipboard refuses", async () => {
+    const { user } = await openPayment();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    await user.click(screen.getByRole("button", { name: "نسخ العنوان" }));
+    expect(await screen.findByText("تعذّر النسخ، انسخ العنوان يدويًا")).toBeInTheDocument();
+    expect(screen.getByText("alaa.abdalrahman@instapay")).toBeInTheDocument();
+    writeText.mockRestore();
+  });
+
   it("rejects a 5×5 image before uploading", async () => {
     imageSize.value = { width: 5, height: 5 };
     const upload = vi.fn();
