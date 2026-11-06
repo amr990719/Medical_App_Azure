@@ -543,10 +543,14 @@ and WhatsApp parked, the sizing, `currentFiscalYear`.
 Tracked with their state in `docs/progress.md`, "Next session starts with":
 
 1. Final payment instructions, for `payment.instructions`. **Supplied 2026-11-06:** the owner's
-   wording, a fixed InstaPay QR and its copyable address, implemented on the payment page (branch
-   `feat/payment-qr`); not
-   yet released to production, and `PAY-2` is checked there.
-2. A production SES sender.
+   wording, a fixed InstaPay QR and its copyable address, implemented on the payment page (PR #28);
+   not yet released to production, and `PAY-2` is checked there.
+2. A production SES sender. **Created 2026-11-06:** IAM user `neqabacare-ses-sender-prod` (path
+   `/service/`), separate from dev's sender, with one inline policy `ses-send-notifications-only` that
+   allows only `ses:SendEmail` on the `neqabacare.com` identity in `eu-north-1`, for the From address
+   `notifications@neqabacare.com` (`ses:FromAddress` condition). Its key is in the production Key Vault
+   as `aws-access-key-id` and `aws-secret-access-key`. Rotate it by about 2027-02-04. Notifications
+   stay off: nothing reads these secrets until `sesAccessKeyFromKeyVault` and notifications are enabled.
 3. The cutover date, and how long an outage is acceptable.
 
 Answered on 2026-11-05: approval for the cloud steps; the data region is `uaenorth`, which supports the
