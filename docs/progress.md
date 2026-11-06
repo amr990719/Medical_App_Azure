@@ -1838,7 +1838,8 @@ Web App's calls. Region facts for `uaenorth` were read from Azure (SKU, geo back
   replacement from an insertion before/after the existing character when a change carries several
   characters.
 - **D81 — Payment instructions are static text in `ar.ts`** until the organization provides them
-  (§18 says admin-configurable; see Q-B19).
+  (§18 says admin-configurable; see Q-B19). Provided 2026-11-06: the owner's wording and a fixed
+  InstaPay QR, both still static in the frontend.
 - **D82 — The e2e run gives its doctor a random valid national ID** after OCR: the mock provider
   always returns `28506150101234`, and `Doctor.national_id` is UNIQUE across runs.
 - **D83 — Session evidence (screenshots + A4 PDF) is committed** under `docs/screenshots/session-5/`;
@@ -2481,10 +2482,10 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-B16** (business) Should admins see drafts before submission? Default: no (D36).
 - **Q-B17** (business) The receipt minimum is applied as width ≥ 400 AND height ≥ 300 (prototype
   rule), so a portrait 300×400 photo is refused. Confirm, or relax to "either orientation".
-- **Q-B19** (business) The payment instructions on the receipt page are placeholder text (D81).
-  The organization must provide the real text (bank / branch / e-payment details); deciding whether
-  admins edit it in the UI adds a settings model in a later session. Where to change it today:
-  `frontend/src/i18n/ar.ts` → `payment.instructions` (marked `PLACEHOLDER`), then merge to `main`.
+- **Q-B19** (business) **Answered 2026-11-06 (see Q-P1):** members pay by scanning one fixed
+  InstaPay QR shown on the payment page, then upload the receipt. The wording is in
+  `frontend/src/i18n/ar.ts` → `payment.instructions`; changing it or the QR is still a code change
+  and a frontend deploy (no admin-editable setting).
 - **Q-T11** The e-mail row of the paper form has 26 boxes; longer Entra e-mails are shown with as
   many boxes as needed (wrapping), never truncated. Confirm this is acceptable on the printed form.
 
@@ -2634,8 +2635,12 @@ confirmed by the organization). Technical/environment questions for the user:
   the receiver status is `Enabled`. Cause unknown; do not keep retrying it. Whether an alert email
   reaches the configured receiver stays NOT VERIFIED until an alert fires.
 
-- **Q-P1 — Payment wording:** `payment.instructions` is still the placeholder (Q-B19); the cutover
-  preflight refuses until it is final.
+- **Q-P1 — Payment wording: answered, implemented 2026-11-06, not released.** The owner chose a fixed
+  InstaPay QR for every applicant and the line "please scan the QR code and upload your receipt".
+  `payment.instructions` now reads `برجاء مسح رمز QR ثم رفع إيصال الدفع.` and the payment page shows
+  the QR (`frontend/src/assets/payment/instapay-qr.png`) below it, on branch `feat/payment-qr`. The
+  `PLACEHOLDER (D81` marker is gone, so the cutover preflight no longer refuses on it once merged;
+  `PAY-2` stays PENDING until checked on production.
 - **Q-P2 — Data region: answered.** The owner confirmed `uaenorth` on 2026-11-05.
 - **Q-P3 — Printing: answered.** The owner confirmed on 2026-11-05 that it stays retired (D171); `PRN-1`
   checks that.
@@ -2655,7 +2660,8 @@ the vulnerable Pillow; (2) `ENABLE_SERVICE_ALERTS=true` on dev, once; (3) the bo
 `docs/production-runbook.md`; (4) `mode=bootstrap`; (5) acceptance; (6) cutover; (7) notifications. On that
 first merge, if the backend deploy outruns `infrastructure`, its migrate job refuses to start without
 `CURRENT_FISCAL_YEAR`; the running revision is untouched, so re-run it. Inputs only the owner can give:
-Q-P1, a production SES sender, and the cutover date with an acceptable outage. Given on 2026-11-05 and
+a production SES sender, and the cutover date with an acceptable outage (Q-P1, the payment wording, was
+answered on 2026-11-06 and is implemented on the local branch `feat/payment-qr`, not pushed or released). Given on 2026-11-05 and
 kept out of Git: the first administrator, and the alert address. Older items below still apply, except that formal legal sign-off and the AWS alarms were
 declined (they are not gates).
 

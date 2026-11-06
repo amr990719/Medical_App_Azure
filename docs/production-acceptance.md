@@ -78,7 +78,7 @@ item.
 | APP-1 | before-cutover | Submit gives a `MED-2026-` reference number; the fee snapshot is shown to the admin | PENDING | |
 | APP-2 | before-cutover | Admin requests a correction with a note; the doctor edits and resubmits; the reference number stays the same | PENDING | |
 | PAY-1 | before-cutover | Admin rejects a receipt; the doctor replaces it; admin confirms; `payment_status` follows each step | PENDING | |
-| PAY-2 | before-cutover | The final payment instructions are in `payment.instructions` and shown on the payment page (the placeholder is gone) | PENDING | |
+| PAY-2 | before-cutover | The payment page shows `برجاء مسح رمز QR ثم رفع إيصال الدفع.` and the fixed InstaPay QR (implemented 2026-11-06); a phone scan of the QR opens the owner's InstaPay address | PENDING | |
 | DUES-1 | before-cutover | Admin requests additional dues; the doctor sees the amount and uploads a receipt | PENDING | |
 | DUES-2 | before-cutover | Admin rejects that receipt with a reason; the doctor re-uploads; admin confirms; the treatment fee, its receipt and `payment_status` did not change | PENDING | |
 | APR-1 | before-cutover | Approval is refused without confirmed payment, and refused with unconfirmed dues; it succeeds once both are done | PENDING | |

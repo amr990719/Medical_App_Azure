@@ -542,7 +542,9 @@ and WhatsApp parked, the sizing, `currentFiscalYear`.
 
 Tracked with their state in `docs/progress.md`, "Next session starts with":
 
-1. Final payment instructions, for `payment.instructions`.
+1. Final payment instructions, for `payment.instructions`. **Supplied 2026-11-06:** the owner's
+   wording and a fixed InstaPay QR, implemented on the payment page (branch `feat/payment-qr`); not
+   yet released to production, and `PAY-2` is checked there.
 2. A production SES sender.
 3. The cutover date, and how long an outage is acceptable.
 

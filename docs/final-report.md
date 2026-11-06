@@ -402,10 +402,11 @@ in this session.
 
 **Application:**
 
-- Payment instructions on the receipt page are still placeholder text (business question 8 /
-  Q-B19): `frontend/src/i18n/ar.ts` → `payment.instructions` (marked `PLACEHOLDER (D81, Q-B19)`),
-  rendered by `frontend/src/pages/application/PaymentPage.tsx`. No test asserts the wording.
-  Replace the string and merge to `main`; the frontend deploy publishes it. Making it
+- Payment instructions (business question 8 / Q-B19): since 2026-11-06 the payment page shows the
+  owner's wording (`frontend/src/i18n/ar.ts` → `payment.instructions`) and one fixed InstaPay QR
+  (`frontend/src/assets/payment/instapay-qr.png`), rendered by
+  `frontend/src/pages/application/PaymentPage.tsx` and asserted by `PaymentPage.test.tsx`. Not yet
+  released to production. Changing either is a code change and a frontend deploy; making it
   admin-editable (§18) needs a settings model and endpoint, which is not built.
 - `/profile` (Session 13): identity and syndicate data are read-only there and edited on the form
   (with the national-ID / OCR flow); the profile page edits contact details only.
@@ -441,7 +442,7 @@ are §57; 13–21 came up during implementation.
 | 5 | Maximum beneficiaries: 10 or 11? | 10 | `MAX_BENEFICIARIES` |
 | 6 | `SON_MINOR` ≤ 18 and spouse kinship matching the member's gender? | both enforced | `ENFORCE_SON_MINOR_AGE`, `SON_MINOR_MAX_AGE`, `ENFORCE_SPOUSE_GENDER` |
 | 7 | Can a rejected applicant re-apply in the same fiscal year? | yes, a new application | partial unique constraint |
-| 8 | How do members pay; what instructions? | placeholder text (marked in code) | `frontend/src/i18n/ar.ts` `payment.instructions`, shown by `PaymentPage.tsx` |
+| 8 | How do members pay; what instructions? | answered 2026-11-06: fixed InstaPay QR + owner's wording | `frontend/src/i18n/ar.ts` `payment.instructions` and `src/assets/payment/instapay-qr.png`, shown by `PaymentPage.tsx` |
 | 9 | Is the member photo mandatory? | optional | `REQUIRE_MEMBER_PHOTO=false` |
 | 10 | Is `(syndicate_type, registration_number)` unique? | indexed, not unique | `apps/doctors/models.py` |
 | 11 | Is sending ID images to Azure OpenAI approved, and in which region? | OCR behind a flag, off in production | `OCR_ENABLED`, Bicep `enableOcr` |
@@ -519,7 +520,7 @@ are still open.
 | 6 | **Malware scanning** (L8) | uploads stored unscanned | **Decided 2026-10-11: off in production**; accepted risk in `docs/security.md` §6 L8 |
 | 7 | **Backup / restore drill** (§48) | RPO/RTO are assumptions; no restore has been run | run drill A–C of `docs/azure-deployment.md` in staging before go-live; confirm RPO/RTO |
 | 8 | **Custom domain** | Entra redirect URIs, `PUBLIC_HOSTNAME`, CSRF origin and the printed URL depend on it | re-run `create-entra-app` with the new `--public-url`, set `PUBLIC_HOSTNAME`, redeploy (`docs/entra-setup.md` §3) |
-| 9 | Payment instructions text (Q-B19, business question 8) | doctors see placeholder text | provide bank / branch / e-payment wording |
+| 9 | Payment instructions text (Q-B19, business question 8) | doctors see placeholder text | **Answered 2026-11-06:** fixed InstaPay QR and the owner's wording, implemented on the payment page; not yet released |
 | 10 | Delete the retired plan identity and `-plan` environments (D145) | `dev-plan` had no branch restriction and trusted an identity with Reader on `Medical_App` | **Done 2026-10-11** (approved by the owner; verified before and after, `docs/azure-deployment.md` §"Retired plan identity") |
 
 Business questions 1–21 (§14) and legal decisions L1–L8 (`docs/security.md` §6) remain open as
