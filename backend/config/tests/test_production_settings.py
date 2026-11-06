@@ -341,6 +341,11 @@ def test_trusted_proxy_count_is_configurable(monkeypatch):
 # --- Throttle cache (PROXY-1): counters must be shared by every Gunicorn worker and replica ----
 
 
+def test_the_forwarded_chain_diagnostic_is_off_unless_switched_on(monkeypatch):
+    assert load_production(monkeypatch).PROXY_DIAGNOSTICS_ENABLED is False
+    assert load_production(monkeypatch, PROXY_DIAGNOSTICS_ENABLED="true").PROXY_DIAGNOSTICS_ENABLED
+
+
 def test_production_uses_the_shared_database_cache(monkeypatch):
     prod = load_production(monkeypatch)
     assert prod.CACHES["default"]["BACKEND"] == "django.core.cache.backends.db.DatabaseCache"

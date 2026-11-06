@@ -45,6 +45,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "config.middleware.HealthProbeMiddleware",  # probes skip host validation and redirects
     "config.middleware.RequestIdMiddleware",
+    "config.middleware.ForwardedChainDiagnosticsMiddleware",  # PROXY_DIAGNOSTICS_ENABLED only
     "config.middleware.RequestBodyLimitMiddleware",  # 413 before an oversized body is read
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -163,6 +164,9 @@ CACHES = {"default": env.cache_url_config(env("CACHE_URL", default="") or "locme
 # backend + Container Apps ingress). Only their entries are trusted for the client address used
 # by throttles and the audit hash; 0 ignores the header (direct connections, local development).
 TRUSTED_PROXY_COUNT: int = env.int("TRUSTED_PROXY_COUNT", default=0)
+# One INFO line per request with the number of X-Forwarded-For entries (never an address), to
+# measure the real proxy chain (PROXY-1, Q-T13). Turn on for the observation, then off again.
+PROXY_DIAGNOSTICS_ENABLED: bool = env.bool("PROXY_DIAGNOSTICS_ENABLED", default=False)
 
 REST_FRAMEWORK = {
     "NUM_PROXIES": TRUSTED_PROXY_COUNT,

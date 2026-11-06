@@ -181,6 +181,7 @@ Production settings **refuse to start** when a required value is missing or unsa
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | comma list; production: Container App FQDN + public host, never `*` |
 | `CSRF_TRUSTED_ORIGINS` | `http://localhost:5173` | origins allowed to POST; production: `https://<public host>` |
 | `TRUSTED_PROXY_COUNT` | 0 (2 in production) | how many `X-Forwarded-For` entries the proxies add (SWA linked backend + ingress); used for throttles and the audit IP hash |
+| `PROXY_DIAGNOSTICS_ENABLED` | `false` | one INFO line per request (`apps.proxy`, `forwarded_chain`) with the number of `X-Forwarded-For` entries, how many carry a port, and a 12-hex keyed hash of the throttle key; never an address. Switch on only to measure the proxy chain (PROXY-1, Q-T13) |
 | `DEBUG` | `false` | production refuses `true` |
 | `LOG_LEVEL` | `INFO` | JSON logs to stdout; national IDs always masked |
 | `SECURE_SSL_REDIRECT`, `SECURE_HSTS_PRELOAD` | `true` (production) | HTTPS redirect, HSTS preload flag |

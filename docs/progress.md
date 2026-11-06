@@ -2574,6 +2574,13 @@ confirmed by the organization). Technical/environment questions for the user:
   body limits of both hops. `Host` and `X-Forwarded-Proto` verified on dev (Session 12/13: the
   OIDC redirect URI and the `Secure` cookie carry the SWA host over https). `X-Forwarded-For` count
   and body limits NOT VERIFIED.
+  2026-11-07, PROXY-1 failed on production. A burst of 25 callbacks with made-up
+  `X-Forwarded-For` values got no 429. The code throttles as designed only when exactly two
+  stable entries follow the client's own. So either fewer entries are appended, or an appended
+  entry carries a varying port, or the running revision lacks the shared cache. Branch
+  `fix/proxy-1-throttle` makes production refuse a per-process cache and adds
+  `PROXY_DIAGNOSTICS_ENABLED` (counts and a keyed hash only, never addresses). Set
+  `TRUSTED_PROXY_COUNT` from that evidence, not by guessing.
 - **Q-T14** Application Insights ingestion: connection string only, or Entra-authenticated
   (`APPLICATIONINSIGHTS_AUTHENTICATION=entra` + `Monitoring Metrics Publisher`, local auth disabled
   on the resource)? Default here: connection string; recommended: Entra.
