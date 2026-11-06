@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useRef, useState, type DragEvent } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { deleteDocument, uploadDocument } from "@/api/endpoints/documents";
+// Fixed InstaPay QR, the same for every applicant (owner, 2026-11-06). Re-encoded without metadata.
+import instapayQr from "@/assets/payment/instapay-qr.png";
 import { queryKeys } from "@/api/keys";
 import type { DocumentSummary } from "@/api/types";
 import { StickyActionBar } from "@/components/form/StickyActionBar";
@@ -182,6 +184,7 @@ export function PaymentPage() {
   const application = useApplication(id);
   const validation = useValidation(id);
   const fees = useFeeQuote(id);
+  const methodTitleId = useId();
 
   if (application.error) {
     return <FullPageStatus isError message={application.error.message} onRetry={() => void application.refetch()} />;
@@ -204,9 +207,20 @@ export function PaymentPage() {
         </Link>
         <h1 className="text-2xl font-extrabold text-charcoal">{P.title}</h1>
         <FeeSummaryPanel quote={fees.data} isLoading={fees.isLoading} error={fees.error} accent="banana" />
-        <section className="rounded-xl border border-border bg-white p-5">
-          <h2 className="font-extrabold text-charcoal">{P.instructionsTitle}</h2>
+        <section aria-labelledby={methodTitleId} className="rounded-xl border border-border bg-white p-5">
+          <h2 id={methodTitleId} className="font-extrabold text-charcoal">
+            {P.instructionsTitle}
+          </h2>
           <p className="mt-1 text-slate">{P.instructions}</p>
+          <img
+            src={instapayQr}
+            alt={P.qrAlt}
+            width={344}
+            height={368}
+            loading="eager"
+            decoding="async"
+            className="mx-auto mt-4 h-auto w-full max-w-[280px]"
+          />
         </section>
         <ReceiptUpload applicationId={id} receipt={receipt} paymentStatus={app.paymentStatus} />
         {!receipt ? <p className="text-sm text-muted">{P.needReceipt}</p> : null}

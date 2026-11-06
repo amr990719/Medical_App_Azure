@@ -619,10 +619,10 @@ export const ar = {
     back: "رجوع للاستمارة",
     title: "إيصال الدفع",
     instructionsTitle: "طريقة الدفع",
-    // PLACEHOLDER (D81, Q-B19): replace with the organization's payment details (bank / branch /
-    // e-payment). Shown on PaymentPage; a frontend deploy publishes the change.
-    instructions:
-      "ادفع قيمة الاشتراك الموضحة في ملخص الرسوم بالطريقة التي تعلنها إدارة المشروع، ثم ارفع صورة واضحة لإيصال الدفع. ستراجع الإدارة الإيصال وتؤكد الدفع.",
+    // Owner's final wording (2026-11-06, closes the D81 / Q-B19 placeholder). The QR is fixed for
+    // every applicant (frontend/src/assets/payment/instapay-qr.png).
+    instructions: "برجاء مسح رمز QR ثم رفع إيصال الدفع.",
+    qrAlt: "رمز QR للدفع عبر إنستاباي",
     drop: "اسحب صورة الإيصال هنا",
     orClick: "أو اضغط للاختيار",
     accepted: "JPG, PNG, WEBP — حتى {max}، وبحد أدنى {width}×{height} بكسل",

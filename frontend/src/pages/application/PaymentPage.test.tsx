@@ -54,6 +54,14 @@ describe("PaymentPage (PROMPT.md §18)", () => {
     expect(screen.getByRole("button", { name: "متابعة للمراجعة" })).toBeDisabled();
   });
 
+  it("shows the scan-and-upload instruction with the fixed InstaPay QR code", async () => {
+    await openPayment();
+    const method = screen.getByRole("region", { name: "طريقة الدفع" });
+    expect(within(method).getByText("برجاء مسح رمز QR ثم رفع إيصال الدفع.")).toBeInTheDocument();
+    const qr = within(method).getByRole("img", { name: "رمز QR للدفع عبر إنستاباي" });
+    expect(qr.getAttribute("src")).toMatch(/instapay-qr\.png$/);
+  });
+
   it("rejects a 5×5 image before uploading", async () => {
     imageSize.value = { width: 5, height: 5 };
     const upload = vi.fn();
