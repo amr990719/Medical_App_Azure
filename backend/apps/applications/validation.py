@@ -29,6 +29,7 @@ from apps.reference.constants import (
     GOVERNORATES,
     REGISTRATION_YEAR_MIN,
     DocumentType,
+    PaymentStatus,
     SyndicateType,
     WorkStatus,
 )
@@ -67,6 +68,7 @@ MSG_BENEFICIARY_DOCUMENT = "المستفيد {name}: مستند {label} مطلو
 MSG_REQUIRED_FIELD = "يرجى إدخال {field}"  # [14]
 MSG_DECLARATION_NAME = "اسم المقر يجب أن يطابق اسم العضو"  # [15]
 MSG_RECEIPT = "يرجى رفع إيصال الدفع"  # [16]
+MSG_RECEIPT_REJECTED = "تم رفض إيصال الدفع، يرجى رفع إيصال جديد"  # [16b] D220
 MSG_DECLARATION_ACCEPTED = "يرجى الموافقة على الإقرار"  # [17]
 MSG_DUPLICATE_NATIONAL_ID = "الرقم القومي مسجل لعضو آخر"  # [18]
 # Not in §22 — added for the §13/§14 consistency rules (docs/progress.md, Session 2).
@@ -175,6 +177,10 @@ def _validate_member_documents(
             req.document_type, MSG_MEMBER_DOCUMENT_DEFAULT.format(label=req.label)
         )
         c.add(DOCUMENTS, f"documents.{req.document_type}", "MISSING_DOCUMENT", message)
+    # A rejected receipt must be replaced before resubmitting (D220): uploading a new one sets
+    # `payment_status` back to PENDING_REVIEW.
+    if DocumentType.PAYMENT_RECEIPT in member_docs and app.payment_status == PaymentStatus.REJECTED:
+        c.add(RECEIPT, "receipt", "RECEIPT_REJECTED", MSG_RECEIPT_REJECTED, submit_only=True)
 
 
 def _fee_tier(app: InsuranceApplication, doctor: Doctor):

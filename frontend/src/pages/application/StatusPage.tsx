@@ -33,6 +33,8 @@ export function StatusPage() {
 
   const total = snapshotTotal(app);
   const needsCorrection = app.status === "NEEDS_CORRECTION";
+  // D220: a rejected receipt returns the application with the reason as the review notes.
+  const receiptRejected = needsCorrection && app.paymentStatus === "REJECTED";
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-6 sm:px-6">
@@ -94,6 +96,23 @@ export function StatusPage() {
               </p>
             ) : null}
           </section>
+
+          {receiptRejected ? (
+            <section
+              aria-labelledby="receipt-rejected-title"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-danger/30 bg-danger-light p-4"
+            >
+              <div className="min-w-0 flex-1">
+                <h2 id="receipt-rejected-title" className="font-extrabold text-danger">
+                  {S.receiptRejectedTitle}
+                </h2>
+                <p className="mt-1 text-charcoal">{S.receiptRejectedBody}</p>
+              </div>
+              <Link to={`/application/${id}/payment`} className={buttonClasses("primary", "md")}>
+                {S.replaceReceipt}
+              </Link>
+            </section>
+          ) : null}
 
           {app.reviewNotes ? (
             <section

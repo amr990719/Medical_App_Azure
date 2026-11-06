@@ -76,8 +76,15 @@ export function usePaymentReview(id: string) {
   const onDetail = useDetailUpdate(id);
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ paymentStatus, note }: { paymentStatus: "CONFIRMED" | "REJECTED"; note: string }) =>
-      reviewPayment(id, paymentStatus, note),
+    mutationFn: ({
+      paymentStatus,
+      reason = "",
+      note,
+    }: {
+      paymentStatus: "CONFIRMED" | "REJECTED";
+      reason?: string;
+      note: string;
+    }) => reviewPayment(id, paymentStatus, { reason, note }),
     onSuccess: (detail) => {
       onDetail(detail);
       void queryClient.invalidateQueries({ queryKey: keys.notes(id) });

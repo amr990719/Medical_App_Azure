@@ -138,6 +138,7 @@ class AdminApplicationViewSet(
         app = services.review_payment(
             self.get_object(),
             status=serializer.validated_data["payment_status"],
+            reason=serializer.validated_data["reason"],
             note=serializer.validated_data["note"],
             actor=request.user,
             request=request,

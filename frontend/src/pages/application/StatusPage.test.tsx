@@ -65,6 +65,29 @@ describe("StatusPage (PROMPT.md §43)", () => {
     await openStatus();
     expect(await screen.findByText("صورة البطاقة غير واضحة")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "تصحيح وإعادة التقديم" })).toHaveAttribute("href", `/application/${APP_ID}/form`);
+    // No receipt rejection here: no receipt banner.
+    expect(screen.queryByRole("heading", { name: "تم رفض إيصال الدفع" })).not.toBeInTheDocument();
+  });
+
+  it("explains a rejected receipt with its reason and links to the payment page (D220)", async () => {
+    const reason = "المبلغ في الإيصال لا يطابق قيمة الاشتراك";
+    serve({ ...submitted, status: "NEEDS_CORRECTION", is_editable: true, payment_status: "REJECTED", review_notes: reason });
+    await openStatus();
+    const banner = await screen.findByRole("region", { name: "تم رفض إيصال الدفع" });
+    expect(banner).toHaveTextContent("ارفع إيصالاً جديداً من صفحة الدفع");
+    expect(within(banner).getByRole("link", { name: "رفع إيصال جديد" })).toHaveAttribute(
+      "href",
+      `/application/${APP_ID}/payment`,
+    );
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "تصحيح وإعادة التقديم" })).toBeInTheDocument();
+  });
+
+  it("shows no receipt banner when a rejected receipt is not returned for correction", async () => {
+    serve({ ...submitted, status: "SUBMITTED", payment_status: "REJECTED" });
+    await openStatus();
+    await screen.findByText("MED-2026-000123");
+    expect(screen.queryByRole("link", { name: "رفع إيصال جديد" })).not.toBeInTheDocument();
   });
 
   it("polls while the application waits for review and stops once decided", async () => {

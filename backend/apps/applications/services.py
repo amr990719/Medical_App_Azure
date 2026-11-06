@@ -171,8 +171,14 @@ def transition(
     actor,
     review_notes: str = "",
     request=None,
+    notify: bool = True,
+    cause: str = "",
 ) -> InsuranceApplication:
-    """The ONE place where `status` changes. Returns the updated, locked-and-saved row."""
+    """The ONE place where `status` changes. Returns the updated, locked-and-saved row.
+
+    `notify=False` and `cause` are for a caller that makes this change as part of a larger
+    action and sends that action's single notification itself (the receipt rejection, D220).
+    """
     with transaction.atomic():
         app = lock_application(application.pk)
         rule = ALLOWED.get((app.status, to_status))
@@ -198,15 +204,18 @@ def transition(
             if notes:
                 app.review_notes = notes
             app.save()
+            metadata = {"from": from_status, "to": to_status, "notes": bool(notes)}
+            if cause:
+                metadata["cause"] = cause
             record(
                 actor=actor,
                 action=AuditAction.APPLICATION_STATUS_CHANGED,
                 obj=app,
-                metadata={"from": from_status, "to": to_status, "notes": bool(notes)},
+                metadata=metadata,
                 request=request,
             )
         event = STATUS_EVENTS.get(to_status)
-        if event:
+        if event and notify:
             enqueue(app, event)
     return app
 
@@ -306,7 +315,7 @@ def _submitted_snapshot(app: InsuranceApplication) -> dict:
 # --- payment status ---------------------------------------------------------------------------
 
 
-def _change_payment_status(app, status, actor, request) -> None:
+def _change_payment_status(app, status, actor, request, *, extra: dict | None = None) -> None:
     from_status = app.payment_status
     app.payment_status = status
     app.save(update_fields=["payment_status", "updated_at"])
@@ -314,7 +323,7 @@ def _change_payment_status(app, status, actor, request) -> None:
         actor=actor,
         action=AuditAction.PAYMENT_STATUS_CHANGED,
         obj=app,
-        metadata={"from": from_status, "to": status},
+        metadata={"from": from_status, "to": status, **(extra or {})},
         request=request,
     )
 
@@ -345,9 +354,13 @@ def mark_receipt_removed(
 
 @transaction.atomic
 def set_payment_status(
-    application: InsuranceApplication, *, status: str, actor, request=None
+    application: InsuranceApplication, *, status: str, actor, reason: str = "", request=None
 ) -> InsuranceApplication:
-    """Admin confirms or rejects the uploaded receipt."""
+    """Admin confirms or rejects the uploaded receipt.
+
+    Rejecting needs a `reason` the member sees (D220, PROMPT.md §16.3: rejecting a receipt comes
+    with NEEDS_CORRECTION and a note); confirming ignores it.
+    """
     app = lock_application(application.pk)
     if actor is None or not actor.is_admin:
         raise PermissionDeniedError()
@@ -357,9 +370,87 @@ def set_payment_status(
         or app.payment_status == PaymentStatus.NOT_UPLOADED
     ):
         raise InvalidStatusTransition(MSG_PAYMENT_CHANGE_NOT_ALLOWED)
+    if status == PaymentStatus.REJECTED:
+        return _reject_receipt(app, reason=reason, actor=actor, request=request)
     if app.payment_status != status:
         _change_payment_status(app, status, actor, request)
         enqueue(app, PAYMENT_EVENTS[status])
+    return app
+
+
+MSG_REJECTION_REASON_REQUIRED = "يرجى كتابة سبب رفض الإيصال"
+# Rejecting the receipt of an application in one of these statuses returns it to the member.
+CORRECTION_ON_REJECTION = frozenset({ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW})
+REJECTION_CAUSE = "PAYMENT_REJECTED"
+
+
+def _with_reason(notes: str, reason: str) -> str:
+    """The member-visible note of an application already in NEEDS_CORRECTION: the open request
+    may list other items still to fix, so the reason is appended, never replacing it."""
+    notes = notes.strip()
+    if not notes:
+        return reason
+    if notes == reason or notes.endswith(f"\n\n{reason}"):
+        return notes
+    return f"{notes}\n\n{reason}"
+
+
+def _reject_receipt(app: InsuranceApplication, *, reason: str, actor, request):
+    """Called under the application lock. One transaction, one notification (D220):
+
+    - SUBMITTED / UNDER_REVIEW: payment REJECTED, then NEEDS_CORRECTION through `transition`
+      with the reason as the member's `review_notes`;
+    - NEEDS_CORRECTION: the status stays and the reason is appended to `review_notes`.
+
+    The member gets PAYMENT_RECEIPT_REJECTED only, never a second CORRECTION_NEEDED.
+    """
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValidationFailed(fields={"reason": [MSG_REJECTION_REASON_REQUIRED]})
+    payment_changes = app.payment_status != PaymentStatus.REJECTED
+
+    if app.status in CORRECTION_ON_REJECTION:
+        if payment_changes:
+            _change_payment_status(
+                app, PaymentStatus.REJECTED, actor, request, extra={"reason": True}
+            )
+        app = transition(
+            app,
+            to_status=ApplicationStatus.NEEDS_CORRECTION,
+            actor=actor,
+            review_notes=reason,
+            request=request,
+            notify=False,
+            cause=REJECTION_CAUSE,
+        )
+        enqueue(app, NotificationEvent.PAYMENT_RECEIPT_REJECTED)
+        return app
+
+    notes = _with_reason(app.review_notes, reason)
+    notes_change = notes != app.review_notes
+    if not payment_changes and not notes_change:
+        return app  # the same rejection again: nothing to record or send
+    from_status = app.payment_status
+    app.payment_status = PaymentStatus.REJECTED
+    update_fields = ["payment_status", "updated_at"]
+    if notes_change:
+        app.review_notes = notes
+        app.reviewed_by = actor
+        app.reviewed_at = timezone.now()
+        update_fields += ["review_notes", "reviewed_by", "reviewed_at"]
+    app.save(update_fields=update_fields)
+    metadata = {"from": from_status, "to": PaymentStatus.REJECTED, "reason": True}
+    if notes_change:
+        metadata["review_notes_updated"] = True
+    record(
+        actor=actor,
+        action=AuditAction.PAYMENT_STATUS_CHANGED,
+        obj=app,
+        metadata=metadata,
+        request=request,
+    )
+    if payment_changes:
+        enqueue(app, NotificationEvent.PAYMENT_RECEIPT_REJECTED)
     return app
 
 
@@ -391,10 +482,19 @@ def add_admin_note(application: InsuranceApplication, *, body: str, actor, reque
 
 @transaction.atomic
 def review_payment(
-    application: InsuranceApplication, *, status: str, note: str = "", actor, request=None
+    application: InsuranceApplication,
+    *,
+    status: str,
+    reason: str = "",
+    note: str = "",
+    actor,
+    request=None,
 ) -> InsuranceApplication:
-    """Admin confirms/rejects the receipt, optionally with an internal note (atomic)."""
-    app = set_payment_status(application, status=status, actor=actor, request=request)
+    """Admin confirms/rejects the receipt (atomic). A rejection needs `reason`, which the member
+    sees (D220); the optional `note` is always internal (D52)."""
+    app = set_payment_status(
+        application, status=status, reason=reason, actor=actor, request=request
+    )
     if note.strip():
         add_admin_note(app, body=note, actor=actor, request=request)
     return app
