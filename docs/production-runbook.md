@@ -268,14 +268,14 @@ If the schema itself is the problem, a rollback will not help: see Recovery.
 | Key Vault | 90-day soft delete, purge protection | nobody can purge early, including an owner |
 | Configuration and code | Git, the production registry, GitHub variables | Entra users live in the tenant; Microsoft operates it |
 
-Measured recovery times are **PENDING**: nothing has been drilled (acceptance `REC-1` to `REC-6`).
+Measured on dev on 2026-11-06 for the database and secrets; documents and a regional loss are not drilled (acceptance `REC-1` to `REC-6`).
 
 | Scenario | Target RPO | Target RTO | Measured |
 |---|---|---|---|
 | Bad release, schema intact | 0 | ~10 min | PENDING |
-| Data damaged | ≤ 5 min before the damage | 1-2 h | PENDING |
+| Data damaged | ≤ 5 min before the damage | 1-2 h | about 40 min on dev (2026-11-06): 36 min from hold to ready, plus hold-off. The data lost is whatever came after the chosen restore point |
 | Deleted or overwritten document | 0 within the window | minutes | PENDING |
-| Deleted secret | 0 within the window | minutes | PENDING |
+| Deleted secret | 0 within the window | minutes | 14 s to recover a deleted secret, on dev (2026-11-06) |
 | Region lost | database ≤ 1 h; **documents not recoverable with ZRS** | several hours, not promised | not drilled |
 
 These are assumptions to confirm with the owner. Do not promise whole-region recovery without choosing
