@@ -1,8 +1,8 @@
 # Production acceptance record
 
 Production is **not ready** until every row below is `PASS` with evidence. Passing tests, a green
-release or a healthy `/api/ready/` do not change this. Everything starts `PENDING`, because nothing
-here has run on production: production does not exist yet.
+release or a healthy `/api/ready/` do not change this. Production was bootstrapped on 2026-11-06 and
+runs on its temporary host; the rows below record what has been proven on it since.
 
 Check what is still open at any time:
 
@@ -45,13 +45,13 @@ D150), so nothing in the app would notice a missing Conditional Access policy.
 
 | ID | Stage | Check | Status | Evidence |
 |---|---|---|---|---|
-| ENV-1 | before-admin | Production is a separate resource group, with its own Key Vault, database, storage and Entra app. No dev data or secret was copied, and `seed_dev_data` was not run | PENDING | |
-| ENV-2 | before-admin | The release manifest shows the same backend digest and frontend digest as dev for that commit | PENDING | |
-| SMK-1 | before-admin | `acceptance_smoke.py` passes on the temporary host, with the direct backend check | PENDING | |
-| AUTH-1 | before-admin | A new test doctor signs up and signs in on the temporary host through the production Entra app; `/auth/me/` returns them | PENDING | |
+| ENV-1 | before-admin | Production is a separate resource group, with its own Key Vault, database, storage and Entra app. No dev data or secret was copied, and `seed_dev_data` was not run | PASS | `rg-medsyn-prod`, own Key Vault, database, storage and Entra app; bootstrap https://github.com/amr990719/Medical_App_Azure/actions/runs/42128227759; no seed or copy (2026-11-06) |
+| ENV-2 | before-admin | The release manifest shows the same backend digest and frontend digest as dev for that commit | PASS | release `5d31934`: backend `sha256:22ebf7…` on app and both jobs, the same digest dev runs (2026-11-06) |
+| SMK-1 | before-admin | `acceptance_smoke.py` passes on the temporary host, with the direct backend check | PASS | `acceptance_smoke.py` on the temporary host: 12/12 passed, direct backend check included (2026-11-06) |
+| AUTH-1 | before-admin | A new test doctor signs up and signs in on the temporary host through the production Entra app; `/auth/me/` returns them | PASS | two different accounts signed in on production; both reached `/auth/callback/` (302), Entra log 08:21 UTC (2026-11-06) |
 | AUTH-2 | before-admin | Sign-out ends the session and lands on `/signed-out`; `/auth/me/` is 401 afterwards | PENDING | |
-| AUTH-3 | before-admin | Conditional Access policy exists, is **On**, and targets group `medical-admins-prod` and app `medical-syndicates-prod` (screenshot of the policy) | PENDING | |
-| AUTH-4 | before-admin | A real member of that group is **asked for MFA** at sign-in, and a non-member is not refused. Done before any `grant_admin` | PENDING | |
+| AUTH-3 | before-admin | Conditional Access policy exists, is **On**, and targets group `medical-admins-prod` and app `medical-syndicates-prod` (screenshot of the policy) | PASS | "Require MFA for medical prod admins": enabled, grant MFA, only `medical-admins-prod` and `medical-syndicates-prod` (Graph read-back, 2026-11-06) |
+| AUTH-4 | before-admin | A real member of that group is **asked for MFA** at sign-in, and a non-member is not refused. Done before any `grant_admin` | PASS | Entra log: the group member's sign-in had requirement `multiFactorAuthentication`, satisfied; a non-member's was single factor, as intended (2026-11-06) |
 | AUTH-5 | before-admin | `grant_admin` for that person, run as a job execution; the audit history shows `ADMIN_ROLE_GRANTED`; they reach `/admin` | PENDING | |
 | AUTH-6 | before-admin | `revoke_admin` on a second test admin removes access at once and is audited; it refuses the last admin | PENDING | |
 
@@ -87,11 +87,11 @@ item.
 | AUD-1 | before-cutover | The audit history shows these actions with actor and time, and an audit row cannot be edited | PENDING | |
 | CSRF-1 | before-cutover | A signed-in POST works; the same POST without the CSRF token is refused | PENDING | |
 | PROXY-1 | before-cutover | One request in Application Insights shows the browser's address as the client, so `TRUSTED_PROXY_COUNT=2` holds and throttles count per user; a burst to a throttled endpoint gets `RATE_LIMITED` (Q-T13) | PENDING | |
-| OBS-1 | before-cutover | Requests, traces and dependencies arrive in Application Insights with **Entra-only** ingestion on; the 14-digit scan in `docs/azure-deployment.md` returns `hits = 0` | PENDING | |
+| OBS-1 | before-cutover | Requests, traces and dependencies arrive in Application Insights with **Entra-only** ingestion on; the 14-digit scan in `docs/azure-deployment.md` returns `hits = 0` | PASS | requests, traces, dependencies arriving with Entra-only ingestion; 14-digit scan over 30 days: 0 hits (2026-11-06) |
 | OBS-2 | before-cutover | Console logs of a migrate and a cleanup execution can be read in Log Analytics | PENDING | |
-| OBS-3 | before-cutover | `manage.py alert_test` as a job execution: **a person receives the `ops-alert-test` email**. This is the controlled test; the test-email API is not used (Q-N17) | PENDING | |
-| OBS-7 | before-cutover | `modules/service-alerts.bicep` deployed once on dev (`ENABLE_SERVICE_ALERTS=true`) before production, then turned off; the `cleanup-missed` email at creation was expected and cleared after the first run | PENDING | |
-| OBS-4 | before-cutover | The availability test shows results for its 3 locations in `appi-medsyn-prd-uptime`, and a certificate check passes | PENDING | |
+| OBS-3 | before-cutover | `manage.py alert_test` as a job execution: **a person receives the `ops-alert-test` email**. This is the controlled test; the test-email API is not used (Q-N17) | PASS | `manage.py alert_test` on production 08:26 UTC; the owner received the email, after verifying the action group address by one-time code (2026-11-06) |
+| OBS-7 | before-cutover | `modules/service-alerts.bicep` deployed once on dev (`ENABLE_SERVICE_ALERTS=true`) before production, then turned off; the `cleanup-missed` email at creation was expected and cleared after the first run | PASS | deployed on dev 2026-11-05 (14 resources, ARM accepted them all); the alert trace arrived; removed on 2026-11-06 |
+| OBS-4 | before-cutover | The availability test shows results for its 3 locations in `appi-medsyn-prd-uptime`, and a certificate check passes | PASS | 3 locations report; the only failures were 404s at 06:33 UTC, before the frontend upload; every later run passed (2026-11-06) |
 | OBS-5 | before-cutover | A scheduled cleanup run leaves a `cleanup_run` trace | PENDING | |
 | OBS-6 | before-cutover | A named person owns incident response, and the alert address is monitored (`docs/production-runbook.md`, "Who owns what") | PENDING | |
 | REL-1 | before-cutover | A second release proceeds in order, and a release of an older commit is refused by the order check | PENDING | |
@@ -104,7 +104,7 @@ item.
 | REC-5 | before-cutover | A restored server is accepted by the deployment (geo-redundancy and storage match), and `POSTGRES_SERVER_NAME_OVERRIDE` survives a later deployment: `DATABASE_URL` stays on the selected server | PENDING | |
 | REC-6 | before-cutover | `reconcile_notifications` on a restored copy leaves nothing to resend, and an admin can still resend one row on purpose | PENDING | |
 | LOAD-1 | before-cutover | Small load test through the public host at the agreed concurrency: errors, p95, replicas and database connections recorded, and the alert thresholds still make sense | PENDING | |
-| COST-1 | before-cutover | The monthly budget exists and its alert address is monitored (`docs/production-cost-estimate-2026-11-05.md`) | PENDING | |
+| COST-1 | before-cutover | The monthly budget exists and its alert address is monitored (`docs/production-cost-estimate-2026-11-05.md`) | PASS | budget `medsyn-prod-monthly`, $400, from 2026-11-01, emails at 90% and 100% actual and 100% forecast (2026-11-06) |
 
 ## After the domain moves
 

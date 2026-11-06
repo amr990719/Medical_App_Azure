@@ -1666,6 +1666,40 @@ In particular the workflows have never run, `run-job-command.sh` in script form,
 acceptance by ARM, a restored server accepted by Bicep, and the ingress restriction closing the Static
 Web App's calls. Region facts for `uaenorth` were read from Azure (SKU, geo backup, quota).
 
+### Session 25 (cont.) — 2026-11-05/06 — Production bootstrapped
+
+With the owner's approval of the push, both merges and the cloud steps. Region `uaenorth` and printing
+retired confirmed; the owner's own account is the first administrator.
+
+- **Merged:** PR #18 (`7162b89`) and PR #26 (`5d31934`, first-run fixes). Every dev run succeeded; dev
+  runs by digest and reports `schema: ok`. Dependabot opened PRs #19–#25, several of them major
+  upgrades; they need their own review.
+- **Found by the first real runs, all fixed:**
+  - Git Bash paths that `az` and Python cannot open.
+  - An empty input overriding a Bicep default.
+  - A role assignment refused while a new custom role replicated.
+  - shellcheck versions disagreeing.
+  - Dependency review needing the dependency graph, which is off.
+  - The first bootstrap release stopping on `bool('')` (`BCP338`), before anything was created.
+- **Production:** `rg-medsyn-prod`, phase 1 in 8 min 15 s. The sizing matches `prod.bicepparam`.
+  PostgreSQL's Entra admin, database and app role are set, and the temporary firewall rule was removed.
+  The Entra app `medical-syndicates-prod`, group `medical-admins-prod` and the MFA policy were created
+  through Graph. The bootstrap release of `5d31934` (run `42128227759`) passed every step. The release
+  record is `medical-release:current`. Smoke checks passed 12/12. The first administrator was granted
+  after the Entra log showed MFA required for that account.
+- **Alerts:** proven to reach a person on production (`alert_test`), but only after the owner verified the
+  action group address. Azure Monitor now requires email receivers to verify with a one-time code; an
+  unverified receiver gets nothing. That is the likely cause of Q-N17. The dev trial of the service
+  alerts was removed afterwards, since an incremental deploy does not delete them.
+- **Budget:** `medsyn-prod-monthly`, $400 a month.
+- **Not done:**
+  - `LOAD-1`: the load test was blocked by the session's safety check, so it needs the owner's
+    permission or the owner's own run.
+  - `PROXY-1`: Application Insights masks client addresses, so this needs another method.
+  - The signed-in checks: the script is `docs/production-acceptance-script.md`.
+  - The restore drills.
+- **Still not on `neqabacare.com`:** it serves dev until the cutover.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
