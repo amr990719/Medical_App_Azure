@@ -7,12 +7,12 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsAdmin, IsDoctor
 from apps.applications.api.admin_serializers import AdminApplicationDetailSerializer
 from apps.applications.api.admin_views import admin_detail_response, reviewable_applications
+from apps.common.throttling import ScopedRateThrottle
 from apps.dues import services
 from apps.dues.models import SyndicateDuesRequest
 

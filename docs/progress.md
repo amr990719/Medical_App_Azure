@@ -2433,6 +2433,21 @@ Branch `fix/pay-1-receipt-rejection` from `origin/main` (`533ac4e`), committed l
   the member uploads a new receipt; the transition's generic `CORRECTION_NEEDED` is not sent
   (`transition(notify=False)`). Resubmission is refused while the receipt is still the rejected
   one (`RECEIPT_REJECTED`, step 4). Confirming is unchanged. No migration.
+- **D221 — The throttle key and the audit hash use the client address without its port
+  (refines D130; fixes the production acceptance failure PROXY-1):**
+  - `apps/common/client_ip.py` reduces the trusted X-Forwarded-For entry to a bare IP, using
+    `ipaddress`:
+    - `a.b.c.d:port` → `a.b.c.d`
+    - `[v6]:port` and `[v6]` → `v6`
+    - a bare IPv6 address is kept as it is
+    - one spelling per address
+  - An entry that is not an IP falls back to `REMOTE_ADDR`.
+  - Every view throttles with `apps.common.throttling.ScopedRateThrottle`, whose `get_ident` is
+    `client_ip()`. DRF's own `get_ident` returns the entry verbatim, port included. A test walks
+    the URL conf so that a plain DRF throttle cannot come back.
+  - `TRUSTED_PROXY_COUNT` stays 2.
+  - Production also refuses a per-process throttle cache. `PROXY_DIAGNOSTICS_ENABLED` logs the
+    chain's shape (counts and a keyed hash only).
 
 ## Deviations from PROMPT.md
 
@@ -2574,13 +2589,27 @@ confirmed by the organization). Technical/environment questions for the user:
   body limits of both hops. `Host` and `X-Forwarded-Proto` verified on dev (Session 12/13: the
   OIDC redirect URI and the `Secure` cookie carry the SWA host over https). `X-Forwarded-For` count
   and body limits NOT VERIFIED.
-  2026-11-07, PROXY-1 failed on production. A burst of 25 callbacks with made-up
-  `X-Forwarded-For` values got no 429. The code throttles as designed only when exactly two
-  stable entries follow the client's own. So either fewer entries are appended, or an appended
-  entry carries a varying port, or the running revision lacks the shared cache. Branch
-  `fix/proxy-1-throttle` makes production refuse a per-process cache and adds
-  `PROXY_DIAGNOSTICS_ENABLED` (counts and a keyed hash only, never addresses). Set
-  `TRUSTED_PROXY_COUNT` from that evidence, not by guessing.
+  - **2026-11-06/07, PROXY-1 failed on production.** 25 callbacks with made-up
+    `X-Forwarded-For` values got no 429.
+  - **Read-only checks (owner-approved):** `CACHE_URL=dbcache://django_cache`,
+    `GUNICORN_WORKERS=3`, `TRUSTED_PROXY_COUNT=2`, one replica.
+  - **Probes without `X-Forwarded-For`:**
+    - 25 GETs, each on a new connection (23:56:28–23:56:37 UTC): all 302, no 429.
+    - 25 GETs over one keep-alive connection (23:57:47–23:57:55 UTC): requests 1–20 got 302,
+      requests 21–25 got 429.
+  - **Conclusion:** the derived client entry carries the client's source port (`ip:port`), so
+    each new connection got a new throttle key. D221 fixes this.
+  - **Still NOT VERIFIED:** how many entries the hops append, so whether a client-sent entry
+    can still pick the key.
+    - Today's evidence fits two hops each appending one entry: with no header, a one-entry chain
+      would have keyed on the ingress-added SWA address, and that has no client port to vary.
+    - The coordinator reports SWA's entry carries a port. That could also be a one-entry chain
+      whose only entry is SWA's `client:port`.
+    - After the D221 release, check with `PROXY_DIAGNOSTICS_ENABLED=true` and one request
+      carrying one made-up entry. `xff_entries=3` means 2 is right; `2` means set
+      `TRUSTED_PROXY_COUNT=1`.
+    - Or send 25 spoofed requests over one connection: a 429 at request 21 means the spoofed
+      entry is not the key.
 - **Q-T14** Application Insights ingestion: connection string only, or Entra-authenticated
   (`APPLICATIONINSIGHTS_AUTHENTICATION=entra` + `Monitoring Metrics Publisher`, local auth disabled
   on the resource)? Default here: connection string; recommended: Entra.

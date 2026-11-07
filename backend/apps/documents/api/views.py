@@ -9,12 +9,12 @@ from rest_framework import serializers, status
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import Role
 from apps.accounts.permissions import IsAuthenticatedActive, IsDoctor
 from apps.applications.api.views import doctor_applications
+from apps.common.throttling import ScopedRateThrottle
 from apps.documents.models import Document
 from apps.documents.services import delete_document, document_content, store_document
 from apps.documents.storage import document_disposition

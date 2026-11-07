@@ -62,6 +62,111 @@ def test_a_spoofed_header_does_not_bypass_the_callback_throttle():
     assert statuses == [302, 302, 429]
 
 
+# --- PROXY-1: the derived entry can carry the client's source port ---------------------------
+# Production, 2026-11-06: 25 callbacks on new connections got no 429, the same 25 on one keep-alive
+# connection got 429 from request 21. The key changed with every source port (`ip:port`).
+
+SWA = "20.46.1.2"
+
+
+@pytest.mark.parametrize(
+    ("xff", "expected"),
+    [
+        (f"198.51.100.77:50123, {SWA}", "198.51.100.77"),  # IPv4 with a port
+        (f"  198.51.100.77  , {SWA}", "198.51.100.77"),  # whitespace
+        (f"[2001:db8::1]:443, {SWA}", "2001:db8::1"),  # bracketed IPv6 with a port
+        (f"[2001:db8::1], {SWA}", "2001:db8::1"),  # bracketed IPv6 without a port
+        (f"2001:db8::1, {SWA}", "2001:db8::1"),  # bare IPv6: its colons are not a port
+        (f"2001:DB8:0:0:0:0:0:1, {SWA}", "2001:db8::1"),  # one spelling per address
+    ],
+)
+def test_the_client_address_never_includes_a_port(xff, expected):
+    with proxies(2):
+        assert client_ip(req(xff)) == expected
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "not-an-ip",
+        "unknown",
+        "999.1.1.1:80",
+        "198.51.100.77:abc",
+        "198.51.100.77:",
+        ":80",
+        "[2001:db8::1:443",
+        "[2001:db8::1]443",
+        "[198.51.100.77:80",
+    ],
+)
+def test_an_unparseable_entry_falls_back_to_the_peer_address(entry):
+    with proxies(2):
+        assert client_ip(req(f"{entry}, {SWA}")) == "10.0.0.5"
+
+
+def test_a_new_source_port_per_request_does_not_bypass_the_callback_throttle():
+    from unittest import mock
+
+    from rest_framework.throttling import SimpleRateThrottle
+
+    with (
+        proxies(2),
+        mock.patch.dict(SimpleRateThrottle.THROTTLE_RATES, {"auth_callback": "20/min"}),
+    ):
+        statuses = [
+            APIClient()
+            .get(CALLBACK, HTTP_X_FORWARDED_FOR=f"198.51.100.77:{50000 + n}, {SWA}")
+            .status_code
+            for n in range(25)
+        ]
+    assert statuses == [302] * 20 + [429] * 5
+
+
+def test_every_throttle_in_use_keys_on_the_normalised_client_address():
+    from django.urls import get_resolver
+
+    from apps.common.throttling import ClientAddressThrottleMixin
+
+    def views(patterns):
+        for pattern in patterns:
+            if hasattr(pattern, "url_patterns"):
+                yield from views(pattern.url_patterns)
+            else:
+                callback = pattern.callback
+                yield getattr(callback, "cls", None) or getattr(callback, "view_class", None)
+
+    throttled = {
+        (view, throttle)
+        for view in views(get_resolver().url_patterns)
+        if view is not None
+        for throttle in getattr(view, "throttle_classes", [])
+    }
+    # callback, dev login, two upload views, OCR, notification resend
+    assert len({view for view, _ in throttled}) >= 6
+    plain = {(v, t) for v, t in throttled if not issubclass(t, ClientAddressThrottleMixin)}
+    assert plain == set()
+
+
+def test_the_audit_hash_is_the_same_whatever_the_source_port():
+    from apps.accounts.factories import UserFactory
+    from apps.applications.factories import ApplicationFactory
+    from apps.audit.models import AuditAction
+    from apps.audit.services import record
+
+    app, user = ApplicationFactory(), UserFactory()
+    with proxies(2):
+        hashes = {
+            record(
+                actor=user,
+                action=AuditAction.APPLICATION_CREATED,
+                obj=app,
+                request=req(f"198.51.100.77:{port}, {SWA}"),
+            ).ip_hash
+            for port in (50001, 50002)
+        }
+    assert len(hashes) == 1
+
+
 def test_the_audit_hash_follows_the_trusted_client_address():
     from apps.accounts.factories import UserFactory
     from apps.applications.factories import ApplicationFactory
