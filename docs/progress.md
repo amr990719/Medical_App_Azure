@@ -1725,6 +1725,35 @@ Branch `fix/pay-1-receipt-rejection` from `origin/main` (`533ac4e`), committed l
   lint, typecheck, 415 Vitest tests, `rtl:check`, build. Not verified on production: PAY-1 is
   re-tested by the owner after release.
 
+### Session 27 — 2026-11-06/07 — Production acceptance before cutover
+
+Released `11b744e` (QR), `84306ee` (D220) and `9e7ef1f` (D221) to production; PRs #27–#37 merged.
+After the 2026-11-07 drills and the owner's signed-in checks, every `before-admin` and `before-cutover`
+row of `docs/production-acceptance.md` passes, as does NOTE-1 (53 of 66). Left: `after-cutover` (CUT-1–CUT-7) and
+`before-live` (NOTE-3–NOTE-8).
+
+- **Drills:** REL-2 (rollback and forward), REC-4 on prod (a release refused and a rollback allowed
+  under `RECOVERY_HOLD`), REC-2/3/5/6 on dev. REC-2 found that `az storage blob undelete` does not
+  restore a deleted blob on a versioned account; `docs/azure-deployment.md` section B now promotes the
+  previous version instead.
+- **AUTH-6:** a test account was granted admin, used the admin pages, was revoked (refused at once),
+  and `revoke_admin` refused the last admin. It was not added to the MFA group for those minutes.
+- **Production test data deleted (2026-11-07 14:32 UTC), one-off reviewed command** as the runbook's
+  "Test data" asks. A `manage.py shell -c` script run as a migrate-job execution, owner-approved after a
+  dry run (execution `aa0fh7o`, rolled back) showed exactly what it would remove. Apply: execution
+  `1ko37kv`.
+  - Guards: refused unless production held exactly the 3 test applications and 2 doctor profiles
+    counted beforehand; one transaction; every table checked empty before commit.
+  - Deleted, in this order, through each model's base manager (soft-deleted documents included):
+    18 notifications (all PENDING, none ever sent), 3 dues receipts, 26 documents, 2 dues requests,
+    2 beneficiaries, 1 admin note, 3 applications, 2 doctor profiles (recreated empty at next sign-in).
+  - Kept: the 3 users (the audit trail points at them), the 165 audit entries, fee schedules, and the
+    reference counter, so real FY 2026 numbers start above the test ones (the audit trail records the
+    test numbers and cannot change).
+  - The 26 blobs are now orphans; the nightly `cleanup_blobs` removes them after the grace period, and
+    blob versions and soft delete keep copies until they expire. Recount (`is0otoj`): all of the above
+    0, users 3, admins 1, audit 165. `/api/ready/` ok.
+
 ## Decisions
 
 - **D1 — Same-origin API:** Azure Static Web Apps Standard with Container App as linked backend
@@ -2762,6 +2791,12 @@ confirmed by the organization). Technical/environment questions for the user:
 - **Q-P7 — The FY 2027 schedule:** the amounts are a business input; none exists.
 
 ## Next session starts with
+
+**Production (Session 27, 2026-11-07): every before-cutover acceptance row passes and the test data is
+deleted. Production runs `9e7ef1f` on its temporary host; `neqabacare.com` still serves dev.** Next,
+each with the owner's approval: the domain cutover (`infrastructure/scripts/cutover-domain.sh`,
+`docs/production-runbook.md`), CUT-1–CUT-7, then production notifications (NOTE-3–NOTE-8) and the
+`live` decision. The older handoffs below are kept for history; where they disagree, this paragraph wins.
 
 **PAY-1 fix (Session 26, D220) is on the local branch `fix/pay-1-receipt-rejection`, not pushed.**
 Next, each with the owner's approval: push, PR, release to production, then the owner re-runs PAY-1
