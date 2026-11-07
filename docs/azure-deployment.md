@@ -500,9 +500,9 @@ remove it). The blob name is `documents_document.blob_name`.
 
 ```bash
 ACCOUNT=$(out storageAccountName)
-# deleted blob (within the soft-delete window)
-az storage blob undelete --account-name "$ACCOUNT" -c medical-documents -n "<blob_name>" --auth-mode login
-# overwritten blob: list the versions, then put the wanted version back as the current one
+# deleted OR overwritten blob. Versioning is on, so a delete turns the current blob into a
+# previous version; `az storage blob undelete` does NOT bring it back (REC-2 drill, 2026-11-07).
+# List the versions, then put the wanted version (the latest one, for a delete) back as current.
 az storage blob list --account-name "$ACCOUNT" -c medical-documents --prefix "<blob_name>" \
   --include v --auth-mode login -o table
 az storage blob download --account-name "$ACCOUNT" -c medical-documents -n "<blob_name>" \
