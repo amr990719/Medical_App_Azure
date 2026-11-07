@@ -19,7 +19,16 @@
 # Needs: az, gh, python, curl, and for Entra steps the external tenant sign-in.
 set -euo pipefail
 
-export MSYS_NO_PATHCONV=1
+export MSYS_NO_PATHCONV=1 # Git Bash must not rewrite /subscriptions/... into a Windows path
+
+# Git Bash paths mean nothing to `python` or `curl`, Windows programs. On Linux this changes nothing.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -99,6 +108,28 @@ remove_hostname() { # resource-group hostname
     act az staticwebapp hostname delete -n "$site" -g "$1" --hostname "$2" --yes
 }
 
+# A binding made with --no-wait has no token at first, and each binding issues a new one. Prints
+# it once Azure has it; on timeout, says how to read it later and returns 1.
+wait_for_token() { # resource-group hostname
+    local site token deadline
+    site="$(site_of "$1")"
+    deadline=$((SECONDS + ${CUTOVER_TOKEN_TIMEOUT:-300}))
+    while :; do
+        token="$(az staticwebapp hostname show -n "$site" -g "$1" --hostname "$2" \
+            --query validationToken -o tsv 2>/dev/null | tr -d '\r' || true)"
+        if [ -n "$token" ]; then
+            printf '%s' "$token"
+            return 0
+        fi
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            echo "No validation token for $2 on ${site} after ${CUTOVER_TOKEN_TIMEOUT:-300}s. When Azure has one:" >&2
+            echo "  az staticwebapp hostname show -n ${site} -g $1 --hostname $2 --query validationToken -o tsv" >&2
+            return 1
+        fi
+        sleep "${CUTOVER_TOKEN_INTERVAL:-10}"
+    done
+}
+
 # `gh variable delete` has no --yes, and fails when the variable is absent.
 unset_variable() { # environment name
     if gh variable list --env "$1" --repo "$repo" --json name --jq '.[].name' | tr -d '\r' | grep -qx "$2"; then
@@ -118,17 +149,26 @@ case "$step" in
             echo "NOT READY: the payment instructions are still the placeholder (frontend/src/i18n/ar.ts)."
             problems=1
         fi
-        if ! python "${SCRIPT_DIR}/acceptance_record.py" "${REPO_ROOT}/docs/production-acceptance.md" \
+        record="$(native_path "${REPO_ROOT}/docs/production-acceptance.md")"
+        if ! python "$(native_path "${SCRIPT_DIR}/acceptance_record.py")" "$record" \
             --stage before-cutover; then
             echo "NOT READY: docs/production-acceptance.md has items open before cutover."
             problems=1
         fi
         prod_host="$(default_host_of "$prod_group")"
         dev_site_host="$(default_host_of "$dev_group")"
-        curl -fsS -o /dev/null "https://${prod_host}/api/ready/" || {
-            echo "NOT READY: production does not answer on https://${prod_host}/api/ready/"
-            problems=1
-        }
+        # Dev too: a rollback lands there. The shell discards the body, so curl, a Windows program
+        # under Git Bash, is handed no path it could fail to open. Dev scales to zero, and its first
+        # answer can take over 30 seconds: --retry covers the timeout and a 5xx from the proxy.
+        for site in "production ${prod_host}" "dev ${dev_site_host}"; do
+            url="https://${site#* }/api/ready/"
+            if curl -fsS --max-time 60 --retry 2 --retry-delay 5 "$url" >/dev/null; then
+                echo "${site%% *} answers on ${url}"
+            else
+                echo "NOT READY: ${site%% *} does not answer on ${url}"
+                problems=1
+            fi
+        done
         echo "Dev site ${dev_site_host}, production site ${prod_host}."
         if [ "$(slice_of "$prod_host")" = "$(slice_of "$dev_site_host")" ]; then
             echo "Same Static Web Apps slice: Azure refuses one domain on both, so detach-dev to"
@@ -169,9 +209,12 @@ EOF
         prod_host="$(default_host_of "$prod_group")"
         act az staticwebapp hostname set -n "$(site_of "$prod_group")" -g "$prod_group" \
             --hostname "$FINAL_HOST" --validation-method dns-txt-token --no-wait
+        token_missing=false
         if [ "$execute" = true ]; then
-            token="$(az staticwebapp hostname show -n "$(site_of "$prod_group")" -g "$prod_group" \
-                --hostname "$FINAL_HOST" --query validationToken -o tsv)"
+            token="$(wait_for_token "$prod_group" "$FINAL_HOST")" || {
+                token="<not issued yet: read it with the command above>"
+                token_missing=true
+            }
         else
             token="<shown when run with --execute>"
         fi
@@ -188,6 +231,7 @@ notifications@. Check any apex TXT line by line: one of them holds SPF.
 Wait until this says Ready, then run switch-prod:
   az staticwebapp hostname show -n $(site_of "$prod_group") -g ${prod_group} --hostname ${FINAL_HOST} --query status -o tsv
 EOF
+        [ "$token_missing" = false ] || exit 1
         ;;
     switch-prod)
         status="$(az staticwebapp hostname show -n "$(site_of "$prod_group")" -g "$prod_group" \
@@ -209,7 +253,7 @@ EOF
         prod_host="$(default_host_of "$prod_group")"
         client_id="$(gh variable list --env prod --repo "$repo" --json name,value \
             --jq '.[] | select(.name == "ENTRA_CLIENT_ID") | .value')"
-        python "${SCRIPT_DIR}/acceptance_smoke.py" --base-url "https://${FINAL_HOST}" \
+        python "$(native_path "${SCRIPT_DIR}/acceptance_smoke.py")" --base-url "https://${FINAL_HOST}" \
             --expect-client-id "$client_id" --redirect-from "https://${prod_host}"
         echo "Next, by hand: sign in, change something (a CSRF-protected POST), sign out, on ${FINAL_HOST}."
         echo "Record them in docs/production-acceptance.md (CUT-1 to CUT-4)."
@@ -224,15 +268,36 @@ EOF
         deploy prod
         cat <<EOF
 
-2. In Cloudflare: CNAME @ and CNAME www -> $(default_host_of "$dev_group"), and restore the old TXT
-   tokens. Nothing else changes.
-3. Dev takes the name back:
+2. Dev takes the name back. The binding issues a new validation token; the old one is void:
 EOF
         act az staticwebapp hostname set -n "$(site_of "$dev_group")" -g "$dev_group" \
             --hostname "$FINAL_HOST" --validation-method dns-txt-token --no-wait
+        token_missing=false
+        if [ "$execute" = true ]; then
+            token="$(wait_for_token "$dev_group" "$FINAL_HOST")" || {
+                token="<not issued yet: read it with the command above>"
+                token_missing=true
+            }
+        else
+            token="<shown when run with --execute>"
+        fi
+        dev_site_host="$(default_host_of "$dev_group")"
+        cat <<EOF
+
+3. In Cloudflare, change only these records:
+  TXT   _dnsauth   ${token}     (replaces production's; and the apex validation TXT, if one holds the old token)
+  CNAME @          ${dev_site_host}     DNS only, as D185 explains
+  CNAME www        ${dev_site_host}     stays proxied: the Single Redirect answers it
+
+Do not touch the apex SPF TXT, the MX records, DMARC (_dmarc) or the DKIM CNAMEs, nor the custom
+MAIL FROM records or the mail routing of notifications@. Check any apex TXT line by line.
+
+4. Dev's links and hosts follow the name:
+EOF
         act gh variable set PUBLIC_HOSTNAME --env dev --repo "$repo" --body "$FINAL_HOST"
         deploy dev
-        echo "4. Any session made on the other site is gone: cookies are per host, and users sign in again."
+        echo "5. Any session made on the other site is gone: cookies are per host, and users sign in again."
+        [ "$token_missing" = false ] || exit 1
         ;;
     *)
         echo "Unknown step: ${step} (--help)" >&2

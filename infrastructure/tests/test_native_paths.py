@@ -90,6 +90,7 @@ class EveryScriptConverts(unittest.TestCase):
             "run-job-command.sh",
             "setup-github-oidc.sh",
             "create-entra-app.sh",
+            "cutover-domain.sh",
         ):
             source = (SCRIPTS / name).read_text(encoding="utf-8")
             self.assertIn("native_path()", source, name)
@@ -102,6 +103,33 @@ class EveryScriptConverts(unittest.TestCase):
                 if "$TEMPLATE" in line or "$PARAM_FILE" in line:
                     continue
                 self.assertIn("native_path", line, f"{name}: {line.strip()}")
+
+
+class CutoverHandsWindowsPaths(unittest.TestCase):
+    """python and curl are Windows programs under Git Bash too. The first dry run of the cutover,
+    on 2026-11-07, failed on `C:\\c\\Users\\...` and on `curl -o /dev/null` (exit 23)."""
+
+    SOURCE = (SCRIPTS / "cutover-domain.sh").read_text(encoding="utf-8")
+
+    def test_it_has_the_helper_of_its_siblings(self):
+        self.assertIn("native_path() {\n    if command -v cygpath >/dev/null 2>&1; then", self.SOURCE)
+
+    def test_each_path_given_to_python_is_converted(self):
+        lines = [line for line in self.SOURCE.splitlines() if re.match(r"\s*(if !\s+)?python\b", line)]
+        self.assertTrue(lines)
+        for line in lines:
+            paths = list(re.finditer(r'"\$\{(?:SCRIPT_DIR|REPO_ROOT)\}', line))
+            self.assertTrue(paths, line.strip())
+            for path in paths:
+                self.assertTrue(
+                    line[: path.start()].endswith("native_path "), f"not converted: {line.strip()}"
+                )
+
+    def test_curl_writes_no_file_by_a_posix_path(self):
+        self.assertNotRegex(self.SOURCE, r"(-o|--output)\s+/dev/null")
+        for line in self.SOURCE.splitlines():
+            if re.search(r"\bcurl\b", line) and re.search(r"\s(-o|--output)\s", line):
+                self.assertIn("native_path", line, line.strip())
 
 
 if __name__ == "__main__":
