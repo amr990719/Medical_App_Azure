@@ -9,11 +9,11 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import exceptions
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
 from apps.accounts.services import end_session, entra_logout_url, start_session
+from apps.common.throttling import ScopedRateThrottle
 from config.api.authentication import SessionAuthentication
 
 from .serializers import (

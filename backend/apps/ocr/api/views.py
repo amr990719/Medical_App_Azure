@@ -2,10 +2,10 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsDoctor
+from apps.common.throttling import ScopedRateThrottle
 from apps.documents.models import Document
 from apps.ocr.services import extract_document
 

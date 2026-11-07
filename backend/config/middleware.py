@@ -52,6 +52,52 @@ class RequestIdMiddleware:
         return response
 
 
+def _has_port(entry: str) -> bool:
+    """`192.0.2.1:443` or `[2001:db8::1]:443`; a bare IPv6 address has colons but no port."""
+    return "]:" in entry if entry.startswith("[") else entry.count(":") == 1
+
+
+class ForwardedChainDiagnosticsMiddleware:
+    """PROXY-1 / Q-T13: how many X-Forwarded-For entries reach Django, so `TRUSTED_PROXY_COUNT`
+    can be set from evidence. Off unless PROXY_DIAGNOSTICS_ENABLED. Counts and a short keyed
+    hash of the derived client address (the throttle key) only, never an address or a port."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.logger = logging.getLogger("apps.proxy")
+
+    def __call__(self, request):
+        from django.conf import settings
+
+        if settings.PROXY_DIAGNOSTICS_ENABLED:
+            self._log(request, settings)
+        return self.get_response(request)
+
+    def _log(self, request, settings) -> None:
+        import hashlib
+        import hmac
+
+        from rest_framework.settings import api_settings
+
+        from apps.common.client_ip import client_ip
+
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        entries = [entry.strip() for entry in forwarded.split(",") if entry.strip()]
+        key = hmac.new(settings.SECRET_KEY.encode(), client_ip(request).encode(), hashlib.sha256)
+        self.logger.info(
+            "forwarded_chain",
+            extra={
+                "request_id": getattr(request, "request_id", None),
+                "path": mask_digit_runs(request.path),
+                "xff_entries": len(entries),
+                "xff_entries_with_port": sum(_has_port(entry) for entry in entries),
+                "trusted_proxies": api_settings.NUM_PROXIES or 0,
+                "client_key": key.hexdigest()[:12],
+                "cache_backend": settings.CACHES["default"]["BACKEND"].rsplit(".", 1)[-1],
+            },
+        )
+
+
 class HealthProbeMiddleware:
     """First in MIDDLEWARE: answers `GET /api/health/` and `/api/ready/` before host validation
     and the HTTPS redirect. Platform probes (Container Apps, Docker HEALTHCHECK) reach a replica

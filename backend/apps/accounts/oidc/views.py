@@ -12,12 +12,12 @@ from django.http import HttpResponseRedirect
 from django.utils.http import url_has_allowed_host_and_scheme
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.permissions import AllowAny
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import Role
 from apps.accounts.services import start_session
 from apps.common.exceptions import DomainError
+from apps.common.throttling import ScopedRateThrottle
 
 from .claims import OidcError, get_or_create_user, identity_from_claims, validate_id_token
 from .client import get_oidc_client, is_configured
